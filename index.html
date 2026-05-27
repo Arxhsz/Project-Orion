@@ -1,0 +1,584 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Project Orion</title>
+    <script>
+      window.CESIUM_BASE_URL = "https://cdn.jsdelivr.net/npm/cesium@1.141.0/Build/Cesium/";
+    </script>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net">
+    <link rel="preconnect" href="https://gibs.earthdata.nasa.gov">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%2305070c'/%3E%3Ccircle cx='32' cy='32' r='20' fill='none' stroke='%23ffffff' stroke-width='3'/%3E%3Cpath d='M32 8v48M8 32h48' stroke='%23ffffff' stroke-width='2'/%3E%3C/svg%3E">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cesium@1.141.0/Build/Cesium/Widgets/widgets.css">
+    <link rel="stylesheet" href="styles.css?v=20260527-release">
+    <link rel="stylesheet" href="orion-onboarding.css?v=20260527-release">
+  </head>
+  <body>
+    <div class="bg" id="orionLoadingScreen">
+        <div class="stars"></div>
+        <div class="left-ui"></div>
+        <div class="visuals">
+            <div class="visual visual1"></div>
+        </div>
+        <div class="logo-area">
+            <div class="eyebrow">Orbital Intelligence Platform</div>
+            <div class="title-wrap">
+                <div class="title">Project Orion</div>
+            </div>
+            <div class="loading-status">
+                <div class="operation" id="operation">Initializing Cesium renderer...</div>
+            </div>
+        </div>
+        <div class="bottom">
+            <div class="progress-header">
+                <div class="progress-title">System Initialization</div>
+                <div class="percent" id="percent">0%</div>
+            </div>
+            <div class="progress-wrap">
+                <div class="progress" id="progress"></div>
+            </div>
+            <div class="fact" id="fact">Low Earth Orbit satellites travel over 17,000 mph.</div>
+        </div>
+        <div class="scanlines"></div>
+    </div>
+
+    <main id="app-shell" aria-label="Project Orion satellite intelligence globe">
+      <div id="cesiumContainer" aria-hidden="true"></div>
+      <aside id="intelMapCallout" class="intel-map-callout hidden" aria-live="polite" aria-hidden="true">
+        <button type="button" class="intel-map-callout-close" id="intelMapCalloutClose" aria-label="Dismiss map callout">&times;</button>
+        <div id="intelMapCalloutBody" class="intel-map-callout-body"></div>
+      </aside>
+      <div class="starscape" aria-hidden="true"></div>
+      <div class="orbital-vignette" aria-hidden="true"></div>
+      <div class="hud-grid" aria-hidden="true"></div>
+      <div class="center-reticle" aria-hidden="true">
+        <span></span>
+        <span></span>
+      </div>
+
+      <header class="brand-hud" aria-label="Application status">
+        <div class="brand-lockup">
+          <div class="brand-mark" aria-hidden="true"></div>
+          <div>
+            <p class="eyebrow">Orbital Intelligence</p>
+            <h1>Project Orion</h1>
+          </div>
+        </div>
+        <div class="mission-status">
+          <span class="signal-dot" aria-hidden="true"></span>
+          <span>NASA GIBS feed active</span>
+          <button class="hud-hide-btn" id="hudHideToggle" type="button" aria-label="Hide all panels" title="Hide panels (H)">[-]</button>
+        </div>
+      </header>
+
+      <section class="hud-panel command-panel" aria-label="Search and layer controls" id="commandPanel">
+        <button class="panel-collapse-btn" id="commandPanelToggle" type="button" aria-label="Collapse command panel" title="Collapse">&lt;</button>
+        <div class="panel-kicker">Command</div>
+        <div class="panel-body">
+        <form class="search-form" id="searchForm">
+          <label class="sr-only" for="searchInput">Search location</label>
+          <input id="searchInput" type="search" autocomplete="off" spellcheck="false" placeholder="Search city, landmark, or lat, lon">
+          <button class="icon-command" type="submit" aria-label="Fly to location">
+            <span>GO</span>
+          </button>
+        </form>
+
+        <div class="saved-block">
+          <div class="saved-header">
+            <div class="section-label">Saved locations</div>
+            <button class="mini-command" id="saveLocationButton" type="button">Save view</button>
+          </div>
+          <div class="saved-locations" id="savedLocations"></div>
+        </div>
+
+        <div class="layer-block">
+          <div class="section-label">Imagery layers</div>
+          <label class="toggle-row">
+            <input id="layerTrueColor" type="checkbox" checked>
+            <span class="switch"></span>
+            <span>VIIRS true color</span>
+          </label>
+          <label class="toggle-row">
+            <input id="layerSentinel" type="checkbox">
+            <span class="switch"></span>
+            <span>Sentinel-2 reflectance</span>
+          </label>
+          <label class="toggle-row">
+            <input id="layerCleanEarth" type="checkbox">
+            <span class="switch"></span>
+            <span>Cloud-free globe</span>
+          </label>
+          <label class="toggle-row">
+            <input id="layerClouds" type="checkbox">
+            <span class="switch"></span>
+            <span>Cloud optical layer</span>
+          </label>
+          <label class="toggle-row">
+            <input id="layerInfrared" type="checkbox">
+            <span class="switch"></span>
+            <span>Thermal cloud tops</span>
+          </label>
+          <label class="toggle-row">
+            <input id="layerNight" type="checkbox">
+            <span class="switch"></span>
+            <span>Night-band radiance</span>
+          </label>
+          <label class="toggle-row">
+            <input id="layerLabels" type="checkbox" checked>
+            <span class="switch"></span>
+            <span>Reference labels</span>
+          </label>
+          <label class="toggle-row">
+            <input id="layerBoundaries" type="checkbox">
+            <span class="switch"></span>
+            <span>State / country borders</span>
+          </label>
+        </div>
+
+        <div class="weather-map-block">
+          <div class="section-label">Weather maps</div>
+          <label class="scan-control weather-map-control" for="weatherMapModeSelect">
+            <span>Mode</span>
+            <select id="weatherMapModeSelect">
+              <option value="satellite" selected>Satellite live</option>
+              <option value="satellite-hd">Satellite HD</option>
+              <option value="radar">Radar</option>
+              <option value="precipitation">Precipitation</option>
+              <option value="wind">Wind</option>
+              <option value="temperature">Temperature</option>
+              <option value="humidity">Humidity</option>
+              <option value="pressure">Pressure</option>
+            </select>
+          </label>
+          <label class="scan-control weather-map-control" for="satelliteSourceSelect">
+            <span>Source</span>
+            <select id="satelliteSourceSelect">
+              <option value="nasa-live" selected>NASA live stable</option>
+              <option value="public-geostat">Public geostat</option>
+              <option value="cloud-free">Cloud-free globe</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="action-row">
+          <button class="ghost-command" id="compareToggle" type="button">Split compare</button>
+          <button class="ghost-command" id="homeButton" type="button">Orbit reset</button>
+        </div>
+
+        <div class="tracking-block">
+          <div class="section-label">Live tracking</div>
+          <div class="track-filter-group" aria-label="Object class filter">
+            <button class="track-filter active" id="trackFilterAll" type="button">All</button>
+            <button class="track-filter" id="trackFilterAir" type="button">Aircraft</button>
+            <button class="track-filter" id="trackFilterSat" type="button">Satellites</button>
+            <button class="track-filter" id="trackFilterSea" type="button">Vessels</button>
+          </div>
+          <div class="tracking-toggle-grid">
+            <label class="toggle-row">
+              <input id="trackAircraft" type="checkbox" checked>
+              <span class="switch"></span>
+              <span>Aircraft</span>
+            </label>
+            <label class="toggle-row">
+              <input id="trackSatellites" type="checkbox" checked>
+              <span class="switch"></span>
+              <span>Satellites</span>
+            </label>
+            <label class="toggle-row">
+              <input id="trackVessels" type="checkbox" checked>
+              <span class="switch"></span>
+              <span>Vessels</span>
+            </label>
+          </div>
+          <label class="scan-control orbital-source-control" for="orbitalDatasetSelect">
+            <span>Orbital feed</span>
+            <select id="orbitalDatasetSelect">
+              <option value="all" selected>All orbitals</option>
+              <option value="realtimeSatellites">Finder / stations</option>
+              <option value="satInternet">Internet constellations</option>
+              <option value="satCommunications">Communications</option>
+              <option value="satPositioning">Positioning / GNSS</option>
+              <option value="satEarthImaging">Earth imaging</option>
+              <option value="satWeather">Weather satellites</option>
+              <option value="satScience">Science</option>
+              <option value="satIot">IoT</option>
+              <option value="starlink">Starlink</option>
+              <option value="debris">Debris</option>
+            </select>
+          </label>
+          <button class="live-command" id="liveModeToggle" type="button">
+            <span class="live-dot" aria-hidden="true"></span>
+            <span>Live mode</span>
+          </button>
+          <button class="unlock-command" id="unlockCamera" type="button">Unlock camera</button>
+        </div>
+
+        <div class="platform-block">
+          <div class="section-label">Intel layers</div>
+          <div class="platform-toggle-grid">
+            <label class="toggle-row">
+              <input id="platformSatellites" type="checkbox">
+              <span class="switch"></span>
+              <span>Real satellites</span>
+            </label>
+            <label class="toggle-row">
+              <input id="platformStarlink" type="checkbox">
+              <span class="switch"></span>
+              <span>Starlink shell</span>
+            </label>
+            <label class="toggle-row">
+              <input id="platformDebris" type="checkbox">
+              <span class="switch"></span>
+              <span>Orbital debris</span>
+            </label>
+            <label class="toggle-row">
+              <input id="platformEarthquakes" type="checkbox">
+              <span class="switch"></span>
+              <span>Earthquakes</span>
+            </label>
+            <label class="toggle-row">
+              <input id="platformCameras" type="checkbox">
+              <span class="switch"></span>
+              <span>Camera net</span>
+            </label>
+            <label class="toggle-row">
+              <input id="platformWeatherRadar" type="checkbox">
+              <span class="switch"></span>
+              <span>Weather radar</span>
+            </label>
+            <label class="toggle-row">
+              <input id="platformLiveShips" type="checkbox">
+              <span class="switch"></span>
+              <span>AIS vessels</span>
+            </label>
+            <label class="toggle-row">
+              <input id="platformAircraft" type="checkbox">
+              <span class="switch"></span>
+              <span>ADSB aircraft</span>
+            </label>
+            <label class="toggle-row">
+              <input id="platformWildfires" type="checkbox">
+              <span class="switch"></span>
+              <span>Wildfires</span>
+            </label>
+            <label class="toggle-row">
+              <input id="platformCyber" type="checkbox">
+              <span class="switch"></span>
+              <span>Cyber arcs</span>
+            </label>
+            <label class="toggle-row">
+              <input id="platformAirspace" type="checkbox">
+              <span class="switch"></span>
+              <span>Airspace</span>
+            </label>
+            <label class="toggle-row">
+              <input id="platformCables" type="checkbox">
+              <span class="switch"></span>
+              <span>Sea cables</span>
+            </label>
+            <label class="toggle-row">
+              <input id="platformPower" type="checkbox">
+              <span class="switch"></span>
+              <span>Power grid</span>
+            </label>
+            <label class="toggle-row">
+              <input id="platformRf" type="checkbox">
+              <span class="switch"></span>
+              <span>RF heat</span>
+            </label>
+            <label class="toggle-row">
+              <input id="platformEmergency" type="checkbox">
+              <span class="switch"></span>
+              <span>Emergency</span>
+            </label>
+            <label class="toggle-row">
+              <input id="platformWeatherVolume" type="checkbox">
+              <span class="switch"></span>
+              <span>Storm volume</span>
+            </label>
+            <label class="toggle-row">
+              <input id="platformLightning" type="checkbox">
+              <span class="switch"></span>
+              <span>Lightning</span>
+            </label>
+            <label class="toggle-row">
+              <input id="platformEvents" type="checkbox">
+              <span class="switch"></span>
+              <span>Event heat</span>
+            </label>
+            <label class="toggle-row">
+              <input id="platformAirCorridors" type="checkbox">
+              <span class="switch"></span>
+              <span>Air routes</span>
+            </label>
+            <label class="toggle-row">
+              <input id="platformTraffic" type="checkbox">
+              <span class="switch"></span>
+              <span>Traffic</span>
+            </label>
+            <label class="toggle-row">
+              <input id="platformCities" type="checkbox">
+              <span class="switch"></span>
+              <span>3D cities</span>
+            </label>
+            <label class="toggle-row">
+              <input id="platformSound" type="checkbox">
+              <span class="switch"></span>
+              <span>Sound</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="systems-block">
+          <div class="section-label">Mission systems</div>
+          <label class="scan-control" for="scanModeSelect">
+            <span>Scan mode</span>
+            <select id="scanModeSelect">
+              <option value="standard">Standard</option>
+              <option value="thermal">Thermal</option>
+              <option value="infrared">Infrared</option>
+              <option value="radar">Radar</option>
+              <option value="night">Night ops</option>
+              <option value="signal">Signal intelligence</option>
+              <option value="weather">Weather</option>
+              <option value="orbital">Orbital</option>
+              <option value="cyber">Cyber</option>
+              <option value="traffic">Traffic</option>
+            </select>
+          </label>
+          <label class="scan-control" for="earthquakeFeedSelect">
+            <span>Quake feed</span>
+            <select id="earthquakeFeedSelect">
+              <option value="1.0_day">M1 day</option>
+              <option value="2.5_day" selected>M2.5 day</option>
+              <option value="4.5_day">M4.5 day</option>
+              <option value="all_day">All day</option>
+              <option value="all_week">All week</option>
+              <option value="2.5_week">M2.5 week</option>
+              <option value="4.5_week">M4.5 week</option>
+            </select>
+          </label>
+          <label class="scan-control" for="earthquakeMagnitudeSelect">
+            <span>Magnitude</span>
+            <select id="earthquakeMagnitudeSelect">
+              <option value="0">All</option>
+              <option value="1">M1+</option>
+              <option value="2.5" selected>M2.5+</option>
+              <option value="4.5">M4.5+</option>
+              <option value="6">M6+</option>
+            </select>
+          </label>
+          <label class="range-control" for="radarOpacityRange">
+            <span>Radar opacity</span>
+            <input id="radarOpacityRange" type="range" min="0" max="1" step="0.05" value="0.44">
+          </label>
+          <button class="mission-command active" id="radarAnimateToggle" type="button">Radar animate</button>
+          <div class="timelapse-grid">
+            <label for="timelapseStart">
+              <span>Start</span>
+              <input id="timelapseStart" type="date">
+            </label>
+            <label for="timelapseEnd">
+              <span>End</span>
+              <input id="timelapseEnd" type="date">
+            </label>
+            <label for="timelapseLocationMode">
+              <span>Scope</span>
+              <select id="timelapseLocationMode">
+                <option value="view">Current view</option>
+                <option value="target">Selected target</option>
+                <option value="global">Global</option>
+              </select>
+            </label>
+          </div>
+          <button class="mission-command" id="timelapseRecord" type="button">Generate history timelapse</button>
+        </div>
+        </div>
+      </section>
+
+      <section class="hud-panel telemetry-panel" aria-label="Live satellite telemetry" id="telemetryPanel">
+        <button class="panel-collapse-btn" id="telemetryPanelToggle" type="button" aria-label="Collapse telemetry panel" title="Collapse">&gt;</button>
+        <div class="panel-kicker">Live telemetry</div>
+        <div class="panel-body">
+        <div class="intel-list-panel hidden" id="intelListPanel">
+          <div class="intel-list-header">
+            <span class="section-label">Selectable intelligence</span>
+            <strong id="intelEntityCount">0 objects</strong>
+          </div>
+          <input id="intelSearch" class="intel-search" type="search" placeholder="Filter objects">
+          <div class="intel-category-chips" id="intelCategoryChips" aria-label="Object categories"></div>
+          <div class="intel-entity-list" id="intelEntityList" role="list"></div>
+        </div>
+        <div class="telemetry-stack" id="telemetryStack">
+          <div class="telemetry-row">
+            <span>Target</span>
+            <strong id="targetName">Global scan</strong>
+          </div>
+          <div class="telemetry-row compact">
+            <span>Latitude</span>
+            <strong id="targetLat">--</strong>
+          </div>
+          <div class="telemetry-row compact">
+            <span>Longitude</span>
+            <strong id="targetLon">--</strong>
+          </div>
+          <div class="telemetry-row">
+            <span>Provider</span>
+            <strong id="providerLabel">NASA GIBS / VIIRS NOAA-20</strong>
+          </div>
+          <div class="telemetry-row">
+            <span>Image date</span>
+            <strong id="imageDate">--</strong>
+          </div>
+          <div class="telemetry-row">
+            <span>Update age</span>
+            <strong id="updateAge">--</strong>
+          </div>
+          <div class="telemetry-row">
+            <span>Cloud coverage</span>
+            <strong id="cloudCoverage">Visual layer standby</strong>
+          </div>
+          <div class="telemetry-row">
+            <span>Camera altitude</span>
+            <strong id="cameraAltitude">--</strong>
+          </div>
+          <div class="telemetry-row">
+            <span>Map detail</span>
+            <strong id="mapDetailLabel">Adaptive standby</strong>
+          </div>
+          <div class="telemetry-row">
+            <span>Tracking mode</span>
+            <strong id="trackingModeLabel">Timeline sync</strong>
+          </div>
+          <div class="telemetry-row">
+            <span>Track source</span>
+            <strong id="trackingSource">Synthetic mission feed</strong>
+          </div>
+          <div class="telemetry-row compact">
+            <span>Objects</span>
+            <strong id="trackingCount">--</strong>
+          </div>
+          <div class="telemetry-row">
+            <span>Track clock</span>
+            <strong id="trackingClock">--</strong>
+          </div>
+          <div class="telemetry-row">
+            <span>Intel layers</span>
+            <strong id="platformLayerCount">--</strong>
+          </div>
+          <div class="telemetry-row">
+            <span>Feed status</span>
+            <strong id="platformFeedStatus">Standby</strong>
+          </div>
+          <div class="intel-detail-card hidden" id="intelDetailCard" aria-live="polite"></div>
+        </div>
+        </div>
+      </section>
+
+      <section class="timeline-hud" aria-label="Historical playback controls" id="timelineHud">
+        <button class="panel-collapse-btn timeline-hide-btn" id="timelineHudToggle" type="button" aria-label="Collapse timeline" title="Collapse timeline">v</button>
+        <div class="timeline-topline">
+          <div>
+            <span class="section-label">Temporal intelligence</span>
+            <strong id="currentDateLabel">--</strong>
+          </div>
+          <div class="feed-meta" id="feedMeta">30 day imagery window</div>
+        </div>
+        <div class="timeline-body">
+
+        <div class="timeline-mode-row" aria-label="Timeline cadence">
+          <button class="timeline-mode active" id="timelineModeHourly" type="button" data-icon="H">Hourly</button>
+          <button class="timeline-mode" id="timelineModeUpdates" type="button" data-icon="U">Updates</button>
+        </div>
+
+        <div class="range-wrap">
+          <input id="timelineRange" type="range" min="0" max="720" step="1" value="720" aria-label="Imagery time">
+          <div class="timeline-axis" aria-hidden="true">
+            <span id="timelineStartLabel">--</span>
+            <strong id="timelineCursorLabel">--</strong>
+            <span id="timelineEndLabel">--</span>
+          </div>
+        </div>
+
+        <div class="playback-row">
+          <div class="transport-controls" aria-label="Playback buttons">
+            <button class="transport-button" id="prevDay" type="button" aria-label="Previous hour" data-icon="<">1H</button>
+            <button class="transport-button primary" id="playPause" type="button" aria-label="Play timeline" data-icon=">">PLAY</button>
+            <button class="transport-button" id="nextDay" type="button" aria-label="Next hour" data-icon=">">1H</button>
+          </div>
+          <label class="speed-control" for="speedSelect">
+            <span>Speed</span>
+            <select id="speedSelect">
+              <option value="0.1">0.1 h/s</option>
+              <option value="0.25">0.25 h/s</option>
+              <option value="0.5">0.5 h/s</option>
+              <option value="1" selected>1 h/s</option>
+              <option value="3">3 h/s</option>
+              <option value="6">6 h/s</option>
+              <option value="12">12 h/s</option>
+              <option value="24">24 h/s</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="compare-controls" id="compareControls" hidden>
+          <div class="compare-labels">
+            <span>Compare date</span>
+            <strong id="compareDateLabel">--</strong>
+          </div>
+          <input id="compareRange" type="range" min="0" max="720" step="1" value="552" aria-label="Comparison time">
+          <label class="split-control" for="splitRange">
+            <span>Split</span>
+            <input id="splitRange" type="range" min="0.15" max="0.85" step="0.01" value="0.5">
+          </label>
+        </div>
+        </div>
+      </section>
+
+      <section class="camera-window hidden" id="cameraWindow" aria-label="Live camera feed">
+        <div class="camera-toolbar" id="cameraDragHandle">
+          <div class="section-label">Camera stream</div>
+          <div class="camera-actions">
+            <button class="camera-action" id="cameraMinimize" type="button" aria-label="Minimize camera feed">_</button>
+            <button class="camera-action" id="cameraFullscreen" type="button" aria-label="Fullscreen camera feed">[]</button>
+            <button class="camera-action" id="cameraPopout" type="button" aria-label="Pop out camera feed">^</button>
+            <button class="camera-close" id="cameraClose" type="button" aria-label="Close camera feed">X</button>
+          </div>
+        </div>
+        <strong id="cameraTitle">Camera standby</strong>
+        <p id="cameraMeta">Select a camera node to inspect stream metadata.</p>
+        <div class="camera-frame" id="cameraFrame">
+          <span>Feed initializes on demand</span>
+        </div>
+      </section>
+
+      <div class="split-divider" id="splitDivider" hidden aria-hidden="true"></div>
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+      <div id="cesiumCredit" class="cesium-credit"></div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/cesium@1.141.0/Build/Cesium/Cesium.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/satellite.js@5.0.0/dist/satellite.min.js" defer></script>
+    <script src="orion-core.js?v=20260527-release"></script>
+    <script src="orion-config.js?v=20260527-release"></script>
+    <script src="orion-runtime-state.js?v=20260527-release"></script>
+    <script src="orion-performance-budget.js?v=20260527-release"></script>
+    <script src="orion-telemetry-health.js?v=20260527-release"></script>
+    <script src="orion-diagnostics.js?v=20260527-release"></script>
+    <script src="orion-intelligence.js?v=20260527-release"></script>
+    <script src="orion-renderer-environment.js?v=20260527-release"></script>
+    <script src="orion-renderer-infrastructure.js?v=20260527-release"></script>
+    <script src="orion-renderer-imagery.js?v=20260527-release"></script>
+    <script src="orion-renderer-primitive.js?v=20260527-release"></script>
+    <script src="orion-replay.js?v=20260527-release"></script>
+    <script src="orion-session.js?v=20260527-release"></script>
+    <script src="orion-verification.js?v=20260527-release"></script>
+    <script src="loading_screen.js?v=20260527-release"></script>
+    <script src="orion-onboarding.js?v=20260527-release"></script>
+    <script src="orion-texture-manager.js?v=20260527-release"></script>
+    <script src="cameranet_frontend.js?v=20260527-release" defer></script>
+    <script src="app.js?v=20260527-release" defer></script>
+  </body>
+</html>

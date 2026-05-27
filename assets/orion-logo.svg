@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 320" role="img" aria-labelledby="title desc">
+  <title id="title">Project Orion logo</title>
+  <desc id="desc">A dark tactical glass logo for Project Orion with an orbital reticle and clean white type.</desc>
+  <defs>
+    <radialGradient id="glow" cx="40%" cy="45%" r="72%">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.18"/>
+      <stop offset="0.42" stop-color="#7fdcff" stop-opacity="0.08"/>
+      <stop offset="1" stop-color="#05070c" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="panel" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#141922" stop-opacity="0.96"/>
+      <stop offset="0.55" stop-color="#070a10" stop-opacity="0.98"/>
+      <stop offset="1" stop-color="#111722" stop-opacity="0.96"/>
+    </linearGradient>
+    <filter id="softShadow" x="-20%" y="-30%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="18" stdDeviation="28" flood-color="#000000" flood-opacity="0.55"/>
+    </filter>
+  </defs>
+  <rect width="960" height="320" rx="34" fill="#020409"/>
+  <rect x="26" y="26" width="908" height="268" rx="28" fill="url(#panel)" stroke="#ffffff" stroke-opacity="0.15" filter="url(#softShadow)"/>
+  <rect x="26" y="26" width="908" height="268" rx="28" fill="url(#glow)"/>
+  <g transform="translate(86 160)" fill="none" stroke="#ffffff">
+    <circle r="66" stroke-opacity="0.82" stroke-width="4"/>
+    <circle r="35" stroke-opacity="0.22" stroke-width="2"/>
+    <path d="M0-88V88M-88 0H88" stroke-opacity="0.78" stroke-width="3"/>
+    <path d="M-48-48C-12-78 46-68 76-24M-76 24C-42 70 26 78 58 44" stroke="#7fdcff" stroke-opacity="0.58" stroke-width="3" stroke-linecap="round"/>
+    <circle r="6" fill="#ffffff" stroke="none"/>
+  </g>
+  <g fill="#ffffff" font-family="Inter, Arial, sans-serif">
+    <text x="214" y="117" font-size="23" font-weight="800" letter-spacing="12" opacity="0.52">ORBITAL INTELLIGENCE</text>
+    <text x="214" y="182" font-size="62" font-weight="900" letter-spacing="2">PROJECT ORION</text>
+    <text x="218" y="224" font-size="19" font-weight="700" letter-spacing="3" opacity="0.58">REALTIME EARTH VISUALIZATION PLATFORM</text>
+  </g>
+  <g transform="translate(812 94)">
+    <circle cx="0" cy="0" r="7" fill="#62f5b6"/>
+    <text x="22" y="6" fill="#ffffff" fill-opacity="0.7" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="700">LIVE</text>
+  </g>
+</svg>
