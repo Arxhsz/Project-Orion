@@ -206,13 +206,14 @@
 
 .orion-onboarding.active {
     opacity: 1;
-    pointer-events: auto;
+    pointer-events: none;
 }
 
 .onboarding-backdrop {
     position: absolute;
     inset: 0;
     background: rgba(0, 0, 0, 0.55);
+    pointer-events: none;
 }.orion-onboarding.active ~ #app-shell .tracking-toggle-grid .toggle-row input:disabled + .switch,
 body:has(.orion-onboarding.active) .tracking-toggle-grid .toggle-row input:disabled + .switch {
     opacity: 0.35;
@@ -266,6 +267,7 @@ body:has(.orion-onboarding.active) .tracking-toggle-grid .toggle-row input:disab
     -webkit-backdrop-filter: blur(20px) saturate(140%);
     z-index: 19003;
     transition: all 0.5s cubic-bezier(0.4, 0.0, 0.2, 1);
+    pointer-events: auto;
 }
 
 .onboarding-progress {

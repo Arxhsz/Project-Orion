@@ -1200,7 +1200,6 @@ const OrionOnboarding = (function() {
 
         createOnboardingOverlay();
         bindTutorialResize();
-        disableLiveTrackingForTutorial();
         updateStep();
     }
 
