@@ -5,14 +5,16 @@
   var textureCache = {};
   var pendingLoads = {};
   var MAX_DIMENSION = 2048;
-  var MIN_DIMENSION = 1;  function validateImage(img) {
+  var MIN_DIMENSION = 1;
+  function validateImage(img) {
     if (!img) return false;
     if (img.tagName === 'CANVAS') {
       return img.width >= MIN_DIMENSION && img.height >= MIN_DIMENSION && 
              img.width <= MAX_DIMENSION && img.height <= MAX_DIMENSION;
     }
     return img.complete && (img.naturalWidth || img.width) >= MIN_DIMENSION;
-  }  function canvasToDataURL(canvas) {
+  }
+  function canvasToDataURL(canvas) {
     if (!canvas || !canvas.width || !canvas.height) return null;
     if (canvas.width > MAX_DIMENSION || canvas.height > MAX_DIMENSION) return null;
     
@@ -22,7 +24,8 @@
       console.error("[OrionTexture] Failed to convert canvas:", e);
       return null;
     }
-  }  function preloadImage(src, key) {
+  }
+  function preloadImage(src, key) {
     return new Promise(function(resolve, reject) {
       var cacheKey = key || src;
       if (textureCache[cacheKey]) {
@@ -94,9 +97,11 @@
     });
   }
 
-  var STATIC_PIXEL = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";  function getIcon(key) {
+  var STATIC_PIXEL = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+  function getIcon(key) {
     return textureCache[key] || textureCache['fallback'] || STATIC_PIXEL;
-  }  function assignBillboardImage(target, imageSource) {
+  }
+  function assignBillboardImage(target, imageSource) {
     if (!target) return false;
     
     var billboard = target.billboard || target;
@@ -130,7 +135,8 @@
     
     billboard.image = getIcon('fallback');
     return false;
-  }  function createSafeCanvas(width, height) {
+  }
+  function createSafeCanvas(width, height) {
     if (width <= 0 || height <= 0) return null;
     var canvas = document.createElement("canvas");
     canvas.width = width;
@@ -149,7 +155,7 @@
       getIcon: getIcon,
       preloadImage: preloadImage,
       assignBillboardImage: assignBillboardImage,
-      safeSetBillboardImage: assignBillboardImage, // Alias
+      safeSetBillboardImage: assignBillboardImage,
       createSafeCanvas: createSafeCanvas,
       canvasToDataURL: canvasToDataURL,
       validateImage: validateImage,

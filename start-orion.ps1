@@ -33,7 +33,6 @@ function Test-OrionServer {
   }
 }
 
-# FIND AVAILABLE PORT OR REUSE EXISTING ORION INSTANCE
 
 while (Get-NetTCPConnection -LocalPort $selectedPort -ErrorAction SilentlyContinue) {
 
@@ -56,7 +55,6 @@ while (Get-NetTCPConnection -LocalPort $selectedPort -ErrorAction SilentlyContin
 
 }
 
-# FIND PYTHON
 
 $pythonCommand = Get-Command python -ErrorAction SilentlyContinue
 $pythonArgs = @("orion_server.py", "$selectedPort")
@@ -74,14 +72,12 @@ if (-not $pythonCommand) {
 
 }
 
-# LOG FILES
 
 $outLog = Join-Path $root "server.out.log"
 $errLog = Join-Path $root "server.err.log"
 
 $url = "http://127.0.0.1:$selectedPort/"
 
-# CLEAN OLD LOGS
 
 Remove-Item $outLog -ErrorAction SilentlyContinue
 Remove-Item $errLog -ErrorAction SilentlyContinue
@@ -91,7 +87,6 @@ Write-Host "Starting Project Orion..." -ForegroundColor Cyan
 Write-Host "Port: $selectedPort" -ForegroundColor DarkGray
 Write-Host ""
 
-# START SERVER
 
 $process = Start-Process `
   -FilePath $pythonCommand.Source `
@@ -102,7 +97,6 @@ $process = Start-Process `
   -RedirectStandardError $errLog `
   -PassThru
 
-# WAIT FOR SERVER
 
 $started = $false
 
@@ -127,13 +121,11 @@ for ($attempt = 1; $attempt -le 30; $attempt++) {
   }
   catch {
 
-    # keep waiting
 
   }
 
 }
 
-# FAILED STARTUP
 
 if (-not $started) {
 
@@ -150,7 +142,6 @@ if (-not $started) {
 
 }
 
-# OPEN BROWSER
 
 if (-not $NoOpen) {
 
@@ -158,7 +149,6 @@ if (-not $NoOpen) {
 
 }
 
-# SUCCESS
 
 Write-Host ""
 Write-Host "Project Orion is running." -ForegroundColor Green

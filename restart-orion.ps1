@@ -1,5 +1,3 @@
-# Restart Orion Server Script
-# This script stops any running Orion servers and starts a fresh instance
 
 param(
     [int]$Port = 4173
@@ -8,7 +6,6 @@ param(
 Write-Host "=== Orion Server Restart ===" -ForegroundColor Cyan
 Write-Host ""
 
-# Stop any Python processes listening on Orion ports
 Write-Host "Stopping existing Orion servers..." -ForegroundColor Yellow
 
 $connections = Get-NetTCPConnection -LocalPort 4173,4174 -ErrorAction SilentlyContinue
@@ -24,10 +21,8 @@ foreach ($conn in $connections) {
     }
 }
 
-# Wait a moment for ports to be released
 Start-Sleep -Seconds 2
 
-# Check if ports are now free
 $stillUsed = Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue
 if ($stillUsed) {
     Write-Host ""
@@ -39,7 +34,6 @@ if ($stillUsed) {
 Write-Host ""
 Write-Host "Starting Orion server on port $Port..." -ForegroundColor Yellow
 
-# Start the server
 $pythonPath = (Get-Command python -ErrorAction SilentlyContinue).Source
 if (-not $pythonPath) {
     Write-Host "Error: Python not found in PATH" -ForegroundColor Red
@@ -49,13 +43,10 @@ if (-not $pythonPath) {
 Write-Host "  Using Python: $pythonPath" -ForegroundColor Gray
 Write-Host ""
 
-# Start the server in a new window
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "python orion_server.py $Port"
 
-# Wait a moment for server to start
 Start-Sleep -Seconds 3
 
-# Check if server started successfully
 $serverRunning = Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue
 if ($serverRunning) {
     Write-Host "✓ Orion server started successfully on port $Port" -ForegroundColor Green

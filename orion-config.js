@@ -3,7 +3,8 @@
 
   var Orion = window.Orion || {};
   Orion.Config = {};
-  var staticHost = !/^(localhost|127\.0\.0\.1|\[::1\]|::1)$/i.test(window.location.hostname || "");
+  var staticHost = new URLSearchParams(window.location.search || "").get("orionStatic") === "1" ||
+    !/^(localhost|127\.0\.0\.1|\[::1\]|::1)$/i.test(window.location.hostname || "");
   var gibsRoot = staticHost
     ? "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best"
     : "/gibs/wmts/epsg3857/best";

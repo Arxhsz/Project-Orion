@@ -115,9 +115,9 @@ CSP_HEADER = (
     "script-src-elem 'self' blob: https://cdn.jsdelivr.net 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'; "
     "script-src-attr 'unsafe-inline'; "
     "style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; "
-    "img-src 'self' data: blob: https://cdn.jsdelivr.net https://gibs.earthdata.nasa.gov https://server.arcgisonline.com https://images-dim.divas.cloud https://*.divas.cloud https://*.divas.cloud:8200 https://images.unsplash.com; "
+    "img-src 'self' data: blob: https://cdn.jsdelivr.net https://gibs.earthdata.nasa.gov https://server.arcgisonline.com https://tile.openstreetmap.org https://tilecache.rainviewer.com https://tiles.zoom.earth https://images-dim.divas.cloud https://*.divas.cloud https://*.divas.cloud:8200 https://images.unsplash.com; "
     "media-src 'self' blob: https://divas.cloud https://*.divas.cloud https://*.divas.cloud:8200; "
-    "connect-src 'self' data: https://cdn.jsdelivr.net https://gibs.earthdata.nasa.gov https://server.arcgisonline.com https://nominatim.openstreetmap.org https://fl511.com https://divas.cloud https://*.divas.cloud https://*.divas.cloud:8200 https://data.seattle.gov https://data.cityofnewyork.us; "
+    "connect-src 'self' data: https://cdn.jsdelivr.net https://gibs.earthdata.nasa.gov https://server.arcgisonline.com https://tile.openstreetmap.org https://tilecache.rainviewer.com https://api.rainviewer.com https://tiles.zoom.earth https://raw.githubusercontent.com https://nominatim.openstreetmap.org https://fl511.com https://divas.cloud https://*.divas.cloud https://*.divas.cloud:8200 https://data.seattle.gov https://data.cityofnewyork.us; "
     "worker-src 'self' blob: data: https://cdn.jsdelivr.net; "
     "child-src blob:; "
     "font-src 'self' data: https://cdn.jsdelivr.net; "
@@ -531,7 +531,6 @@ def normalize_fl511_camera(feature):
 
 
 def normalize_seattle_camera(feature):
-    """Normalize Seattle DOT camera data"""
     try:
         camera_id = str(feature.get("cameraid", ""))
         lat = parse_float(feature.get("latitude"))
@@ -570,7 +569,6 @@ def normalize_seattle_camera(feature):
 
 
 def normalize_nyc_camera(feature):
-    """Normalize NYC DOT camera data"""
     try:
         camera_id = str(feature.get("camera_id", ""))
         lat = parse_float(feature.get("latitude"))
@@ -1231,7 +1229,6 @@ def submarine_cables_payload(force=False):
 
 
 def ticketmaster_events_payload(force=False):
-    """Live public events from Ticketmaster Discovery (requires free API key in env)."""
     cache_key = "ticketmaster:discovery-us"
     cached = FEED_CACHE.get(cache_key)
     if not force and cached and time.time() - cached["timestamp"] < 300:
@@ -1493,7 +1490,6 @@ def augment_layer(layer, target_count, factory):
 
 
 def build_expanded_intel_layers():
-    """Optional denser demo data. Off by default so emergency/events stay API-only."""
     if os.environ.get("ORION_SYNTHETIC_INTEL", "").lower() not in ("1", "true", "yes"):
         for layer_payload in STATIC_INTEL_LAYERS.values():
             layer_payload.setdefault("generated", generated_at())
@@ -1665,7 +1661,6 @@ build_expanded_intel_layers()
 
 
 def static_intel_payload(layer, mode="fallback-static", error=None):
-    """Return the registered Orion layer dataset as a clearly marked degraded fallback."""
     source_payload = STATIC_INTEL_LAYERS.get(layer)
     if not source_payload:
         return None
@@ -1899,7 +1894,6 @@ class OrionHandler(SimpleHTTPRequestHandler):
         super().end_headers()
 
     def gibs_path_candidates(self, target_path):
-        """Try earlier dates when NASA has not published the requested day yet."""
         candidates = [target_path]
         match = GIBS_DATED_PATH_RE.search(target_path)
         if match:
@@ -2016,7 +2010,7 @@ class OrionHandler(SimpleHTTPRequestHandler):
         self.write_payload(TRANSPARENT_PNG)
 
     def proxy_osm(self):
-        tile_path = self.path[len("/osm"):]  # e.g. /12/2048/1365.png
+        tile_path = self.path[len("/osm"):]
 
         if "?" in tile_path:
             tile_path = tile_path.split("?")[0]
@@ -2440,7 +2434,6 @@ class OrionHandler(SimpleHTTPRequestHandler):
         self.write_payload(payload)
     
     def sanitize_geojson_coordinates(self, geojson):
-        """Recursively validate and sanitize GeoJSON coordinates"""
         if not isinstance(geojson, dict):
             return geojson
         
@@ -2466,7 +2459,6 @@ class OrionHandler(SimpleHTTPRequestHandler):
         return geojson
     
     def sanitize_geometry(self, geometry):
-        """Sanitize geometry coordinates"""
         if not isinstance(geometry, dict):
             return None
         
@@ -2488,7 +2480,7 @@ class OrionHandler(SimpleHTTPRequestHandler):
                 invalid_count = len(coordinates) - len(valid_coords)
                 if invalid_count > 0:
                     print(f"Filtered {invalid_count} invalid coordinates from {geom_type}")
-                if len(valid_coords) >= 2:  # LineString needs at least 2 points
+                if len(valid_coords) >= 2:
                     geometry["coordinates"] = valid_coords
                     return geometry
                 print(f"Filtered entire {geom_type}: insufficient valid points")
@@ -2501,7 +2493,7 @@ class OrionHandler(SimpleHTTPRequestHandler):
                     invalid_count = len(ring) - len(valid_coords)
                     if invalid_count > 0:
                         print(f"Filtered {invalid_count} invalid coordinates from Polygon ring {ring_idx}")
-                    if len(valid_coords) >= 4:  # Polygon ring needs at least 4 points (closed)
+                    if len(valid_coords) >= 4:
                         if valid_coords[0] != valid_coords[-1]:
                             valid_coords.append(valid_coords[0])
                         valid_rings.append(valid_coords)
@@ -2560,7 +2552,6 @@ class OrionHandler(SimpleHTTPRequestHandler):
         return geometry
     
     def is_valid_coordinate_pair(self, coord):
-        """Check if a coordinate pair [lon, lat] is valid"""
         try:
             if not isinstance(coord, (list, tuple)) or len(coord) < 2:
                 return False
@@ -3140,7 +3131,6 @@ class OrionHandler(SimpleHTTPRequestHandler):
         return "\n".join(filtered) + ("\n" if filtered else "")
 
     def proxy_cameras_metadata(self):
-        """Lightweight camera metadata endpoint for fast initial load."""
         if not CAMERANET_AVAILABLE:
             self.send_json({
                 "source": "CameraNet",
@@ -3159,7 +3149,7 @@ class OrionHandler(SimpleHTTPRequestHandler):
             try:
                 parts = [float(p) for p in bbox_str.split(",")]
                 if len(parts) == 4:
-                    bbox = tuple(parts)  # (west, south, east, north)
+                    bbox = tuple(parts)
             except ValueError:
                 pass
 
@@ -3185,7 +3175,7 @@ class OrionHandler(SimpleHTTPRequestHandler):
                     "provider": cam.get("provider"),
                     "name": cam.get("name", "Camera"),
                 }
-                for cam in cameras[:2000]  # Limit to 2000 cameras for initial load
+                for cam in cameras[:2000]
             ]
 
             payload = {
@@ -3217,7 +3207,6 @@ class OrionHandler(SimpleHTTPRequestHandler):
             }, cache_seconds=10)
 
     def proxy_cameras(self):
-        """CameraNet endpoint - returns region-filtered cameras from real providers."""
         if not CAMERANET_AVAILABLE:
             self.send_json({
                 "source": "CameraNet",
@@ -3238,7 +3227,7 @@ class OrionHandler(SimpleHTTPRequestHandler):
             try:
                 parts = [float(p) for p in bbox_str.split(",")]
                 if len(parts) == 4:
-                    bbox = tuple(parts)  # (west, south, east, north)
+                    bbox = tuple(parts)
             except ValueError:
                 pass
 
@@ -3303,7 +3292,6 @@ class OrionHandler(SimpleHTTPRequestHandler):
             }, cache_seconds=10)
 
     def proxy_camera_providers(self):
-        """Return available camera providers and their status"""
         if not CAMERANET_AVAILABLE:
             self.send_json({
                 "source": "CameraNet",
@@ -3327,7 +3315,6 @@ class OrionHandler(SimpleHTTPRequestHandler):
             })
 
     def refresh_camera_cache(self):
-        """Force CameraNet provider cache refresh."""
         if not CAMERANET_AVAILABLE:
             self.send_json({"source": "CameraNet", "mode": "error", "error": "CameraNet not available"}, status=503)
             return
@@ -3465,7 +3452,6 @@ class OrionHandler(SimpleHTTPRequestHandler):
         return ("\n".join(rewritten) + "\n").encode("utf-8")
 
     def proxy_camera_hls(self):
-        """Same-origin HLS proxy for FL511/Divas playlists and media segments."""
         parsed = urlparse(self.path)
         params = parse_qs(parsed.query)
         camera_id = (params.get("id") or params.get("cid") or [""])[0]
@@ -3564,7 +3550,6 @@ class OrionHandler(SimpleHTTPRequestHandler):
             self.write_payload(payload)
 
     def resolve_camera_stream(self):
-        """Resolve FL511 tokenized HLS URL only after the user selects a camera."""
         parsed = urlparse(self.path)
         params = parse_qs(parsed.query)
         provider = "fl511"

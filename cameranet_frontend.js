@@ -65,6 +65,10 @@
     return Number.isFinite(number) ? number.toFixed(5) : "--";
   }
 
+  function isStaticHostMode() {
+    return !!(Orion && Orion.Config && Orion.Config.Constants && Orion.Config.Constants.STATIC_HOST);
+  }
+
   function disposePlayback() {
     if (cameraNetState.currentHls) {
       try {
@@ -248,9 +252,11 @@
     var bboxStr = [bbox.west, bbox.south, bbox.east, bbox.north].map(function (value) {
       return value.toFixed(5);
     }).join(",");
-    var url = "/live/cameras?provider=" + encodeURIComponent(CAMERA_CONFIG.provider) +
-      "&bbox=" + encodeURIComponent(bboxStr) +
-      "&limit=" + metadataLimit(height);
+    var url = isStaticHostMode()
+      ? "pages-data/live/cameras.json"
+      : "/live/cameras?provider=" + encodeURIComponent(CAMERA_CONFIG.provider) +
+        "&bbox=" + encodeURIComponent(bboxStr) +
+        "&limit=" + metadataLimit(height);
 
     if (key && cameraNetState.activeFetchKey === key && cameraNetState.activeFetchPromise) {
       return cameraNetState.activeFetchPromise;
@@ -756,7 +762,7 @@
       return;
     }
 
-    var snapshotUrl = camera.snapshot_url || (camera.id ? "/camera/snapshot?id=" + encodeURIComponent(camera.id) : "");
+    var snapshotUrl = camera.snapshot_url || (!isStaticHostMode() && camera.id ? "/camera/snapshot?id=" + encodeURIComponent(camera.id) : "");
     if (!snapshotUrl) {
       frame.innerHTML = "<div class='camera-feed-message'>Snapshot unavailable</div>";
       return;

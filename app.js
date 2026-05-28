@@ -2848,11 +2848,21 @@ void main() {
 
     showToast("Loading border data...");
 
+    var boundaryUrls = isStaticHostMode()
+      ? [
+        "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson",
+        "https://raw.githubusercontent.com/PublicaMundi/MappingAPI/master/data/geojson/us-states.json"
+      ]
+      : [
+        "/geo/countries?v=20260515-validated",
+        "/geo/us-states?v=20260515-validated"
+      ];
+
     boundaryLoadPromise = Promise.all([
-      fetch("/geo/countries?v=20260515-validated")
+      fetch(boundaryUrls[0])
         .then(function(response) { return response.json(); })
         .then(function(geojson) { return validateAndCleanGeoJSON(geojson, "countries"); }),
-      fetch("/geo/us-states?v=20260515-validated")
+      fetch(boundaryUrls[1])
         .then(function(response) { return response.json(); })
         .then(function(geojson) { return validateAndCleanGeoJSON(geojson, "us-states"); })
     ]).then(function (cleanedGeoJSONs) {
@@ -4472,13 +4482,7 @@ void main() {
       return;
     }
 
-    fetch(endpoint, { headers: { Accept: "application/json" } })
-      .then(function (response) {
-        if (!response.ok) {
-          throw new Error("HTTP " + response.status);
-        }
-        return response.json();
-      })
+    fetchJsonEndpoint(endpoint)
       .then(function (payload) {
         if (!layerStateManager.isLayerEnabled(layerId)) {
           console.log('[RefreshPlatform] Layer', layerId, 'disabled during fetch, ignoring payload');
@@ -5065,7 +5069,7 @@ void main() {
     }
 
     weatherRadarLayer = viewer.imageryLayers.addImageryProvider(new Cesium.UrlTemplateImageryProvider({
-      url: "/rainviewer" + frame.path + "/256/{z}/{x}/{y}/2/1_1.png",
+      url: (isStaticHostMode() ? "https://tilecache.rainviewer.com" : "/rainviewer") + frame.path + "/256/{z}/{x}/{y}/2/1_1.png",
       tilingScheme: new Cesium.WebMercatorTilingScheme(),
       minimumLevel: 0,
       maximumLevel: 10,
@@ -5119,14 +5123,7 @@ void main() {
     });
     updatePlatformTelemetry();
 
-    fetch(platformLayerDefinitions.weatherRadar.endpoint, { headers: { Accept: "application/json" } })
-      .then(function (response) {
-        if (!response.ok) {
-          throw new Error("Weather radar unavailable");
-        }
-
-        return response.json();
-      })
+    fetchJsonEndpoint(platformLayerDefinitions.weatherRadar.endpoint)
       .then(function (payload) {
         var frames = payload.frames || [];
         var frame = frames.length ? frames[frames.length - 1] : payload.latest;
@@ -5552,6 +5549,50 @@ void main() {
     return !!(Orion.Config.Constants && Orion.Config.Constants.STATIC_HOST);
   }
 
+  function staticDataUrlForEndpoint(endpoint) {
+    if (!isStaticHostMode() || !endpoint) {
+      return endpoint;
+    }
+
+    var parsed = new URL(endpoint, window.location.origin);
+    var path = parsed.pathname;
+    var params = parsed.searchParams;
+
+    if (path === "/live/satellites") {
+      return "pages-data/live/satellites/" + encodeURIComponent(params.get("group") || "stations") + ".json";
+    }
+    if (path === "/live/earthquakes") {
+      return "pages-data/live/earthquakes/" + encodeURIComponent(params.get("feed") || state.earthquakeFeed || "2.5_day") + ".json";
+    }
+    if (path === "/live/weather/radar") {
+      return "pages-data/live/weather/radar.json";
+    }
+    if (path === "/live/wildfires") {
+      return "pages-data/live/wildfires.json";
+    }
+    if (path === "/live/aircraft") {
+      return "pages-data/live/aircraft.json";
+    }
+    if (path === "/live/cameras") {
+      return "pages-data/live/cameras.json";
+    }
+    if (path === "/live/intel") {
+      return "pages-data/live/intel/" + encodeURIComponent(params.get("layer") || "unknown") + ".json";
+    }
+
+    return endpoint;
+  }
+
+  function fetchJsonEndpoint(endpoint) {
+    return fetch(staticDataUrlForEndpoint(endpoint), { headers: { Accept: "application/json" } })
+      .then(function (response) {
+        if (!response.ok) {
+          throw new Error("HTTP " + response.status);
+        }
+        return response.json();
+      });
+  }
+
   function zoomEarthTileBase() {
     return isStaticHostMode() ? "https://tiles.zoom.earth" : "/zoom-earth";
   }
@@ -5646,70 +5687,18 @@ void main() {
         });
     }
 
-    if (mode === "radar") {
-      return fetch("https://tiles.zoom.earth/times/radar.json", { headers: { Accept: "application/json" } })
-        .then(function (response) {
-          if (!response.ok) {
-            throw new Error("Zoom Earth radar unavailable");
-          }
-          return response.json();
-        })
-        .then(function (timesPayload) {
-          var frames = selectZoomEarthRadarClient(timesPayload);
-          var latest = frames[frames.length - 1] || null;
-          return {
-            source: "Zoom Earth",
-            provider: "Zoom Earth radar",
-            mode: "live",
-            weather_mode: "radar",
-            generated: Math.floor(Date.now() / 1000),
-            refresh_seconds: 600,
-            count: frames.length,
-            latest: latest,
-            frames: frames,
-            tile_template: latest ? latest.path : null,
-            fallback: false
-          };
-        });
-    }
-
-    var map = {
-      precipitation: ["precipitation", "surface"],
-      wind: ["wind-speed", "10m"],
-      temperature: ["temperature", "2m"],
-      humidity: ["humidity", "2m"],
-      pressure: ["pressure", "msl"]
-    };
-    var mapping = map[config.endpointMode] || map.wind;
-
-    return fetch("https://tiles.zoom.earth/times/icon.json", { headers: { Accept: "application/json" } })
+    return fetch("pages-data/live/weather/zoom-" + encodeURIComponent(mode) + ".json", { headers: { Accept: "application/json" } })
       .then(function (response) {
         if (!response.ok) {
-          throw new Error("Zoom Earth model unavailable");
+          throw new Error("Zoom Earth pages snapshot unavailable");
         }
         return response.json();
       })
-      .then(function (timesPayload) {
-        var frame = selectZoomEarthForecastClient(timesPayload, mapping[0], mapping[1]);
-        if (!frame) {
-          throw new Error("No Zoom Earth weather frame");
+      .then(function (payload) {
+        if (!payload || !payload.tile_template) {
+          throw new Error("No Zoom Earth weather snapshot");
         }
-
-        return {
-          source: "Zoom Earth",
-          provider: "DWD ICON via Zoom Earth",
-          mode: "live",
-          weather_mode: mode,
-          zoom_layer: mapping[0],
-          level: mapping[1],
-          generated: Math.floor(Date.now() / 1000),
-          refresh_seconds: 600,
-          count: 1,
-          latest: frame,
-          frames: [frame],
-          tile_template: frame.path,
-          fallback: false
-        };
+        return payload;
       });
   }
 
@@ -6770,8 +6759,9 @@ void main() {
     ].join(" / ");
 
     var cameraId = encodeURIComponent(camera.id || "");
-    var snapshotUrl = camera.proxy_snapshot_url || camera.snapshot_url || (cameraId ? "/camera/snapshot?id=" + cameraId : "");
-    var streamUrl = camera.proxy_stream_url || camera.stream_url || (cameraId ? "/camera/mjpeg?id=" + cameraId : "");
+    var staticMode = isStaticHostMode();
+    var snapshotUrl = camera.proxy_snapshot_url || camera.snapshot_url || (!staticMode && cameraId ? "/camera/snapshot?id=" + cameraId : "");
+    var streamUrl = camera.proxy_stream_url || camera.stream_url || (!staticMode && cameraId ? "/camera/mjpeg?id=" + cameraId : "");
     var streamType = String(camera.stream_type || "").toUpperCase();
     var hasUpstream = Boolean(camera.upstream_stream_url || camera.upstream_snapshot_url);
     var alt = escapeHtml(camera.name || "Camera feed");
@@ -7855,14 +7845,7 @@ void main() {
     liveAircraftFetchPending = true;
     lastLiveAircraftFetch = now;
 
-    fetch("/live/aircraft")
-      .then(function (response) {
-        if (!response.ok) {
-          throw new Error("Aircraft feed unavailable");
-        }
-
-        return response.json();
-      })
+    fetchJsonEndpoint("/live/aircraft")
       .then(applyLiveAircraftData)
       .catch(function () {
         liveAircraftActive = false;
@@ -8392,7 +8375,9 @@ void main() {
     }
 
     streetDetailLayer = viewer.imageryLayers.addImageryProvider(new Cesium.UrlTemplateImageryProvider({
-      url: "/esri/tile/{z}/{y}/{x}",
+      url: isStaticHostMode()
+        ? "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+        : "/esri/tile/{z}/{y}/{x}",
       minimumLevel: 0,
       maximumLevel: 19,
       credit: "Esri World Imagery",
@@ -8419,7 +8404,9 @@ void main() {
     }
 
     streetRoadsLayer = viewer.imageryLayers.addImageryProvider(new Cesium.UrlTemplateImageryProvider({
-      url: "/osm/{z}/{x}/{y}.png",
+      url: isStaticHostMode()
+        ? "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+        : "/osm/{z}/{x}/{y}.png",
       minimumLevel: 0,
       maximumLevel: 19,
       credit: "(c) OpenStreetMap contributors"

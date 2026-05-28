@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/orion-logo.svg" alt="Project Orion" width="760">
+  <img src="assets/orion-logo.svg" alt="Project Orion" width="520" style="max-width: 100%; height: auto;">
 </p>
 
 # Project Orion
@@ -41,9 +41,15 @@ If that port is busy, the launcher selects another local port.
 
 ## GitHub Pages
 
+The hosted site runs at:
+
+```text
+https://arxhsz.github.io/Project-Orion/
+```
+
 The frontend is static-compatible. When hosted from GitHub Pages, Orion automatically switches NASA GIBS imagery roots from the local `/gibs` proxy to the public NASA tile service.
 
-Backend-only providers still require the local Python server or a deployed API proxy. Static mode is intended for the public globe, satellite imagery, Zoom Earth-style map layers where CORS is available, UI systems, timeline playback, saved locations, and frontend visualization.
+The GitHub Pages workflow builds same-origin static JSON snapshots for public data feeds so the hosted build can run satellites, aircraft, cameras, earthquakes, radar, weather maps, wildfires, and intel overlays without a local Python server. Local server mode remains available for live proxying, CameraNet stream resolution, and provider workflows that require same-origin request handling.
 
 ## Repository Layout
 

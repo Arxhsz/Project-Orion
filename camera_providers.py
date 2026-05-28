@@ -92,7 +92,6 @@ def proxied_snapshot(camera_id, upstream_url):
 
 
 class CameraProvider:
-    """Base class for camera providers"""
     
     def __init__(self):
         self.name = "Unknown"
@@ -101,7 +100,7 @@ class CameraProvider:
         self.supports_bbox = False
         self.state_bbox = None
         self.cache = {"timestamp": 0, "data": []}
-        self.cache_ttl = 600  # 10 minutes
+        self.cache_ttl = 600
         self.health = "unknown"
         self.last_error = None
         self.last_success = None
@@ -111,15 +110,12 @@ class CameraProvider:
         self.stale_ttl = 24 * 60 * 60
     
     def fetch_cameras(self, bbox=None):
-        """Fetch raw camera data from provider"""
         raise NotImplementedError
     
     def normalize_camera(self, raw_camera):
-        """Convert provider format to Orion schema"""
         raise NotImplementedError
     
     def get_cameras(self, bbox=None):
-        """Get normalized cameras with caching"""
         if bbox and self.state_bbox and not state_bbox_intersects(bbox, self.state_bbox):
             return []
 
@@ -157,7 +153,6 @@ class CameraProvider:
 
 
 class FL511Provider(CameraProvider):
-    """Florida 511 Traffic Cameras - 1000+ cameras with HLS live streams"""
     
     def __init__(self):
         super().__init__()
@@ -167,10 +162,9 @@ class FL511Provider(CameraProvider):
         self.supports_bbox = False
         self.state_bbox = (-87.8, 24.1, -79.5, 31.2)
         self.layer_url = "https://services.arcgis.com/3wFbqsFPLeKqOlIK/ArcGIS/rest/services/FL511_Traffic_Cameras/FeatureServer/0"
-        self.cache_ttl = 300  # 5 minutes cache
+        self.cache_ttl = 300
     
     def fetch_cameras(self, bbox=None):
-        """Fetch statewide FL511 camera metadata from the public FeatureServer."""
         cameras = []
         offset = 0
         page_size = 2000
@@ -201,7 +195,6 @@ class FL511Provider(CameraProvider):
         return cameras
     
     def normalize_camera(self, raw):
-        """Normalize FL511 camera to Orion schema"""
         try:
             attrs = raw.get("attributes") or {}
             geom = raw.get("geometry") or {}
@@ -248,7 +241,6 @@ class FL511Provider(CameraProvider):
 
 
 class WSDOTProvider(CameraProvider):
-    """Washington State DOT Cameras - Public API"""
     
     def __init__(self):
         super().__init__()
@@ -292,7 +284,6 @@ class WSDOTProvider(CameraProvider):
 
 
 class NYCDOTProvider(CameraProvider):
-    """NYC DOT Traffic Cameras - Public feed"""
     
     def __init__(self):
         super().__init__()
@@ -312,7 +303,6 @@ class NYCDOTProvider(CameraProvider):
             return self._get_fallback_nyc_cameras()
     
     def _get_fallback_nyc_cameras(self):
-        """Fallback NYC camera locations"""
         return [
             {"id": "1", "name": "Brooklyn Bridge", "lat": 40.7061, "lon": -73.9969},
             {"id": "2", "name": "Manhattan Bridge", "lat": 40.7072, "lon": -73.9904},
@@ -352,7 +342,6 @@ class NYCDOTProvider(CameraProvider):
 
 
 class CaliforniaDOTProvider(CameraProvider):
-    """California DOT (Caltrans) Cameras - Public API"""
     
     def __init__(self):
         super().__init__()
@@ -427,7 +416,6 @@ class CaliforniaDOTProvider(CameraProvider):
 
 
 class TexasDOTProvider(CameraProvider):
-    """Texas DOT Cameras - Public API"""
     
     def __init__(self):
         super().__init__()
@@ -441,7 +429,6 @@ class TexasDOTProvider(CameraProvider):
         return self._get_fallback_texas()
     
     def _get_fallback_texas(self):
-        """Fallback Texas cameras on major highways"""
         return [
             {"id": "1", "name": "I-35 @ Austin Downtown", "lat": 30.2672, "lon": -97.7431},
             {"id": "2", "name": "I-10 @ Houston Downtown", "lat": 29.7604, "lon": -95.3698},
@@ -479,7 +466,6 @@ class TexasDOTProvider(CameraProvider):
 
 
 class GeorgiaDOTProvider(CameraProvider):
-    """Georgia DOT (NaviGAtor) Cameras - Public API"""
     
     def __init__(self):
         super().__init__()
@@ -532,7 +518,6 @@ class GeorgiaDOTProvider(CameraProvider):
 
 
 class ChicagoOpenDataProvider(CameraProvider):
-    """Chicago Traffic Cameras - Open Data Portal"""
     def __init__(self):
         super().__init__()
         self.name = "Chicago Open Data"
@@ -578,7 +563,6 @@ class ChicagoOpenDataProvider(CameraProvider):
 
 
 class IowaDOTProvider(CameraProvider):
-    """Iowa DOT Cameras - ArcGIS Service"""
     def __init__(self):
         super().__init__()
         self.name = "Iowa DOT"
@@ -626,7 +610,6 @@ class IowaDOTProvider(CameraProvider):
 
 
 class MarylandDOTProvider(CameraProvider):
-    """Maryland DOT Cameras"""
     def __init__(self):
         super().__init__()
         self.name = "Maryland DOT"
@@ -675,7 +658,6 @@ class MarylandDOTProvider(CameraProvider):
 
 
 class Iteris511Provider(CameraProvider):
-    """Generic provider for Iteris-style 511 sites that expose List/GetData/Cameras."""
 
     def __init__(self, provider_id, name, state_code, base_url, state_bbox, use_map_icons=False):
         super().__init__()
@@ -837,7 +819,6 @@ class Iteris511Provider(CameraProvider):
 
 
 class Colorado511Provider(CameraProvider):
-    """Colorado DOT Cameras"""
     def __init__(self):
         super().__init__()
         self.name = "Colorado 511"
@@ -852,7 +833,6 @@ class Colorado511Provider(CameraProvider):
 
 
 class Arizona511Provider(CameraProvider):
-    """Arizona DOT Cameras"""
     def __init__(self):
         super().__init__()
         self.name = "Arizona 511"
@@ -893,7 +873,6 @@ class Arizona511Provider(CameraProvider):
 
 
 class Nevada511Provider(CameraProvider):
-    """Nevada DOT Cameras"""
     def __init__(self):
         super().__init__()
         self.name = "Nevada 511"
@@ -934,7 +913,6 @@ class Nevada511Provider(CameraProvider):
 
 
 class Utah511Provider(CameraProvider):
-    """Utah DOT Cameras"""
     def __init__(self):
         super().__init__()
         self.name = "Utah 511"
@@ -975,7 +953,6 @@ class Utah511Provider(CameraProvider):
 
 
 class Oregon511Provider(CameraProvider):
-    """Oregon DOT Cameras"""
     def __init__(self):
         super().__init__()
         self.name = "Oregon 511"
@@ -1024,7 +1001,6 @@ class Oregon511Provider(CameraProvider):
 
 
 class NorthCarolinaDOTProvider(CameraProvider):
-    """North Carolina DOT public traffic cameras."""
     def __init__(self):
         super().__init__()
         self.name = "NCDOT"
@@ -1087,7 +1063,6 @@ class NorthCarolinaDOTProvider(CameraProvider):
 
 
 class MichiganDOTProvider(CameraProvider):
-    """Michigan Mi Drive camera snapshots."""
     def __init__(self):
         super().__init__()
         self.name = "Michigan Mi Drive"
@@ -1139,7 +1114,6 @@ class MichiganDOTProvider(CameraProvider):
 
 
 class IowaDOTLiveProvider(CameraProvider):
-    """Iowa DOT Traffic Cameras FeatureServer."""
     def __init__(self):
         super().__init__()
         self.name = "Iowa DOT"
@@ -1198,7 +1172,6 @@ class IowaDOTLiveProvider(CameraProvider):
 
 
 class IllinoisDOTProvider(CameraProvider):
-    """Illinois DOT / Travel Midwest public camera layer."""
     def __init__(self):
         super().__init__()
         self.name = "Illinois DOT"
@@ -1255,7 +1228,6 @@ class IllinoisDOTProvider(CameraProvider):
 
 
 class SeattleDOTProvider(CameraProvider):
-    """Seattle SDOT public ArcGIS camera layer."""
     def __init__(self):
         super().__init__()
         self.name = "Seattle DOT"
@@ -1358,7 +1330,6 @@ def _build_us_fill_cameras():
 
 
 class USCoverageFillProvider(CameraProvider):
-    """In-state seed points so the map never looks empty in states without live DOT adapters."""
 
     def __init__(self):
         super().__init__()
@@ -1407,7 +1378,6 @@ CAMERA_PROVIDERS = {
 
 
 def is_valid_coordinate(lat, lon):
-    """Validate that coordinates are finite numbers within valid ranges"""
     try:
         lat_float = float(lat)
         lon_float = float(lon)
@@ -1426,7 +1396,6 @@ def is_valid_coordinate(lat, lon):
 
 
 def get_all_cameras(bbox=None, provider_filter=None, state_filter=None):
-    """Get cameras from all active providers"""
     all_cameras = []
     providers_used = []
     
@@ -1489,7 +1458,6 @@ def get_all_cameras(bbox=None, provider_filter=None, state_filter=None):
 
 
 def get_provider_status():
-    """Get status of all providers"""
     status = []
     for provider_id, provider in CAMERA_PROVIDERS.items():
         status.append({
@@ -1512,7 +1480,6 @@ def get_provider_status():
 
 
 def resolve_camera_provider_stream(camera_id):
-    """Resolve provider-specific camera stream/snapshot metadata on demand."""
     normalized_id = str(camera_id or "").strip()
     if "-" not in normalized_id:
         return None
