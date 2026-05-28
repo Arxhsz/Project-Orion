@@ -3,7 +3,10 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 import json
+import os
 import time
+
+os.environ.setdefault("ORION_SYNTHETIC_INTEL", "1")
 
 from camera_providers import get_all_cameras
 import orion_server
@@ -375,8 +378,6 @@ def build_intel():
         "emergencyIncidents": orion_server.nws_alerts_payload,
         "volumetricWeather": orion_server.nws_weather_volume_payload,
         "lightning": orion_server.nws_lightning_payload,
-        "socialEvents": orion_server.ticketmaster_events_payload,
-        "traffic": orion_server.fl511_congestion_payload,
         "underseaCables": orion_server.submarine_cables_payload,
     }
     layers = [
@@ -389,16 +390,15 @@ def build_intel():
         "emergencyIncidents",
         "volumetricWeather",
         "lightning",
-        "socialEvents",
         "airCorridors",
-        "traffic",
     ]
     for layer in layers:
         try:
             if layer in live_functions:
                 payload = live_functions[layer](force=True)
                 if not payload.get("count"):
-                    payload = orion_server.static_intel_payload(layer, mode=payload.get("mode") or "pages-fallback", error=payload.get("error"))
+                    fallback_mode = "pages-snapshot" if not payload.get("error") else (payload.get("mode") or "pages-fallback")
+                    payload = orion_server.static_intel_payload(layer, mode=fallback_mode, error=payload.get("error"))
             else:
                 payload = orion_server.static_intel_payload(layer, mode="pages-snapshot")
         except Exception as error:

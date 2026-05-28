@@ -1670,8 +1670,9 @@ def static_intel_payload(layer, mode="fallback-static", error=None):
     payload["generated"] = int(time.time())
     payload["count"] = len(features)
     payload["mode"] = mode
-    payload["provider_health"] = "degraded"
-    payload["fallback"] = True
+    pages_snapshot = str(mode).startswith("pages-") and not error
+    payload["provider_health"] = "online" if pages_snapshot else "degraded"
+    payload["fallback"] = False if pages_snapshot else True
     if error:
         payload["error"] = error
     return payload

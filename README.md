@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/orion-logo.svg" alt="Project Orion" width="520" style="max-width: 100%; height: auto;">
+  <img src="assets/orion-logo.svg" alt="Project Orion" width="360" style="max-width: 100%; height: auto;">
 </p>
 
 # Project Orion
@@ -16,7 +16,7 @@ Orion is designed as an operational globe rather than a static map. The applicat
 - Zoom Earth-style weather map modes for radar, precipitation, wind, temperature, humidity, and pressure.
 - Smooth timeline playback with hourly and received-update stepping.
 - Live satellite and constellation layers using CelesTrak TLE data.
-- Aircraft, vessel, camera, weather, wildfire, earthquake, lightning, cyber, cable, airspace, power, RF, event, and traffic layer systems.
+- Aircraft, vessel, camera, weather, wildfire, earthquake, lightning, cyber, cable, airspace, power, and RF layer systems.
 - Selectable telemetry list with camera locking, free orbit, and unlock controls.
 - CameraNet architecture with provider adapters, clustering, and on-demand stream or snapshot loading.
 - Saved locations stored in the browser.

@@ -22,7 +22,7 @@
 
   Orion.Renderer.Maritime = {
     collection: null,
-    maxPoints: 8000,
+    maxPoints: 10000,
     
     init: function(viewer) {
       this.viewer = viewer;
@@ -44,7 +44,7 @@
       
       var lodVisible = 0;
       items.slice(0, this.maxPoints).forEach(function(item, index) {
-        if (height > 6000000) return; 
+        if (height > 12000000) return;
         
         var sample = (item.positions) ? Orion.Telemetry.Samplers.intel(item, time) : item;
         if (!sample || !Number.isFinite(sample.lon) || !Number.isFinite(sample.lat)) return;
@@ -90,7 +90,7 @@
       
       var lodVisible = 0;
       items.slice(0, this.maxPoints).forEach(function(item, index) {
-        if (height > 8000000) return; 
+        if (height > 12000000) return;
         
         var sample = Orion.Telemetry.Samplers.intel(item, time);
         if (!sample || !Number.isFinite(sample.lon) || !Number.isFinite(sample.lat)) return;
@@ -177,7 +177,7 @@
             disableDepthTestDistance: Number.POSITIVE_INFINITY
           });
 
-          if (selectedId && (selectedId === src + "::" + item.id)) {
+          if (selectedId && selectedId === platformEntityKey(src, item.id || item.name || index)) {
             self.renderTrajectory(item);
           }
         });

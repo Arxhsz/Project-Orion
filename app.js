@@ -12,6 +12,7 @@
   var GIBS_ROOT = Orion.Config.Constants.GIBS_ROOT;
   var EARTH_HOME = Orion.Config.Constants.EARTH_HOME;
   var SAVED_LOCATIONS_KEY = Orion.Config.Constants.SAVED_LOCATIONS_KEY;
+  var UPDATE_INTERVAL_MS = 10 * 60 * 1000;
 
   var layerDefinitions = Orion.Config.LayerDefinitions;
 
@@ -225,7 +226,7 @@
     radarOpacity: 0.44,
     radarAnimating: true,
     weatherMapMode: "satellite",
-    satelliteSource: "nasa-live",
+    satelliteSource: "public-geostat",
     orbitalDataset: "all",
     cleanEarth: false,
     intelSearch: "",
@@ -268,11 +269,8 @@
       emergencyIncidents: false,
       volumetricWeather: false,
       lightning: false,
-      socialEvents: false,
       airCorridors: false,
-      traffic: false,
-      cities3d: false,
-      soundscape: false
+      cities3d: false
     },
     tracking: {
       filter: "all",
@@ -325,11 +323,8 @@
       "platformEmergency",
       "platformWeatherVolume",
       "platformLightning",
-      "platformEvents",
       "platformAirCorridors",
-      "platformTraffic",
       "platformCities",
-      "platformSound",
       "scanModeSelect",
       "timelapseRecord",
       "timelapseStart",
@@ -461,6 +456,19 @@
     return (end.getTime() - start.getTime()) / MS_PER_HOUR;
   }
 
+  function updateStepsBetween(start, end) {
+    return Math.round((end.getTime() - start.getTime()) / UPDATE_INTERVAL_MS);
+  }
+
+  function timelineUpdateRangeMax() {
+    return Math.max(0, updateStepsBetween(minDate, maxDate));
+  }
+
+  function alignToUpdateStep(date) {
+    var step = clamp(updateStepsBetween(minDate, clampDate(date)), 0, timelineUpdateRangeMax());
+    return new Date(minDate.getTime() + step * UPDATE_INTERVAL_MS);
+  }
+
   function formatDate(date) {
     if (!isValidDate(date)) {
       return formatDate(latestStableGibsDate(new Date()));
@@ -470,7 +478,10 @@
   }
 
   function formatHour(date) {
-    return String(date.getUTCHours()).padStart(2, "0") + ":00";
+    return [
+      String(date.getUTCHours()).padStart(2, "0"),
+      String(date.getUTCMinutes()).padStart(2, "0")
+    ].join(":");
   }
 
   function formatUtcClock(date) {
@@ -496,6 +507,12 @@
 
   function readableLiveDateTime(date) {
     return readableDate(date) + " - " + formatUtcClock(date) + " UTC";
+  }
+
+  function timelineRefreshKey(date) {
+    return state && state.timelineMode === "updates"
+      ? formatDate(date) + "T" + formatHour(date)
+      : formatDate(date);
   }
 
   function buildTrackingCatalog(seedDefinitions) {
@@ -575,7 +592,7 @@
 
   function dateFromRange(inputValue) {
     if (state.timelineMode === "updates") {
-      return addDays(minDate, Number(inputValue));
+      return new Date(minDate.getTime() + Number(inputValue) * UPDATE_INTERVAL_MS);
     }
 
     return addHours(minDate, Number(inputValue));
@@ -583,7 +600,7 @@
 
   function rangeFromDate(date) {
     if (state.timelineMode === "updates") {
-      return daysBetween(minDate, date);
+      return updateStepsBetween(minDate, date);
     }
 
     return Number(hoursBetween(minDate, date).toFixed(2));
@@ -591,7 +608,7 @@
 
   function timelineRangeMax() {
     if (state.timelineMode === "updates") {
-      return daysBetween(minDate, maxDate);
+      return timelineUpdateRangeMax();
     }
 
     return Math.round(hoursBetween(minDate, maxDate));
@@ -599,7 +616,7 @@
 
   function addTimelineUnits(date, amount) {
     if (state.timelineMode === "updates") {
-      return addDays(date, amount);
+      return new Date(date.getTime() + amount * UPDATE_INTERVAL_MS);
     }
 
     return addHours(date, amount);
@@ -1467,6 +1484,18 @@ void main() {
     return (definition && definition.category) || "Intel";
   }
 
+  function platformTrackType(layerId, item) {
+    if (layerId === "liveAircraft") {
+      return "air";
+    }
+
+    if (layerId === "liveShips") {
+      return "sea";
+    }
+
+    return (item && item.trackType) || "sea";
+  }
+
   function platformItemDisplayName(layerId, item, definition, index) {
     var name = item && item.name ? String(item.name) : ((definition && definition.label) || "Object");
 
@@ -2061,6 +2090,69 @@ void main() {
     };
   }
 
+  function itemTimestampMs(item) {
+    var raw = item && (item.timestamp || item.time || item.updated || item.lastSeen || item.last_seen);
+
+    if (typeof raw === "number" && Number.isFinite(raw)) {
+      return raw < 10000000000 ? raw * 1000 : raw;
+    }
+
+    if (raw) {
+      var parsed = new Date(raw).getTime();
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+
+    return NaN;
+  }
+
+  function sampleMovingPointFromItem(item, time) {
+    var base = intelPointFromItem(item);
+
+    if (!base || !Number.isFinite(base.lon) || !Number.isFinite(base.lat)) {
+      return base;
+    }
+
+    var speed = Number(item.speed || item.velocity || item.knots || item.speedKts || item.speedMps) || 0;
+    if (item.knots || item.speedKts) {
+      speed *= 0.514444;
+    }
+
+    var heading = Number(item.heading || item.bearing || item.course || item.track) || 0;
+    var timestamp = itemTimestampMs(item);
+    var sampleTime = time instanceof Date ? time.getTime() : platformTime().getTime();
+
+    if (!speed || !Number.isFinite(timestamp)) {
+      base.heading = heading;
+      return base;
+    }
+
+    var elapsedSeconds = clamp((sampleTime - timestamp) / 1000, -180, 900);
+    var angularDistance = (speed * elapsedSeconds) / 6371008.8;
+    var bearing = Cesium.Math.toRadians(heading);
+    var lat1 = Cesium.Math.toRadians(base.lat);
+    var lon1 = Cesium.Math.toRadians(base.lon);
+    var sinLat1 = Math.sin(lat1);
+    var cosLat1 = Math.cos(lat1);
+    var sinAngular = Math.sin(angularDistance);
+    var cosAngular = Math.cos(angularDistance);
+    var lat2 = Math.asin(sinLat1 * cosAngular + cosLat1 * sinAngular * Math.cos(bearing));
+    var lon2 = lon1 + Math.atan2(
+      Math.sin(bearing) * sinAngular * cosLat1,
+      cosAngular - sinLat1 * Math.sin(lat2)
+    );
+
+    return {
+      lon: normalizeLongitude(Cesium.Math.toDegrees(lon2)),
+      lat: Cesium.Math.toDegrees(lat2),
+      height: Number(base.height) || Number(item.height) || 0,
+      heading: heading,
+      speed: speed,
+      staleSeconds: elapsedSeconds
+    };
+  }
+
   function intelPointFromItem(item) {
     if (Array.isArray(item.points) && item.points.length) {
       return midpointSample(item.points, Number(item.height) || 0);
@@ -2092,7 +2184,7 @@ void main() {
       if (Array.isArray(item.route) && item.route.length) {
         return routeSampleFromItem(item, time);
       }
-      return intelPointFromItem(item);
+      return sampleMovingPointFromItem(item, time);
     }
 
     return intelPointFromItem(item);
@@ -2194,6 +2286,10 @@ void main() {
     if (definition.type === "camera" || definition.type === "earthquake") {
       height = 0;
       clampHeightRef = true;
+    } else if (layerId === "liveAircraft") {
+      height = item && item.category === "ground" ? clamp(height || 0, 0, 120) : clamp(height || 10500, 120, 16000);
+    } else if (layerId === "liveShips") {
+      height = clamp(height, 0, 30);
     } else if (definition.type === "moving") {
       height = clamp(height, 0, 30);
     } else if (layerId === "traffic") {
@@ -3552,8 +3648,9 @@ void main() {
         disableDepthTestDistance: Number.POSITIVE_INFINITY
       };
     } else if (definition.type === "moving") {
+      var movingTrackType = platformTrackType(layerId, item);
       entityOptions.billboard = {
-        image: trackIcon(item.trackType || "sea", definition.color),
+        image: trackIcon(movingTrackType, definition.color),
         scale: 0.34,
         rotation: Cesium.Math.toRadians(sample.heading || 0),
         alignedAxis: Cesium.Cartesian3.UNIT_Z,
@@ -3786,6 +3883,7 @@ void main() {
       layerId: layerId,
       definition: definition,
       item: item,
+      trackType: definition.type === "moving" ? platformTrackType(layerId, item) : null,
       entity: entity,
       trail: trail,
       coverage: coverage,
@@ -3863,6 +3961,11 @@ void main() {
       }
 
       if (definition.type === "moving") {
+        var trackType = platformTrackType(record.layerId, item);
+        if (record.trackType !== trackType) {
+          safeAssignBillboard(record.entity.billboard, trackIcon(trackType, definition.color));
+          record.trackType = trackType;
+        }
         record.entity.billboard.rotation = Cesium.Math.toRadians(sample.heading || 0);
       }
     }
@@ -4116,6 +4219,14 @@ void main() {
       }
     });
 
+    if (layerId === "liveShips") {
+      items.forEach(function (item) {
+        item.kind = "moving";
+        item.trackType = "sea";
+        item.status = item.status || "underway";
+      });
+    }
+
     return items.slice(0, (definition && definition.maxItems) || 120);
   }
 
@@ -4198,14 +4309,18 @@ void main() {
           id: aircraft.icao24 || aircraft.callsign || ("aircraft-" + index),
           name: String(aircraft.callsign || aircraft.icao24 || "OpenSky aircraft").trim(),
           kind: "moving",
+          trackType: "air",
           category: aircraft.onGround ? "ground" : "aircraft",
+          aircraftType: aircraft.type || aircraft.aircraft_type || aircraft.category || "",
+          registration: aircraft.registration || aircraft.icao24 || "",
           lat: Number(aircraft.lat),
           lon: Number(aircraft.lon),
           height: Math.max(0, Number(aircraft.altitude) || 0),
           heading: Number(aircraft.heading) || 0,
           speed: Number(aircraft.velocity) || 0,
           status: aircraft.onGround ? "Ground" : "Airborne",
-          source: "OpenSky Network",
+          source: aircraft.source || aircraft.provider || "OpenSky Network",
+          provider: aircraft.provider || aircraft.source || "OpenSky Network",
           timestamp: payload.time ? payload.time * 1000 : Date.now()
         };
       }).filter(function (item) {
@@ -5922,10 +6037,6 @@ void main() {
         layers: { cyberNetwork: true, underseaCables: true, rfHeatmap: true },
         imagery: {}
       },
-      traffic: {
-        layers: { cameras: true, traffic: true, emergencyIncidents: true },
-        imagery: { labels: true }
-      },
       orbital: {
         layers: {
           realtimeSatellites: true,
@@ -5958,7 +6069,7 @@ void main() {
         imagery: { infrared: true, night: false }
       },
       night: {
-        layers: { cameras: true, traffic: true, lightning: true },
+        layers: { cameras: true, lightning: true },
         imagery: { night: true, labels: true }
       }
     };
@@ -6245,7 +6356,7 @@ void main() {
   }
 
   function applySatelliteSource(source) {
-    state.satelliteSource = source || "nasa-live";
+    state.satelliteSource = source || "public-geostat";
     if (elements.satelliteSourceSelect) {
       elements.satelliteSourceSelect.value = state.satelliteSource;
     }
@@ -6632,7 +6743,16 @@ void main() {
       lat: record.sample.lat,
       lon: record.sample.lon
     });
-    dropTargetMarker(record.sample.lat, record.sample.lon);
+
+    if (record.definition.type === "moving" || record.definition.type === "satellite") {
+      if (targetEntity) {
+        viewer.entities.remove(targetEntity);
+        targetEntity = null;
+      }
+    } else {
+      dropTargetMarker(record.sample.lat, record.sample.lon);
+    }
+
     showPlatformDetail(record);
     showIntelMapCalloutForRecord(record);
 
@@ -8757,9 +8877,9 @@ void main() {
     raiseOperationalLayers();
     viewer.scene.requestRender();
 
-    var holdUntil = performance.now() + 360;
+    var holdUntil = performance.now() + (state.timelineMode === "updates" ? 640 : 360);
     var start = 0;
-    var duration = state.timelineMode === "updates" ? 1650 : 1180;
+    var duration = state.timelineMode === "updates" ? 2600 : 1180;
 
     function animateImageryBlend(now) {
       if (token !== imageryTransitionToken) {
@@ -9360,11 +9480,11 @@ void main() {
     });
 
     elements.compareRange.addEventListener("input", function (event) {
-      var previousTileDate = formatDate(state.compareDate);
+      var previousTileKey = timelineRefreshKey(state.compareDate);
       state.compareDate = clampDate(dateFromRange(event.target.value));
       updateTimelineLabels();
 
-      if (formatDate(state.compareDate) !== previousTileDate) {
+      if (timelineRefreshKey(state.compareDate) !== previousTileKey) {
         scheduleImageryRefresh();
       }
     });
@@ -9675,14 +9795,14 @@ void main() {
   }
 
   function setDate(date, refresh) {
-    var previousTileDate = formatDate(state.date);
+    var previousTileKey = timelineRefreshKey(state.date);
     state.date = clampDate(date);
     elements.timelineRange.value = String(rangeFromDate(state.date));
     updateTimelineLabels();
     updateTrackingLayer(false);
     updatePlatformSystems(false);
 
-    if (refresh && formatDate(state.date) !== previousTileDate) {
+    if (refresh && timelineRefreshKey(state.date) !== previousTileKey) {
       scheduleImageryRefresh();
     }
   }
@@ -9789,8 +9909,8 @@ void main() {
     state.timelineMode = mode;
 
     if (mode === "updates") {
-      state.date = addHours(utcMidnight(state.date), 23);
-      state.compareDate = addHours(utcMidnight(state.compareDate), 23);
+      state.date = alignToUpdateStep(state.date);
+      state.compareDate = alignToUpdateStep(state.compareDate);
     }
 
     syncTimelineModeControls();
@@ -9809,13 +9929,13 @@ void main() {
     elements.timelineModeUpdates.classList.toggle("active", updatesMode);
     elements.timelineRange.step = "1";
     elements.compareRange.step = "1";
-    setCommandButton(elements.prevDay, updatesMode ? "1U" : "1H", "<");
-    setCommandButton(elements.nextDay, updatesMode ? "1U" : "1H", ">");
-    elements.prevDay.setAttribute("aria-label", updatesMode ? "Previous map update" : "Previous hour");
-    elements.nextDay.setAttribute("aria-label", updatesMode ? "Next map update" : "Next hour");
+    setCommandButton(elements.prevDay, updatesMode ? "10M" : "1H", "<");
+    setCommandButton(elements.nextDay, updatesMode ? "10M" : "1H", ">");
+    elements.prevDay.setAttribute("aria-label", updatesMode ? "Previous 10-minute map update" : "Previous hour");
+    elements.nextDay.setAttribute("aria-label", updatesMode ? "Next 10-minute map update" : "Next hour");
 
     Array.prototype.forEach.call(elements.speedSelect.options, function (option) {
-      option.textContent = option.value + (updatesMode ? " update/s" : " h/s");
+      option.textContent = option.value + (updatesMode ? " 10-min/s" : " h/s");
     });
   }
 
@@ -9840,9 +9960,9 @@ void main() {
   function updateTimelineLabels() {
     var updatesMode = state.timelineMode === "updates";
     var cursorUnits = updatesMode
-      ? clamp(daysBetween(minDate, state.date), 0, timelineRangeMax())
+      ? clamp(updateStepsBetween(minDate, state.date), 0, timelineRangeMax())
       : clamp(Math.floor(hoursBetween(minDate, state.date)), 0, timelineRangeMax());
-    var cursorDate = updatesMode ? addDays(minDate, cursorUnits) : addHours(minDate, cursorUnits);
+    var cursorDate = updatesMode ? new Date(minDate.getTime() + cursorUnits * UPDATE_INTERVAL_MS) : addHours(minDate, cursorUnits);
     var liveTrackTime = getTrackingTime();
 
     elements.currentDateLabel.textContent = state.tracking.live ? "LIVE - " + readableLiveDateTime(liveTrackTime) : readableDateTime(cursorDate);
@@ -9850,7 +9970,7 @@ void main() {
     elements.compareDateLabel.textContent = readableDateTime(state.compareDate);
     elements.compareRange.value = String(rangeFromDate(state.compareDate));
     elements.timelineStartLabel.textContent = readableDate(minDate);
-    elements.timelineCursorLabel.textContent = state.tracking.live ? "LIVE" : updatesMode ? "UPD " + String(cursorUnits).padStart(2, "0") : "T+" + String(cursorUnits).padStart(3, "0") + "H";
+    elements.timelineCursorLabel.textContent = state.tracking.live ? "LIVE" : updatesMode ? "UPD " + formatHour(cursorDate) : "T+" + String(cursorUnits).padStart(3, "0") + "H";
     elements.timelineEndLabel.textContent = readableDate(maxDate);
 
     var ageHours = Math.max(0, Math.round(hoursBetween(state.date, maxDate)));
@@ -9860,7 +9980,7 @@ void main() {
     if (state.tracking.live) {
       elements.feedMeta.textContent = "Live tracks / latest stable imagery";
     } else if (updatesMode) {
-      elements.feedMeta.textContent = "Stepping by received daily map updates";
+      elements.feedMeta.textContent = "Stepping by received 10-minute map updates";
     } else if (ageHours === 0) {
       elements.feedMeta.textContent = "Latest stable NASA GIBS mosaic";
     } else if (ageDays > 0) {

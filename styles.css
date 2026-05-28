@@ -344,6 +344,7 @@ body[data-weather-map="radar"] .orbital-vignette {
   align-items: center;
   justify-content: space-between;
   gap: 18px;
+  overflow: hidden;
   border-radius: 12px;
   background: linear-gradient(90deg, rgba(7, 9, 14, 0.78), rgba(7, 9, 14, 0.48));
 }
@@ -399,11 +400,17 @@ h1 {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  min-width: 170px;
+  min-width: 0;
   color: rgba(255, 255, 255, 0.76);
   font-size: 12px;
   gap: 8px;
+  overflow: hidden;
   white-space: nowrap;
+}
+
+.mission-status span:last-of-type {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .signal-dot {

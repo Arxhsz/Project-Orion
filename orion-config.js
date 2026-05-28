@@ -377,16 +377,6 @@
       refreshMs: 45 * 1000,
       color: "#f8fbff"
     },
-    socialEvents: {
-      label: "Event heat",
-      source: "Ticketmaster / Meetup adapter",
-      type: "intel",
-      endpoint: "/live/intel?layer=socialEvents",
-      controlId: "platformEvents",
-      maxItems: 5000,
-      refreshMs: 10 * 60 * 1000,
-      color: "#ead8ff"
-    },
     airCorridors: {
       label: "Air corridors",
       source: "FAA / OpenSky routes",
@@ -397,29 +387,11 @@
       refreshMs: 10 * 60 * 1000,
       color: "#c8d2ff"
     },
-    traffic: {
-      label: "Traffic flow",
-      source: "FL511 public congestion / provider adapter",
-      type: "intel",
-      endpoint: "/live/intel?layer=traffic",
-      controlId: "platformTraffic",
-      maxItems: 5000,
-      refreshMs: 2 * 60 * 1000,
-      color: "#ffffff"
-    },
     cities3d: {
       label: "3D cities",
       source: "Cesium OSM Buildings",
       type: "tileset",
       controlId: "platformCities",
-      refreshMs: 24 * 60 * 60 * 1000,
-      color: "#ffffff"
-    },
-    soundscape: {
-      label: "Sound engine",
-      source: "Orion procedural sound engine",
-      type: "sound",
-      controlId: "platformSound",
       refreshMs: 24 * 60 * 60 * 1000,
       color: "#ffffff"
     }
@@ -451,10 +423,7 @@
     powerGrid: "Infrastructure",
     cities3d: "Infrastructure",
     rfHeatmap: "Heatmaps",
-    emergencyIncidents: "Heatmaps",
-    socialEvents: "Heatmaps",
-    traffic: "Heatmaps",
-    soundscape: "Mission"
+    emergencyIncidents: "Heatmaps"
   };
 
   Object.keys(Orion.Config.PlatformLayerDefinitions).forEach(function (layerId) {
