@@ -104,6 +104,9 @@
   var swapCleanupTimer;
   var imageryFadeFrame;
   var imageryTransitionToken = 0;
+  var imageryTransitionActive = false;
+  var queuedImageryRefresh = false;
+  var lastImageryRefreshAt = 0;
   var activeImageryLayers = [];
   var stagedImageryLayers = [];
   var baseImageryLayer = null;
@@ -713,6 +716,10 @@
 
   function readableLiveDateTime(date) {
     return readableDate(date) + " - " + formatUtcClock(date) + " UTC";
+  }
+
+  function isLiveSatelliteImageryMode() {
+    return state.weatherMapMode === "satellite" && state.satelliteSource === "public-geostat";
   }
 
   function timelineRefreshKey(date) {
@@ -9041,6 +9048,8 @@ void main() {
 
   function cancelImageryTransition() {
     imageryTransitionToken++;
+    imageryTransitionActive = false;
+    queuedImageryRefresh = false;
     window.cancelAnimationFrame(imageryFadeFrame);
     window.clearTimeout(swapCleanupTimer);
     stagedImageryLayers.forEach(function (layer) {
@@ -9051,13 +9060,43 @@ void main() {
     stagedImageryLayers = [];
   }
 
+  function isBaseImageryKey(key) {
+    return key === "trueColor" ||
+      key === "cleanEarth" ||
+      key === "goesEast" ||
+      key === "goesWest" ||
+      key === "sentinel" ||
+      key === "night" ||
+      key === "infrared";
+  }
+
+  function isSolidBaseImageryKey(key) {
+    return key === "trueColor" ||
+      key === "cleanEarth" ||
+      key === "goesEast" ||
+      key === "goesWest";
+  }
+
+  function hasBaseImageryLayer(layers) {
+    return layers.some(function (layer) {
+      return layer && isBaseImageryKey(layer.orionKey) && imageryLayerExists(layer);
+    });
+  }
+
+  function ensureBaseImageryFallback(layers, fadeAlpha) {
+    if (!hasBaseImageryLayer(layers)) {
+      layers.push(addLayer("cleanEarth", state.date, Cesium.SplitDirection.NONE, fadeAlpha));
+    }
+    return layers;
+  }
+
   function findBaseImageryLayer() {
     var index;
     var layers = activeImageryLayers.concat(stagedImageryLayers);
 
     for (index = 0; index < layers.length; index++) {
       var key = layers[index].orionKey;
-      if ((key === "trueColor" || key === "cleanEarth") && imageryLayerExists(layers[index])) {
+      if (isBaseImageryKey(key) && imageryLayerExists(layers[index])) {
         return layers[index];
       }
     }
@@ -9103,6 +9142,8 @@ void main() {
         layers.push(addLayer(key, state.date, rightSplit, fullAlpha));
       }
     });
+
+    ensureBaseImageryFallback(layers, fullAlpha);
 
     if (state.layers.labels) {
       layers.push(addLayer("labels", state.date, Cesium.SplitDirection.NONE, fullAlpha));
@@ -9162,11 +9203,7 @@ void main() {
     cancelImageryTransition();
     removeOrionImageryLayers([]);
 
-    var layers = buildImageryLayerList();
-    if (!layers.length) {
-      layers.push(addLayer("trueColor", state.date, Cesium.SplitDirection.NONE, 1));
-    }
-
+    var layers = ensureBaseImageryFallback(buildImageryLayerList(), 1);
     commitImageryLayers(layers);
     syncImagerySplitMode();
     raiseOperationalLayers();
@@ -9241,6 +9278,9 @@ void main() {
     }
 
     imageryTransitionToken++;
+    imageryTransitionActive = true;
+    queuedImageryRefresh = false;
+    lastImageryRefreshAt = performance.now();
     window.cancelAnimationFrame(imageryFadeFrame);
     window.clearTimeout(swapCleanupTimer);
 
@@ -9252,10 +9292,7 @@ void main() {
       }
     });
 
-    var newLayers = buildImageryLayerList(0.02);
-    if (!newLayers.length) {
-      newLayers.push(addLayer("trueColor", state.date, Cesium.SplitDirection.NONE, 0.02));
-    }
+    var newLayers = ensureBaseImageryFallback(buildImageryLayerList(0.02), 0.02);
 
     newLayers.forEach(function (layer) {
       layer.orionAllowLowFade = true;
@@ -9322,6 +9359,12 @@ void main() {
       raiseOperationalLayers();
       updateTelemetry();
       viewer.scene.requestRender();
+      imageryTransitionActive = false;
+
+      if (queuedImageryRefresh) {
+        queuedImageryRefresh = false;
+        scheduleImageryRefresh();
+      }
     }
 
     imageryFadeFrame = window.requestAnimationFrame(animateImageryBlend);
@@ -9368,8 +9411,24 @@ void main() {
   }
 
   function scheduleImageryRefresh() {
-    window.clearTimeout(refreshTimer);
-    refreshTimer = window.setTimeout(rebuildImagery, 48);
+    if (!viewer) {
+      return;
+    }
+
+    if (imageryTransitionActive || refreshTimer) {
+      queuedImageryRefresh = true;
+      return;
+    }
+
+    var now = performance.now();
+    var minGap = state.playing ? 520 : 120;
+    var delay = Math.max(48, minGap - (now - lastImageryRefreshAt));
+
+    refreshTimer = window.setTimeout(function () {
+      refreshTimer = null;
+      queuedImageryRefresh = false;
+      rebuildImagery();
+    }, delay);
   }
 
   function installImageryPrewarm() {
@@ -10688,6 +10747,10 @@ void main() {
 
     if (state.tracking.live) {
       elements.feedMeta.textContent = "Live tracks / latest stable imagery";
+    } else if (isLiveSatelliteImageryMode() && updatesMode) {
+      elements.feedMeta.textContent = "Stepping by received " + cadence.longLabel + " GOES NRT frames";
+    } else if (isLiveSatelliteImageryMode()) {
+      elements.feedMeta.textContent = "NOAA GOES live NRT frame";
     } else if (updatesMode) {
       elements.feedMeta.textContent = "Stepping by received " + cadence.longLabel + " map updates";
     } else if (ageHours === 0) {
@@ -10751,7 +10814,7 @@ void main() {
 
     elements.providerLabel.textContent = activeProviderLabel();
     elements.updateAge.textContent = updateAgeLabel();
-    elements.cloudCoverage.textContent = state.cleanEarth ? "Cloud-free globe active" : (state.layers.clouds ? "Optical thickness layer active" : "Visual layer standby");
+    elements.cloudCoverage.textContent = isLiveSatelliteImageryMode() ? "NOAA GOES GeoColor active" : state.cleanEarth ? "Cloud-free globe active" : (state.layers.clouds ? "Optical thickness layer active" : "Visual layer standby");
     elements.mapDetailLabel.textContent = mapDetailLabel();
     updateTrackingTelemetry(null, getTrackingTime());
     updatePlatformTelemetry();
@@ -10801,6 +10864,10 @@ void main() {
   }
 
   function updateAgeLabel() {
+    if (isLiveSatelliteImageryMode()) {
+      return state.timelineMode === "updates" ? "GOES NRT update frames" : "Latest NOAA GOES NRT frame";
+    }
+
     var ageHours = Math.max(0, Math.round(hoursBetween(state.date, maxDate)));
     var ageDays = Math.floor(ageHours / 24);
     var remainingHours = ageHours % 24;
@@ -11109,7 +11176,7 @@ void main() {
     var fadeAlpha = typeof layer.orionFadeAlpha === "number" ? layer.orionFadeAlpha : 1;
     var height = viewer && viewer.camera ? viewer.camera.positionCartographic.height : 0;
 
-    if (layer.orionKey === "trueColor" || layer.orionKey === "cleanEarth") {
+    if (isSolidBaseImageryKey(layer.orionKey)) {
       fadeAlpha = layer.orionAllowLowFade ? Math.max(fadeAlpha, 0.02) : Math.max(fadeAlpha, 0.92);
       var baseAlpha = targetAlpha * fadeAlpha;
 
