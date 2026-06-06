@@ -128,10 +128,10 @@ def zoom_iso(seconds):
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(int(seconds)))
 
 
-def select_zoom_forecast(times_payload, layer_name, level_name):
+def build_zoom_forecast_frames(times_payload, layer_name, level_name, limit=72):
     level_payload = ((times_payload or {}).get(layer_name) or {}).get(level_name) or {}
     now = time.time()
-    best = None
+    candidates = []
     for run_key, hours in level_payload.items():
         try:
             run_ts = int(run_key)
@@ -145,24 +145,34 @@ def select_zoom_forecast(times_payload, layer_name, level_name):
             except (TypeError, ValueError):
                 continue
             valid_ts = run_ts + forecast_hour * 3600
-            score = (0 if valid_ts <= now else 10 ** 9) + abs(now - valid_ts)
-            if best is None or score < best["score"]:
-                best = {
-                    "score": score,
-                    "run_ts": run_ts,
-                    "forecast_hour": forecast_hour,
-                    "valid_ts": valid_ts,
-                }
-    if best is None:
-        return None
-    run_path = time.strftime("%Y-%m-%d/%H%M", time.gmtime(best["run_ts"]))
-    forecast_path = f"f{best['forecast_hour']:03d}"
-    return {
-        "path": f"https://tiles.zoom.earth/icon/v1/{layer_name}/webp/{level_name}/{run_path}/{forecast_path}/" + "{z}/{y}/{x}.webp",
-        "run_time": zoom_iso(best["run_ts"]),
-        "valid_time": zoom_iso(best["valid_ts"]),
-        "forecast_hour": best["forecast_hour"],
-    }
+            candidates.append({
+                "run_ts": run_ts,
+                "forecast_hour": forecast_hour,
+                "valid_ts": valid_ts,
+            })
+    deduped = {}
+    for entry in candidates:
+        current = deduped.get(entry["valid_ts"])
+        if current is None or entry["run_ts"] > current["run_ts"]:
+            deduped[entry["valid_ts"]] = entry
+    candidates = sorted(deduped.values(), key=lambda entry: (entry["valid_ts"], entry["run_ts"]))
+    selected = ([entry for entry in candidates if entry["valid_ts"] <= now] or candidates)[-limit:]
+    frames = []
+    for entry in selected:
+        run_path = time.strftime("%Y-%m-%d/%H%M", time.gmtime(entry["run_ts"]))
+        forecast_path = f"f{entry['forecast_hour']:03d}"
+        frames.append({
+            "path": f"https://tiles.zoom.earth/icon/v1/{layer_name}/webp/{level_name}/{run_path}/{forecast_path}/" + "{z}/{y}/{x}.webp",
+            "run_time": zoom_iso(entry["run_ts"]),
+            "valid_time": zoom_iso(entry["valid_ts"]),
+            "forecast_hour": entry["forecast_hour"],
+        })
+    return frames
+
+
+def select_zoom_forecast(times_payload, layer_name, level_name):
+    frames = build_zoom_forecast_frames(times_payload, layer_name, level_name, limit=1)
+    return frames[-1] if frames else None
 
 
 def select_zoom_radar(times_payload):
@@ -238,7 +248,8 @@ def build_zoom_weather():
     else:
         icon_error = None
     for mode, mapping in modes.items():
-        frame = select_zoom_forecast(icon_times, mapping[0], mapping[1]) if icon_times else None
+        frames = build_zoom_forecast_frames(icon_times, mapping[0], mapping[1]) if icon_times else []
+        frame = frames[-1] if frames else None
         payload = {
             "source": "Zoom Earth",
             "provider": "DWD ICON via Zoom Earth",
@@ -248,9 +259,9 @@ def build_zoom_weather():
             "level": mapping[1],
             "generated": int(time.time()),
             "refresh_seconds": 600,
-            "count": 1 if frame else 0,
+            "count": len(frames),
             "latest": frame,
-            "frames": [frame] if frame else [],
+            "frames": frames,
             "tile_template": frame["path"] if frame else None,
             "fallback": False,
         }

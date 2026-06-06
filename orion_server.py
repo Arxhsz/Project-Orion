@@ -2176,11 +2176,11 @@ class OrionHandler(SimpleHTTPRequestHandler):
         self.store_cached_feed(cache_key, payload)
         return payload
 
-    def select_zoom_earth_forecast(self, times_payload, layer_name, level_name):
+    def build_zoom_earth_forecast_frames(self, times_payload, layer_name, level_name, limit=72):
         layer_payload = (times_payload or {}).get(layer_name) or {}
         level_payload = layer_payload.get(level_name) or {}
         now = time.time()
-        best = None
+        candidates = []
 
         for run_epoch, forecast_hours in level_payload.items():
             try:
@@ -2198,33 +2198,42 @@ class OrionHandler(SimpleHTTPRequestHandler):
                     continue
 
                 valid_ts = run_ts + forecast_hour * 3600
-                is_past = valid_ts <= now
-                score = (0 if is_past else 10 ** 9) + abs(now - valid_ts)
-                if best is None or score < best["score"]:
-                    best = {
-                        "score": score,
-                        "run_ts": run_ts,
-                        "forecast_hour": forecast_hour,
-                        "valid_ts": valid_ts,
-                    }
+                candidates.append({
+                    "run_ts": run_ts,
+                    "forecast_hour": forecast_hour,
+                    "valid_ts": valid_ts,
+                })
 
-        if best is None:
-            return None
+        deduped = {}
+        for entry in candidates:
+            current = deduped.get(entry["valid_ts"])
+            if current is None or entry["run_ts"] > current["run_ts"]:
+                deduped[entry["valid_ts"]] = entry
+        candidates = sorted(deduped.values(), key=lambda entry: (entry["valid_ts"], entry["run_ts"]))
+        selected = ([entry for entry in candidates if entry["valid_ts"] <= now] or candidates)[-limit:]
+        frames = []
 
-        run_dt = datetime.utcfromtimestamp(best["run_ts"])
-        run_path = run_dt.strftime("%Y-%m-%d/%H%M")
-        forecast_path = f"f{best['forecast_hour']:03d}"
-        tile_path = (
-            f"/zoom-earth/{ZOOM_EARTH_MODEL}/{ZOOM_EARTH_MODEL_VERSION}/"
-            f"{layer_name}/webp/{level_name}/{run_path}/{forecast_path}/"
-            "{z}/{y}/{x}.webp"
-        )
-        return {
-            "path": tile_path,
-            "run_time": self.zoom_earth_iso(best["run_ts"]),
-            "valid_time": self.zoom_earth_iso(best["valid_ts"]),
-            "forecast_hour": best["forecast_hour"],
-        }
+        for entry in selected:
+            run_dt = datetime.utcfromtimestamp(entry["run_ts"])
+            run_path = run_dt.strftime("%Y-%m-%d/%H%M")
+            forecast_path = f"f{entry['forecast_hour']:03d}"
+            tile_path = (
+                f"/zoom-earth/{ZOOM_EARTH_MODEL}/{ZOOM_EARTH_MODEL_VERSION}/"
+                f"{layer_name}/webp/{level_name}/{run_path}/{forecast_path}/"
+                "{z}/{y}/{x}.webp"
+            )
+            frames.append({
+                "path": tile_path,
+                "run_time": self.zoom_earth_iso(entry["run_ts"]),
+                "valid_time": self.zoom_earth_iso(entry["valid_ts"]),
+                "forecast_hour": entry["forecast_hour"],
+            })
+
+        return frames
+
+    def select_zoom_earth_forecast(self, times_payload, layer_name, level_name):
+        frames = self.build_zoom_earth_forecast_frames(times_payload, layer_name, level_name, limit=1)
+        return frames[-1] if frames else None
 
     def select_zoom_earth_radar_frames(self, times_payload):
         reflectivity = (times_payload or {}).get("reflectivity") or {}
@@ -2289,7 +2298,8 @@ class OrionHandler(SimpleHTTPRequestHandler):
 
             layer_name, level_name = ZOOM_EARTH_MODE_MAP[mode]
             times_payload = self.fetch_zoom_earth_times(ZOOM_EARTH_MODEL)
-            frame = self.select_zoom_earth_forecast(times_payload, layer_name, level_name)
+            frames = self.build_zoom_earth_forecast_frames(times_payload, layer_name, level_name)
+            frame = frames[-1] if frames else None
 
             if not frame:
                 raise ValueError(f"No Zoom Earth frame for {mode}")
@@ -2303,9 +2313,9 @@ class OrionHandler(SimpleHTTPRequestHandler):
                 "level": level_name,
                 "generated": int(time.time()),
                 "refresh_seconds": 600,
-                "count": 1,
+                "count": len(frames),
                 "latest": frame,
-                "frames": [frame],
+                "frames": frames,
                 "tile_template": frame["path"],
                 "fallback": False,
             }

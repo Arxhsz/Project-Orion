@@ -159,6 +159,7 @@
   var zoomWeatherMode = null;
   var zoomWeatherTimer = null;
   var zoomWeatherRequestToken = 0;
+  var activeTimelineFrameBounds = null;
   var weatherEffectCanvas = null;
   var weatherEffectContext = null;
   var weatherEffectFrame = null;
@@ -533,17 +534,145 @@
     };
   }
 
+  function frameTimeMs(frame) {
+    if (!frame) {
+      return NaN;
+    }
+
+    var raw = frame.valid_time || frame.time || frame.timestamp || frame.generated;
+
+    if (typeof raw === "number") {
+      return raw < 1000000000000 ? raw * 1000 : raw;
+    }
+
+    if (typeof raw === "string" && raw.trim()) {
+      var numeric = Number(raw);
+
+      if (Number.isFinite(numeric)) {
+        return numeric < 1000000000000 ? numeric * 1000 : numeric;
+      }
+
+      var parsed = new Date(raw).getTime();
+      return Number.isFinite(parsed) ? parsed : NaN;
+    }
+
+    return NaN;
+  }
+
+  function frameTemplate(frame) {
+    return frame ? frame.tile_template || frame.path || frame.url || null : null;
+  }
+
+  function selectTemporalFrame(frames, date, preferPast) {
+    if (!Array.isArray(frames) || !frames.length || !isValidDate(date)) {
+      return null;
+    }
+
+    var target = date.getTime();
+    var best = null;
+    var futureFallback = null;
+
+    frames.forEach(function (frame, index) {
+      var timestamp = frameTimeMs(frame);
+
+      if (!Number.isFinite(timestamp)) {
+        return;
+      }
+
+      if (preferPast && timestamp > target) {
+        var futureScore = timestamp - target;
+        if (!futureFallback || futureScore < futureFallback.score) {
+          futureFallback = { frame: frame, index: index, score: futureScore };
+        }
+        return;
+      }
+
+      var score = Math.abs(target - timestamp);
+      if (!best || score < best.score) {
+        best = { frame: frame, index: index, score: score };
+      }
+    });
+
+    return best || futureFallback || null;
+  }
+
+  function temporalFrameBounds(frames) {
+    if (!Array.isArray(frames) || !frames.length) {
+      return null;
+    }
+
+    var min = Infinity;
+    var max = -Infinity;
+
+    frames.forEach(function (frame) {
+      var timestamp = frameTimeMs(frame);
+
+      if (!Number.isFinite(timestamp)) {
+        return;
+      }
+
+      min = Math.min(min, timestamp);
+      max = Math.max(max, timestamp);
+    });
+
+    if (!Number.isFinite(min) || !Number.isFinite(max)) {
+      return null;
+    }
+
+    return {
+      min: new Date(min),
+      max: new Date(max)
+    };
+  }
+
+  function activeTimelineBounds() {
+    if (activeTimelineFrameBounds && activeTimelineFrameBounds.mode === state.weatherMapMode) {
+      return activeTimelineFrameBounds;
+    }
+
+    return null;
+  }
+
+  function timelineMinDate() {
+    var bounds = activeTimelineBounds();
+    return bounds ? bounds.min : minDate;
+  }
+
+  function timelineMaxDate() {
+    var bounds = activeTimelineBounds();
+    return bounds ? bounds.max : maxDate;
+  }
+
+  function clampTimelineDate(date) {
+    var min = timelineMinDate();
+    var max = timelineMaxDate();
+    var timestamp = clamp(date.getTime(), min.getTime(), max.getTime());
+    return new Date(timestamp);
+  }
+
+  function syncTimelineRangeControls() {
+    if (!elements.timelineRange || !elements.compareRange) {
+      return;
+    }
+
+    elements.timelineRange.max = String(timelineRangeMax());
+    elements.compareRange.max = String(timelineRangeMax());
+    elements.timelineRange.value = String(rangeFromDate(state.date));
+    elements.compareRange.value = String(rangeFromDate(state.compareDate));
+  }
+
   function updateStepsBetween(start, end) {
     return Math.round((end.getTime() - start.getTime()) / currentUpdateIntervalMs());
   }
 
   function timelineUpdateRangeMax() {
-    return Math.max(0, updateStepsBetween(minDate, maxDate));
+    return Math.max(0, updateStepsBetween(timelineMinDate(), timelineMaxDate()));
   }
 
   function alignToUpdateStep(date) {
-    var step = clamp(updateStepsBetween(minDate, clampDate(date)), 0, timelineUpdateRangeMax());
-    return new Date(minDate.getTime() + step * currentUpdateIntervalMs());
+    var min = timelineMinDate();
+    var step = clamp(updateStepsBetween(min, clampTimelineDate(date)), 0, timelineUpdateRangeMax());
+    return new Date(min.getTime() + step * currentUpdateIntervalMs());
   }
 
   function formatDate(date) {
@@ -669,18 +798,18 @@
 
   function dateFromRange(inputValue) {
     if (state.timelineMode === "updates") {
-      return new Date(minDate.getTime() + Number(inputValue) * currentUpdateIntervalMs());
+      return new Date(timelineMinDate().getTime() + Number(inputValue) * currentUpdateIntervalMs());
     }
 
-    return addHours(minDate, Number(inputValue));
+    return addHours(timelineMinDate(), Number(inputValue));
   }
 
   function rangeFromDate(date) {
     if (state.timelineMode === "updates") {
-      return updateStepsBetween(minDate, date);
+      return updateStepsBetween(timelineMinDate(), date);
     }
 
-    return Number(hoursBetween(minDate, date).toFixed(2));
+    return Number(hoursBetween(timelineMinDate(), date).toFixed(2));
   }
 
   function timelineRangeMax() {
@@ -688,7 +817,7 @@
       return timelineUpdateRangeMax();
     }
 
-    return Math.round(hoursBetween(minDate, maxDate));
+    return Math.round(hoursBetween(timelineMinDate(), timelineMaxDate()));
   }
 
   function addTimelineUnits(date, amount) {
@@ -5307,6 +5436,15 @@ void main() {
       return false;
     }
 
+    var frameKey = frameTemplate(frame);
+
+    if (weatherRadarLayer && imageryLayerExists(weatherRadarLayer) && weatherRadarLayer.orionFrameKey === frameKey) {
+      weatherRadarLayer.alpha = state.radarOpacity;
+      raiseOperationalLayers();
+      viewer.scene.requestRender();
+      return true;
+    }
+
     if (weatherRadarLayer) {
       weatherRadarLayer.alpha = Math.max(0.08, state.radarOpacity * 0.42);
       weatherRadarPreviousLayers.push(weatherRadarLayer);
@@ -5336,8 +5474,36 @@ void main() {
     weatherRadarLayer.brightness = 1.04;
     weatherRadarLayer.contrast = 1.18;
     weatherRadarLayer.saturation = 0.42;
+    weatherRadarLayer.orionKey = "weatherRadar";
+    weatherRadarLayer.orionFrameKey = frameKey;
+    weatherRadarLayer.orionFrameTime = frame.time || frame.valid_time || null;
     raiseOperationalLayers();
     viewer.scene.requestRender();
+    return true;
+  }
+
+  function selectWeatherRadarFrameForDate(frames, date) {
+    var selection = selectTemporalFrame(frames, date, true);
+    return selection || null;
+  }
+
+  function refreshWeatherRadarTimelineFrame() {
+    if (!state.platformLayers.weatherRadar) {
+      return false;
+    }
+
+    var frames = platformFeeds.weatherRadar && platformFeeds.weatherRadar.items;
+    var selection = selectWeatherRadarFrameForDate(frames, state.date);
+
+    if (!selection || !selection.frame) {
+      return false;
+    }
+
+    if (!applyWeatherRadarFrame(selection.frame)) {
+      return false;
+    }
+
+    weatherRadarFrameIndex = Math.max(0, selection.index);
     return true;
   }
 
@@ -5378,12 +5544,13 @@ void main() {
     fetchJsonEndpoint(platformLayerDefinitions.weatherRadar.endpoint)
       .then(function (payload) {
         var frames = payload.frames || [];
-        var frame = frames.length ? frames[frames.length - 1] : payload.latest;
+        var selection = selectWeatherRadarFrameForDate(frames, state.date);
+        var frame = selection && selection.frame ? selection.frame : payload.latest;
 
         if (!applyWeatherRadarFrame(frame)) {
           throw new Error("No radar frame");
         }
-        weatherRadarFrameIndex = Math.max(0, frames.length - 1);
+        weatherRadarFrameIndex = selection ? Math.max(0, selection.index) : Math.max(0, frames.length - 1);
 
         platformFeeds.weatherRadar = {
           status: "online",
@@ -5714,6 +5881,69 @@ void main() {
     legend.classList.remove("hidden");
   }
 
+  function zoomWeatherFrames(payload) {
+    var frames = payload && Array.isArray(payload.frames) ? payload.frames.slice() : [];
+
+    if (payload && payload.latest && frames.indexOf(payload.latest) === -1) {
+      frames.push(payload.latest);
+    }
+
+    return frames.filter(function (frame) {
+      return !!frame && !!frameTemplate(frame) && Number.isFinite(frameTimeMs(frame));
+    }).sort(function (a, b) {
+      return frameTimeMs(a) - frameTimeMs(b);
+    });
+  }
+
+  function resolveZoomWeatherPayloadForDate(payload, mode, date) {
+    var frames = zoomWeatherFrames(payload);
+    var selection = selectTemporalFrame(frames, date, mode === "radar");
+    var selectedFrame = selection && selection.frame ? selection.frame : payload.latest;
+    var selectedTemplate = frameTemplate(selectedFrame) || payload.tile_template;
+
+    if (!selectedTemplate) {
+      return payload;
+    }
+
+    return Object.assign({}, payload, {
+      latest: selectedFrame || payload.latest,
+      tile_template: selectedTemplate,
+      selected_time: selectedFrame ? selectedFrame.valid_time || selectedFrame.time || null : null
+    });
+  }
+
+  function syncTimelineBoundsFromZoomPayload(payload, mode, preferLatest) {
+    var bounds = temporalFrameBounds(zoomWeatherFrames(payload));
+
+    if (!bounds || !isZoomWeatherMapMode(mode)) {
+      if (activeTimelineFrameBounds && activeTimelineFrameBounds.mode === mode) {
+        activeTimelineFrameBounds = null;
+      }
+      return;
+    }
+
+    activeTimelineFrameBounds = {
+      mode: mode,
+      min: bounds.min,
+      max: bounds.max
+    };
+
+    if (state.date < bounds.min || state.date > bounds.max) {
+      state.date = preferLatest ? bounds.max : clampTimelineDate(state.date);
+    }
+
+    if (state.compareDate < bounds.min || state.compareDate > bounds.max) {
+      state.compareDate = bounds.min;
+    }
+
+    if (state.timelineMode === "updates") {
+      state.date = alignToUpdateStep(state.date);
+      state.compareDate = alignToUpdateStep(state.compareDate);
+    }
+
+    syncTimelineRangeControls();
+  }
+
   function clearZoomWeatherLayer() {
     if (!viewer) {
       return;
@@ -5752,16 +5982,38 @@ void main() {
     });
     zoomWeatherPreviousLayers = [];
     zoomWeatherMode = null;
+    activeTimelineFrameBounds = null;
+    syncTimelineRangeControls();
     document.body.dataset.weatherMap = state.weatherMapMode || "satellite";
     viewer.scene.requestRender();
   }
 
   function applyZoomWeatherLayer(payload, mode) {
-    if (!viewer || !payload || !payload.tile_template) {
+    if (!viewer || !payload) {
+      return false;
+    }
+
+    payload = resolveZoomWeatherPayloadForDate(payload, mode, state.date);
+
+    if (!payload.tile_template) {
       return false;
     }
 
     var config = zoomWeatherModeConfig[mode] || zoomWeatherModeConfig.wind;
+    var frameKey = payload.tile_template;
+
+    if (zoomWeatherLayer && imageryLayerExists(zoomWeatherLayer) && zoomWeatherLayer.orionFrameKey === frameKey) {
+      zoomWeatherLayer.alpha = zoomWeatherLayerAlpha(mode);
+      zoomWeatherLayer.brightness = config.brightness || 1;
+      zoomWeatherLayer.contrast = config.contrast || 1;
+      zoomWeatherLayer.saturation = config.saturation || 1;
+      zoomWeatherMode = mode;
+      raiseOperationalLayers();
+      startWeatherModeEffects(mode);
+      updateWeatherModeLegend(mode, payload);
+      viewer.scene.requestRender();
+      return true;
+    }
 
     if (zoomWeatherLayer && imageryLayerExists(zoomWeatherLayer)) {
       zoomWeatherLayer.alpha = Math.max(0.04, zoomWeatherLayer.alpha * 0.42);
@@ -5784,6 +6036,8 @@ void main() {
       credit: payload.provider || config.sourceLabel || "Zoom Earth"
     }));
     zoomWeatherLayer.orionKey = "zoomWeather";
+    zoomWeatherLayer.orionFrameKey = frameKey;
+    zoomWeatherLayer.orionFrameTime = payload.selected_time || (payload.latest ? payload.latest.valid_time || payload.latest.time : null);
 
     if (zoomWeatherLayer.imageryProvider && zoomWeatherLayer.imageryProvider.errorEvent) {
       zoomWeatherLayer.imageryProvider.errorEvent.addEventListener(function (tileProviderError) {
@@ -5801,6 +6055,31 @@ void main() {
     updateWeatherModeLegend(mode, payload);
     viewer.scene.requestRender();
     return true;
+  }
+
+  function refreshZoomWeatherTimelineFrame() {
+    if (!isZoomWeatherMapMode(state.weatherMapMode)) {
+      return false;
+    }
+
+    var feed = platformFeeds.weatherRadar;
+    var payload = feed && feed.payload;
+
+    if (!payload || payload.weather_mode !== state.weatherMapMode) {
+      return false;
+    }
+
+    syncTimelineBoundsFromZoomPayload(payload, state.weatherMapMode, false);
+    return applyZoomWeatherLayer(payload, state.weatherMapMode);
+  }
+
+  function refreshTemporalMapLayers() {
+    var refreshed = false;
+
+    refreshed = refreshZoomWeatherTimelineFrame() || refreshed;
+    refreshed = refreshWeatherRadarTimelineFrame() || refreshed;
+
+    return refreshed;
   }
 
   function isStaticHostMode() {
@@ -6007,17 +6286,20 @@ void main() {
           return;
         }
 
-        if (!applyZoomWeatherLayer(payload, mode)) {
-          throw new Error("No Zoom Earth weather tile");
-        }
-
         platformFeeds.weatherRadar = {
           status: "online",
           loadedAt: Date.now(),
           items: payload.frames || [],
           payload: payload
         };
+        syncTimelineBoundsFromZoomPayload(payload, mode, true);
+
+        if (!applyZoomWeatherLayer(payload, mode)) {
+          throw new Error("No Zoom Earth weather tile");
+        }
+
         restartZoomWeatherTimer(mode, payload);
+        syncTimelineRangeControls();
         syncTimelineModeControls();
         updateTimelineLabels();
         updatePlatformTelemetry();
@@ -6440,7 +6722,7 @@ void main() {
       setZoomWeatherMapMode(state.weatherMapMode, true);
     }
 
-    if (state.timelineMode === "updates") {
+    if (state.timelineMode === "updates" && !isZoomWeatherMapMode(state.weatherMapMode)) {
       state.date = alignToUpdateStep(state.date);
       state.compareDate = alignToUpdateStep(state.compareDate);
     }
@@ -9599,11 +9881,12 @@ void main() {
 
     elements.compareRange.addEventListener("input", function (event) {
       var previousTileKey = timelineRefreshKey(state.compareDate);
-      state.compareDate = clampDate(dateFromRange(event.target.value));
+      state.compareDate = clampTimelineDate(dateFromRange(event.target.value));
       updateTimelineLabels();
 
       if (timelineRefreshKey(state.compareDate) !== previousTileKey) {
         scheduleImageryRefresh();
+        refreshTemporalMapLayers();
       }
     });
 
@@ -10216,7 +10499,7 @@ void main() {
 
   function setDate(date, refresh) {
     var previousTileKey = timelineRefreshKey(state.date);
-    state.date = clampDate(date);
+    state.date = clampTimelineDate(date);
     elements.timelineRange.value = String(rangeFromDate(state.date));
     updateTimelineLabels();
     updateTrackingLayer(false);
@@ -10224,18 +10507,21 @@ void main() {
 
     if (refresh && timelineRefreshKey(state.date) !== previousTileKey) {
       scheduleImageryRefresh();
+      refreshTemporalMapLayers();
     }
   }
 
   function advanceDate(delta, loop) {
     var nextDate = addTimelineUnits(state.date, delta);
+    var min = timelineMinDate();
+    var max = timelineMaxDate();
 
-    if (nextDate > maxDate) {
-      nextDate = loop ? minDate : maxDate;
+    if (nextDate > max) {
+      nextDate = loop ? min : max;
     }
 
-    if (nextDate < minDate) {
-      nextDate = loop ? maxDate : minDate;
+    if (nextDate < min) {
+      nextDate = loop ? max : min;
     }
 
     if (nextDate.getTime() === state.date.getTime()) {
@@ -10270,8 +10556,8 @@ void main() {
       return;
     }
 
-    if (state.date.getTime() >= maxDate.getTime()) {
-      setDate(minDate, true);
+    if (state.date.getTime() >= timelineMaxDate().getTime()) {
+      setDate(timelineMinDate(), true);
     }
 
     playbackFrame = window.requestAnimationFrame(playbackStep);
@@ -10298,7 +10584,7 @@ void main() {
         updatePlaybackAccumulator -= wholeUpdates;
         advanceDate(wholeUpdates, false);
 
-        if (state.date.getTime() >= maxDate.getTime()) {
+        if (state.date.getTime() >= timelineMaxDate().getTime()) {
           setPlaying(false);
           return;
         }
@@ -10310,8 +10596,8 @@ void main() {
 
     var nextTime = state.date.getTime() + elapsedSeconds * state.speed * MS_PER_HOUR;
 
-    if (nextTime > maxDate.getTime()) {
-      setDate(maxDate, true);
+    if (nextTime > timelineMaxDate().getTime()) {
+      setDate(timelineMaxDate(), true);
       setPlaying(false);
       return;
     }
@@ -10336,6 +10622,7 @@ void main() {
     syncTimelineModeControls();
     syncControlState();
     scheduleImageryRefresh();
+    refreshTemporalMapLayers();
     showToast(mode === "updates" ? "Timeline stepping by received " + updateCadenceParts().longLabel + " map updates." : "Timeline stepping by hour.");
   }
 
@@ -10381,9 +10668,9 @@ void main() {
   function updateTimelineLabels() {
     var updatesMode = state.timelineMode === "updates";
     var cursorUnits = updatesMode
-      ? clamp(updateStepsBetween(minDate, state.date), 0, timelineRangeMax())
-      : clamp(Math.floor(hoursBetween(minDate, state.date)), 0, timelineRangeMax());
-    var cursorDate = updatesMode ? new Date(minDate.getTime() + cursorUnits * currentUpdateIntervalMs()) : addHours(minDate, cursorUnits);
+      ? clamp(updateStepsBetween(timelineMinDate(), state.date), 0, timelineRangeMax())
+      : clamp(Math.floor(hoursBetween(timelineMinDate(), state.date)), 0, timelineRangeMax());
+    var cursorDate = updatesMode ? new Date(timelineMinDate().getTime() + cursorUnits * currentUpdateIntervalMs()) : addHours(timelineMinDate(), cursorUnits);
     var liveTrackTime = getTrackingTime();
     var cadence = updateCadenceParts();
 
@@ -10391,11 +10678,11 @@ void main() {
     elements.imageDate.textContent = formatDate(cursorDate) + " - " + formatHour(cursorDate) + " UTC";
     elements.compareDateLabel.textContent = readableDateTime(state.compareDate);
     elements.compareRange.value = String(rangeFromDate(state.compareDate));
-    elements.timelineStartLabel.textContent = readableDate(minDate);
+    elements.timelineStartLabel.textContent = readableDate(timelineMinDate());
     elements.timelineCursorLabel.textContent = state.tracking.live ? "LIVE" : updatesMode ? "UPD " + formatHour(cursorDate) : "T+" + String(cursorUnits).padStart(3, "0") + "H";
-    elements.timelineEndLabel.textContent = readableDate(maxDate);
+    elements.timelineEndLabel.textContent = readableDate(timelineMaxDate());
 
-    var ageHours = Math.max(0, Math.round(hoursBetween(state.date, maxDate)));
+    var ageHours = Math.max(0, Math.round(hoursBetween(state.date, timelineMaxDate())));
     var ageDays = Math.floor(ageHours / 24);
     var remainingHours = ageHours % 24;
 
@@ -10964,10 +11251,7 @@ void main() {
   }
 
   function syncControlState() {
-    elements.timelineRange.max = String(timelineRangeMax());
-    elements.compareRange.max = String(timelineRangeMax());
-    elements.timelineRange.value = String(rangeFromDate(state.date));
-    elements.compareRange.value = String(rangeFromDate(state.compareDate));
+    syncTimelineRangeControls();
     elements.splitRange.value = String(state.splitPosition);
 
     elements.layerTrueColor.checked = state.layers.trueColor;

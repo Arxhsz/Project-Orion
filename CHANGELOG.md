@@ -8,6 +8,7 @@
 - Added deterministic test access through `window.OrionLiveLocation.testPosition(...)`.
 - Retired degraded experimental controls for cyber arcs, sea cables, airspace, power grid, RF heat, emergency/event heat, and air routes.
 - Updated timeline Updates mode to use the active map cadence: 20-minute satellite steps, 5-minute radar snapshots, 10-minute Zoom Earth forecast snapshots, and 12-hour HD satellite steps.
+- Fixed timeline frame selection so Zoom Earth weather maps stay on the selected historical update instead of snapping back to the previous/latest tile.
 - Added active-layer render budgets so the globe stays smoother when several live layers are enabled together.
 - Quieted production console noise behind `?orionDebug=1` / `localStorage.orionDebug=1`.
 - Refreshed the README brand panel and added app screenshots for the loading, globe, and timeline views.
