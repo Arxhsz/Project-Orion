@@ -1,10 +1,10 @@
 <p align="center">
-  <img src="assets/orion-logo.svg" alt="Project Orion" width="360" style="max-width: 100%; height: auto;">
+  <img src="assets/orion-logo.svg" alt="Project Orion" width="760" style="max-width: 100%; height: auto;">
 </p>
 
 # Project Orion
 
-Project Orion is a realtime planetary intelligence and Earth visualization platform built on CesiumJS. It combines cinematic satellite imagery, live weather maps, orbital tracking, aircraft and vessel intelligence, CameraNet, environmental monitoring, infrastructure overlays, tactical scan modes, saved locations, and historical timeline playback in a dark glass command interface.
+Project Orion is a realtime planetary command map built on CesiumJS. It combines cinematic satellite imagery, Zoom Earth-style weather maps, orbital tracking, aircraft and vessel intelligence, CameraNet, environmental monitoring, saved locations, live device location, and historical timeline playback in a dark glass command interface.
 
 Current version: v1.1.0
 
@@ -12,13 +12,28 @@ Current version: v1.1.0
 
 Orion is designed as an operational globe rather than a static map. The application layers public Earth imagery, weather intelligence, live telemetry, and selectable entities into one reusable rendering system. It supports local backend mode for the richest live data and static GitHub Pages mode for the public visualization experience.
 
+## Screenshots
+
+<table>
+  <tr>
+    <td width="33%"><img src="assets/screenshots/orion-loading.png" alt="Project Orion loading screen"></td>
+    <td width="33%"><img src="assets/screenshots/orion-earth.png" alt="Project Orion Earth view"></td>
+    <td width="33%"><img src="assets/screenshots/orion-timeline.png" alt="Project Orion timeline and weather controls"></td>
+  </tr>
+  <tr>
+    <td align="center">Loading sequence</td>
+    <td align="center">Realtime Earth view</td>
+    <td align="center">Cadence-aware timeline</td>
+  </tr>
+</table>
+
 ## Current Capabilities
 
 - Cesium globe with NASA GIBS satellite imagery and cloud-free Earth mode.
 - Zoom Earth-style weather map modes for radar, precipitation, wind, temperature, humidity, and pressure.
-- Smooth timeline playback with hourly and received-update stepping.
+- Smooth timeline playback with hourly stepping and cadence-aware update stepping.
 - Live satellite and constellation layers using CelesTrak TLE data.
-- Aircraft, vessel, camera, weather, wildfire, earthquake, lightning, cyber, cable, airspace, power, and RF layer systems.
+- Aircraft, vessel, camera, weather radar, wildfire, earthquake, storm volume, lightning, and 3D city layer systems.
 - Selectable telemetry list with camera locking, free orbit, and unlock controls.
 - CameraNet architecture with provider adapters, clustering, and on-demand stream or snapshot loading.
 - Live device location tracking with an Orion-styled marker and accuracy ring.
@@ -66,6 +81,7 @@ camera_providers.py         CameraNet provider adapters
 cameranet_frontend.js       CameraNet clustering and feed UI
 orion-renderer-*.js         Modular renderers for imagery, primitives, environment, and infrastructure
 assets/orion-logo.svg       Repository logo
+assets/screenshots/         README screenshot gallery
 CHANGELOG.md                Version history
 ```
 

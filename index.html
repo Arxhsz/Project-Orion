@@ -11,8 +11,8 @@
     <link rel="preconnect" href="https://gibs.earthdata.nasa.gov">
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%2305070c'/%3E%3Ccircle cx='32' cy='32' r='20' fill='none' stroke='%23ffffff' stroke-width='3'/%3E%3Cpath d='M32 8v48M8 32h48' stroke='%23ffffff' stroke-width='2'/%3E%3C/svg%3E">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cesium@1.141.0/Build/Cesium/Widgets/widgets.css">
-    <link rel="stylesheet" href="styles.css?v=20260606-v1.1.0-location">
-    <link rel="stylesheet" href="orion-onboarding.css?v=20260606-v1.1.0-location">
+    <link rel="stylesheet" href="styles.css?v=20260606-v1.1.0-ops">
+    <link rel="stylesheet" href="orion-onboarding.css?v=20260606-v1.1.0-ops">
   </head>
   <body>
     <div class="bg" id="orionLoadingScreen">
@@ -274,36 +274,6 @@
               <span>Wildfires</span>
             </label>
             <label class="toggle-row">
-              <input id="platformCyber" type="checkbox">
-              <span class="switch"></span>
-              <span>Cyber arcs</span>
-            </label>
-            <label class="toggle-row">
-              <input id="platformAirspace" type="checkbox">
-              <span class="switch"></span>
-              <span>Airspace</span>
-            </label>
-            <label class="toggle-row">
-              <input id="platformCables" type="checkbox">
-              <span class="switch"></span>
-              <span>Sea cables</span>
-            </label>
-            <label class="toggle-row">
-              <input id="platformPower" type="checkbox">
-              <span class="switch"></span>
-              <span>Power grid</span>
-            </label>
-            <label class="toggle-row">
-              <input id="platformRf" type="checkbox">
-              <span class="switch"></span>
-              <span>RF heat</span>
-            </label>
-            <label class="toggle-row">
-              <input id="platformEmergency" type="checkbox">
-              <span class="switch"></span>
-              <span>Emergency</span>
-            </label>
-            <label class="toggle-row">
               <input id="platformWeatherVolume" type="checkbox">
               <span class="switch"></span>
               <span>Storm volume</span>
@@ -312,11 +282,6 @@
               <input id="platformLightning" type="checkbox">
               <span class="switch"></span>
               <span>Lightning</span>
-            </label>
-            <label class="toggle-row">
-              <input id="platformAirCorridors" type="checkbox">
-              <span class="switch"></span>
-              <span>Air routes</span>
             </label>
             <label class="toggle-row">
               <input id="platformCities" type="checkbox">
@@ -336,10 +301,8 @@
               <option value="infrared">Infrared</option>
               <option value="radar">Radar</option>
               <option value="night">Night ops</option>
-              <option value="signal">Signal intelligence</option>
               <option value="weather">Weather</option>
               <option value="orbital">Orbital</option>
-              <option value="cyber">Cyber</option>
             </select>
           </label>
           <label class="scan-control" for="earthquakeFeedSelect">
@@ -556,24 +519,24 @@
     <script src="https://cdn.jsdelivr.net/npm/cesium@1.141.0/Build/Cesium/Cesium.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/satellite.js@5.0.0/dist/satellite.min.js" defer></script>
-    <script src="orion-core.js?v=20260606-v1.1.0-location"></script>
-    <script src="orion-config.js?v=20260606-v1.1.0-location"></script>
-    <script src="orion-runtime-state.js?v=20260606-v1.1.0-location"></script>
-    <script src="orion-performance-budget.js?v=20260606-v1.1.0-location"></script>
-    <script src="orion-telemetry-health.js?v=20260606-v1.1.0-location"></script>
-    <script src="orion-diagnostics.js?v=20260606-v1.1.0-location"></script>
-    <script src="orion-intelligence.js?v=20260606-v1.1.0-location"></script>
-    <script src="orion-renderer-environment.js?v=20260606-v1.1.0-location"></script>
-    <script src="orion-renderer-infrastructure.js?v=20260606-v1.1.0-location"></script>
-    <script src="orion-renderer-imagery.js?v=20260606-v1.1.0-location"></script>
-    <script src="orion-renderer-primitive.js?v=20260606-v1.1.0-location"></script>
-    <script src="orion-replay.js?v=20260606-v1.1.0-location"></script>
-    <script src="orion-session.js?v=20260606-v1.1.0-location"></script>
-    <script src="orion-verification.js?v=20260606-v1.1.0-location"></script>
-    <script src="loading_screen.js?v=20260606-v1.1.0-location"></script>
-    <script src="orion-onboarding.js?v=20260606-v1.1.0-location"></script>
-    <script src="orion-texture-manager.js?v=20260606-v1.1.0-location"></script>
-    <script src="cameranet_frontend.js?v=20260606-v1.1.0-location" defer></script>
-    <script src="app.js?v=20260606-v1.1.0-location" defer></script>
+    <script src="orion-core.js?v=20260606-v1.1.0-ops"></script>
+    <script src="orion-config.js?v=20260606-v1.1.0-ops"></script>
+    <script src="orion-runtime-state.js?v=20260606-v1.1.0-ops"></script>
+    <script src="orion-performance-budget.js?v=20260606-v1.1.0-ops"></script>
+    <script src="orion-telemetry-health.js?v=20260606-v1.1.0-ops"></script>
+    <script src="orion-diagnostics.js?v=20260606-v1.1.0-ops"></script>
+    <script src="orion-intelligence.js?v=20260606-v1.1.0-ops"></script>
+    <script src="orion-renderer-environment.js?v=20260606-v1.1.0-ops"></script>
+    <script src="orion-renderer-infrastructure.js?v=20260606-v1.1.0-ops"></script>
+    <script src="orion-renderer-imagery.js?v=20260606-v1.1.0-ops"></script>
+    <script src="orion-renderer-primitive.js?v=20260606-v1.1.0-ops"></script>
+    <script src="orion-replay.js?v=20260606-v1.1.0-ops"></script>
+    <script src="orion-session.js?v=20260606-v1.1.0-ops"></script>
+    <script src="orion-verification.js?v=20260606-v1.1.0-ops"></script>
+    <script src="loading_screen.js?v=20260606-v1.1.0-ops"></script>
+    <script src="orion-onboarding.js?v=20260606-v1.1.0-ops"></script>
+    <script src="orion-texture-manager.js?v=20260606-v1.1.0-ops"></script>
+    <script src="cameranet_frontend.js?v=20260606-v1.1.0-ops" defer></script>
+    <script src="app.js?v=20260606-v1.1.0-ops" defer></script>
   </body>
 </html>

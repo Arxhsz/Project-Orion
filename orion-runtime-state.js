@@ -2,6 +2,14 @@
   'use strict';
 
   var Orion = window.Orion || {};
+  var debugEnabled = false;
+
+  try {
+    debugEnabled = new URLSearchParams(window.location.search).get('orionDebug') === '1' ||
+      window.localStorage.getItem('orionDebug') === '1';
+  } catch (error) {
+    debugEnabled = false;
+  }
 
   Orion.Runtime.StateManager = {
     layerStates: {},
@@ -21,7 +29,7 @@
           lockedUntil: 0
         };
       });
-      console.log('[Orion.Runtime.StateManager] Initialized');
+      if (debugEnabled) console.log('[Orion.Runtime.StateManager] Initialized');
     },
     
     setLayerEnabled: function(layerId, enabled) {
@@ -61,7 +69,7 @@
           this.stateHistory.shift();
         }
         
-        console.log('[Orion.Runtime.StateManager]', layerId, enabled ? 'ENABLED' : 'DISABLED');
+        if (debugEnabled) console.log('[Orion.Runtime.StateManager]', layerId, enabled ? 'ENABLED' : 'DISABLED');
         
         Orion.Runtime.EventBus.emit('layer:changed', { layerId: layerId, enabled: enabled });
         

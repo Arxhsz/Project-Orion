@@ -2274,7 +2274,7 @@ class OrionHandler(SimpleHTTPRequestHandler):
                     "mode": "live",
                     "weather_mode": "radar",
                     "generated": int(time.time()),
-                    "refresh_seconds": 600,
+                    "refresh_seconds": 300,
                     "count": len(frames),
                     "latest": latest,
                     "frames": frames,

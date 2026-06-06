@@ -305,7 +305,8 @@
       controlId: "platformCyber",
       maxItems: 5000,
       refreshMs: 2 * 60 * 1000,
-      color: "#d8dcff"
+      color: "#d8dcff",
+      retired: true
     },
     defenseAirspace: {
       label: "Defense airspace",
@@ -315,7 +316,8 @@
       controlId: "platformAirspace",
       maxItems: 5000,
       refreshMs: 5 * 60 * 1000,
-      color: "#fff0a5"
+      color: "#fff0a5",
+      retired: true
     },
     underseaCables: {
       label: "Undersea cables",
@@ -325,7 +327,8 @@
       controlId: "platformCables",
       maxItems: 5000,
       refreshMs: 15 * 60 * 1000,
-      color: "#b7ecff"
+      color: "#b7ecff",
+      retired: true
     },
     powerGrid: {
       label: "Power grid",
@@ -335,7 +338,8 @@
       controlId: "platformPower",
       maxItems: 5000,
       refreshMs: 5 * 60 * 1000,
-      color: "#ffe29a"
+      color: "#ffe29a",
+      retired: true
     },
     rfHeatmap: {
       label: "RF heatmap",
@@ -345,7 +349,8 @@
       controlId: "platformRf",
       maxItems: 5000,
       refreshMs: 10 * 60 * 1000,
-      color: "#d3f2ff"
+      color: "#d3f2ff",
+      retired: true
     },
     emergencyIncidents: {
       label: "Emergency incidents",
@@ -355,7 +360,8 @@
       controlId: "platformEmergency",
       maxItems: 5000,
       refreshMs: 2 * 60 * 1000,
-      color: "#ffb3a8"
+      color: "#ffb3a8",
+      retired: true
     },
     volumetricWeather: {
       label: "Weather volume",
@@ -385,7 +391,8 @@
       controlId: "platformAirCorridors",
       maxItems: 5000,
       refreshMs: 10 * 60 * 1000,
-      color: "#c8d2ff"
+      color: "#c8d2ff",
+      retired: true
     },
     cities3d: {
       label: "3D cities",

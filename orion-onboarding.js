@@ -4,7 +4,7 @@ const OrionOnboarding = (function() {
     const STORAGE_KEYS = {
         ONBOARDING_COMPLETE: 'orion_onboarding_complete',
         CHANGELOG_VERSION: 'orion_changelog_dismissed',
-        CURRENT_VERSION: '1.1.0'
+        CURRENT_VERSION: '1.1.0-ops'
     };
 
     const TUTORIAL_STEPS = [
@@ -89,7 +89,7 @@ const OrionOnboarding = (function() {
         {
             id: 'intel-layers',
             title: 'Intel Layers',
-            description: 'Enable real-time intelligence overlays including satellites, earthquakes, cameras, weather radar, ships, wildfires, cyber networks, airspace, cables, power grids, and more. Each layer adds tactical data to the globe.',
+            description: 'Enable real-time intelligence overlays including satellites, earthquakes, cameras, weather radar, ships, wildfires, storm volume, lightning, and 3D cities. Retired experimental layers are kept out of the production controls.',
             target: '.platform-block .section-label',
             position: 'right',
             cameraFly: null,
@@ -158,7 +158,7 @@ const OrionOnboarding = (function() {
         {
             id: 'timeline-modes',
             title: 'Timeline Modes',
-            description: 'Switch between Hourly mode (hour-by-hour navigation) and Updates mode (day-by-day navigation). Choose the mode that best fits your analysis needs.',
+            description: 'Switch between Hourly mode and Updates mode. Updates mode now follows the active map cadence, including 20-minute satellite steps and faster radar refreshes.',
             target: '.timeline-mode-row',
             position: 'top',
             cameraFly: null,
@@ -252,7 +252,15 @@ const OrionOnboarding = (function() {
         date: 'June 2026',
         sections: [
             {
-                title: 'New Features',
+                title: 'Operations Cleanup',
+                items: [
+                    'Retired degraded experimental controls for cyber arcs, sea cables, airspace, power grid, RF heat, event heat, and air routes',
+                    'Updated timeline Updates mode so its buttons, speed labels, and status text follow the active map refresh cadence',
+                    'Reduced renderer pressure when several live layers are enabled together'
+                ]
+            },
+            {
+                title: 'Live Location',
                 items: [
                     'Added live location tracking with an Orion-styled device marker',
                     'Added a live accuracy ring that updates with the device location fix',
@@ -270,8 +278,8 @@ const OrionOnboarding = (function() {
             {
                 title: 'Publishing',
                 items: [
-                    'Bumped Project Orion to v1.1.0',
-                    'Published the v1.1.0 changelog in the app and repository',
+                    'Refreshed the GitHub README brand panel and screenshot gallery',
+                    'Published the v1.1.0 cleanup notes in the app and repository',
                     'Refreshed cache-busting asset versions for GitHub Pages'
                 ]
             }

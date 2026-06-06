@@ -13,7 +13,31 @@
   var EARTH_HOME = Orion.Config.Constants.EARTH_HOME;
   var SAVED_LOCATIONS_KEY = Orion.Config.Constants.SAVED_LOCATIONS_KEY;
   var APP_VERSION = Orion.Config.Constants.APP_VERSION || "1.1.0";
-  var UPDATE_INTERVAL_MS = 10 * 60 * 1000;
+  var DEFAULT_UPDATE_INTERVAL_MS = 10 * 60 * 1000;
+  var UPDATE_CADENCE_BY_MODE = {
+    satellite: 20 * 60 * 1000,
+    "satellite-hd": 12 * 60 * 60 * 1000,
+    radar: 5 * 60 * 1000,
+    precipitation: DEFAULT_UPDATE_INTERVAL_MS,
+    wind: DEFAULT_UPDATE_INTERVAL_MS,
+    temperature: DEFAULT_UPDATE_INTERVAL_MS,
+    humidity: DEFAULT_UPDATE_INTERVAL_MS,
+    pressure: DEFAULT_UPDATE_INTERVAL_MS
+  };
+  var ORION_DEBUG = (function () {
+    try {
+      return new URLSearchParams(window.location.search).get("orionDebug") === "1" ||
+        window.localStorage.getItem("orionDebug") === "1";
+    } catch (error) {
+      return false;
+    }
+  })();
+
+  function debugLog() {
+    if (ORION_DEBUG && window.console && console.log) {
+      console.log.apply(console, arguments);
+    }
+  }
 
   var layerDefinitions = Orion.Config.LayerDefinitions;
 
@@ -29,6 +53,10 @@
   };
 
   var platformLayerDefinitions = Orion.Config.PlatformLayerDefinitions;
+  function isRetiredPlatformLayer(layerId) {
+    return !!(platformLayerDefinitions[layerId] && platformLayerDefinitions[layerId].retired);
+  }
+
   var orbitalLayerIds = [
     "realtimeSatellites",
     "satInternet",
@@ -141,7 +169,6 @@
   var cityBuildingsTileset = null;
   var boundaryDataSources = { countries: null, usStates: null };
   var boundaryLoadPromise = null;
-  var soundEngine = null;
   var timelapseRecorder = null;
   var timelapseChunks = [];
   var lastIntelListRender = 0;
@@ -335,15 +362,8 @@
       "platformLiveShips",
       "platformAircraft",
       "platformWildfires",
-      "platformCyber",
-      "platformAirspace",
-      "platformCables",
-      "platformPower",
-      "platformRf",
-      "platformEmergency",
       "platformWeatherVolume",
       "platformLightning",
-      "platformAirCorridors",
       "platformCities",
       "scanModeSelect",
       "timelapseRecord",
@@ -476,8 +496,45 @@
     return (end.getTime() - start.getTime()) / MS_PER_HOUR;
   }
 
+  function updateIntervalMsForMode(mode) {
+    return UPDATE_CADENCE_BY_MODE[mode] || DEFAULT_UPDATE_INTERVAL_MS;
+  }
+
+  function currentUpdateIntervalMs() {
+    var mode = state && state.weatherMapMode ? state.weatherMapMode : "satellite";
+    var feed = platformFeeds && platformFeeds.weatherRadar;
+    var payloadRefreshSeconds = feed && feed.payload ? Number(feed.payload.refresh_seconds) : 0;
+    var payloadMode = feed && feed.payload ? feed.payload.weather_mode : null;
+
+    if (payloadRefreshSeconds > 0 && payloadMode === mode && zoomWeatherModeConfig && zoomWeatherModeConfig[mode]) {
+      return payloadRefreshSeconds * 1000;
+    }
+
+    return updateIntervalMsForMode(mode);
+  }
+
+  function updateCadenceParts() {
+    var interval = currentUpdateIntervalMs();
+
+    if (interval >= MS_PER_HOUR && interval % MS_PER_HOUR === 0) {
+      var hours = Math.max(1, interval / MS_PER_HOUR);
+      return {
+        shortLabel: hours + "H",
+        longLabel: hours + "-hour",
+        speedLabel: hours + "-h/s"
+      };
+    }
+
+    var minutes = Math.max(1, Math.round(interval / 60000));
+    return {
+      shortLabel: minutes + "M",
+      longLabel: minutes + "-minute",
+      speedLabel: minutes + "-min/s"
+    };
+  }
+
   function updateStepsBetween(start, end) {
-    return Math.round((end.getTime() - start.getTime()) / UPDATE_INTERVAL_MS);
+    return Math.round((end.getTime() - start.getTime()) / currentUpdateIntervalMs());
   }
 
   function timelineUpdateRangeMax() {
@@ -486,7 +543,7 @@
 
   function alignToUpdateStep(date) {
     var step = clamp(updateStepsBetween(minDate, clampDate(date)), 0, timelineUpdateRangeMax());
-    return new Date(minDate.getTime() + step * UPDATE_INTERVAL_MS);
+    return new Date(minDate.getTime() + step * currentUpdateIntervalMs());
   }
 
   function formatDate(date) {
@@ -612,7 +669,7 @@
 
   function dateFromRange(inputValue) {
     if (state.timelineMode === "updates") {
-      return new Date(minDate.getTime() + Number(inputValue) * UPDATE_INTERVAL_MS);
+      return new Date(minDate.getTime() + Number(inputValue) * currentUpdateIntervalMs());
     }
 
     return addHours(minDate, Number(inputValue));
@@ -636,7 +693,7 @@
 
   function addTimelineUnits(date, amount) {
     if (state.timelineMode === "updates") {
-      return new Date(date.getTime() + amount * UPDATE_INTERVAL_MS);
+      return new Date(date.getTime() + amount * currentUpdateIntervalMs());
     }
 
     return addHours(date, amount);
@@ -847,7 +904,7 @@
 
     primitiveCollections.rfHeatmap = viewer.scene.primitives.add(new Cesium.BillboardCollection());
 
-    console.log('Primitive collections initialized for high-performance rendering');
+    debugLog('Primitive collections initialized for high-performance rendering');
   }
   function debounce(func, wait) {
     var timeout;
@@ -893,7 +950,7 @@
     }
 
     var duration = performance.now() - startTime;
-    console.log("Entity pools initialized in " + duration.toFixed(2) + "ms (" + POOL_SIZE + " billboard entities)");
+    debugLog("Entity pools initialized in " + duration.toFixed(2) + "ms (" + POOL_SIZE + " billboard entities)");
   }
 
   function acquireEntity(type) {
@@ -1144,7 +1201,7 @@ void main() {
       viewer.scene.postProcessStages.add(imageryShaders.atmosphere);
     }
 
-    var duration = performance.now() - startTime;    console.log("Imagery shaders initialized in " + duration.toFixed(2) + "ms");
+    var duration = performance.now() - startTime;    debugLog("Imagery shaders initialized in " + duration.toFixed(2) + "ms");
   }
   function switchImageryMode(mode) {
     if (!viewer || !viewer.scene || !viewer.scene.postProcessStages) {
@@ -1218,7 +1275,7 @@ void main() {
     viewer.scene.requestRender();
 
     var duration = performance.now() - startTime;
-    console.log("Imagery mode transition started to '" + mode + "' in " + duration.toFixed(2) + "ms");
+    debugLog("Imagery mode transition started to '" + mode + "' in " + duration.toFixed(2) + "ms");
   }
   function setImageryLayerLinearSampling(layer) {
     if (!layer || !Cesium.TextureMagnificationFilter) {
@@ -2886,7 +2943,7 @@ void main() {
   }
 
   function validateAndCleanGeoJSON(geojson, name) {
-    console.log('Validating GeoJSON:', name);
+    debugLog('Validating GeoJSON:', name);
     
     if (!geojson || geojson.type !== 'FeatureCollection') {
       console.error('Invalid GeoJSON: not a FeatureCollection');
@@ -2899,11 +2956,11 @@ void main() {
 
     if (features.length > 0) {
       var firstFeature = features[0];
-      console.log('First feature geometry type:', firstFeature.geometry ? firstFeature.geometry.type : 'none');
+      debugLog('First feature geometry type:', firstFeature.geometry ? firstFeature.geometry.type : 'none');
       if (firstFeature.geometry && firstFeature.geometry.coordinates) {
         var coords = firstFeature.geometry.coordinates;
-        console.log('Coordinate structure depth:', Array.isArray(coords) ? (Array.isArray(coords[0]) ? (Array.isArray(coords[0][0]) ? (Array.isArray(coords[0][0][0]) ? 4 : 3) : 2) : 1) : 0);
-        console.log('First coordinate sample:', JSON.stringify(coords).substring(0, 200));
+        debugLog('Coordinate structure depth:', Array.isArray(coords) ? (Array.isArray(coords[0]) ? (Array.isArray(coords[0][0]) ? (Array.isArray(coords[0][0][0]) ? 4 : 3) : 2) : 1) : 0);
+        debugLog('First coordinate sample:', JSON.stringify(coords).substring(0, 200));
       }
     }
 
@@ -2924,14 +2981,14 @@ void main() {
       } else {
         invalidCount++;
         if (i < 3) {
-          console.log('Invalid feature', i, ':', feature.properties ? feature.properties.name : 'unnamed');
+          debugLog('Invalid feature', i, ':', feature.properties ? feature.properties.name : 'unnamed');
         }
       }
     }
 
-    console.log('GeoJSON validation complete:', name);
-    console.log('  Valid features:', validFeatures.length);
-    console.log('  Invalid features filtered:', invalidCount);
+    debugLog('GeoJSON validation complete:', name);
+    debugLog('  Valid features:', validFeatures.length);
+    debugLog('  Invalid features filtered:', invalidCount);
 
     if (validFeatures.length === 0) {
       throw new Error('No valid features found in GeoJSON');
@@ -4342,7 +4399,7 @@ void main() {
     if (payload && payload.fallback && providerHealthTracker.shouldUseCachedData(layerId)) {
       var cached = providerHealthTracker.getCachedPayload(layerId);
       if (cached) {
-        console.log('[Payload] Using local cached data instead of server fallback for', layerId);
+        debugLog('[Payload] Using local cached data instead of server fallback for', layerId);
         payload = cached;
       }
     }
@@ -4554,7 +4611,7 @@ void main() {
   Object.assign(Orion.Renderer, {
     Cameras: {
       init: function() {
-        console.log('[Orion.Renderer.Cameras] Initialized');
+        debugLog('[Orion.Renderer.Cameras] Initialized');
       },
       render: function(items) {
         if (Orion.Telemetry.CameraNet && Orion.Telemetry.CameraNet.update) {
@@ -4567,7 +4624,7 @@ void main() {
       init: function() {
         this.stage = createAtmosphereShader();
         if (this.stage) viewer.scene.postProcessStages.add(this.stage);
-        console.log('[Orion.Renderer.Atmosphere] Initialized');
+        debugLog('[Orion.Renderer.Atmosphere] Initialized');
       },
       setTension: function(tension) {
         if (this.stage) this.stage.uniforms.tension = tension;
@@ -4575,7 +4632,7 @@ void main() {
     },
     Effects: {
       init: function() {
-        console.log('[Orion.Renderer.Effects] Initialized');
+        debugLog('[Orion.Renderer.Effects] Initialized');
       },
       createPulse: function(lat, lon, color, radius) {
         addOperationalPulse(lat, lon, color, radius);
@@ -4583,7 +4640,7 @@ void main() {
     },
     RFHeatmap: {
       collection: null,
-      init: function() { this.collection = viewer.scene.primitives.add(new Cesium.BillboardCollection()); console.log('[Orion.Renderer.RFHeatmap] Initialized'); },
+      init: function() { this.collection = viewer.scene.primitives.add(new Cesium.BillboardCollection()); debugLog('[Orion.Renderer.RFHeatmap] Initialized'); },
       render: function(items) {
         if (!this.collection) return;
         this.collection.removeAll();
@@ -4632,12 +4689,12 @@ void main() {
 
     if (!force && !providerHealthTracker.shouldRetryNow(layerId)) {
       var timeUntilRetry = providerHealthTracker.getTimeUntilRetry(layerId);
-      console.log('[RefreshPlatform]', layerId, 'waiting', Math.ceil(timeUntilRetry / 1000), 's before retry');
+      debugLog('[RefreshPlatform]', layerId, 'waiting', Math.ceil(timeUntilRetry / 1000), 's before retry');
       
       if (providerHealthTracker.shouldUseCachedData(layerId)) {
         var cachedPayload = providerHealthTracker.getCachedPayload(layerId);
         if (cachedPayload) {
-          console.log('[RefreshPlatform]', layerId, 'using cached data (stale-if-error)');
+          debugLog('[RefreshPlatform]', layerId, 'using cached data (stale-if-error)');
           applyPlatformPayload(layerId, cachedPayload);
           return;
         }
@@ -4673,7 +4730,7 @@ void main() {
     fetchJsonEndpoint(endpoint)
       .then(function (payload) {
         if (!layerStateManager.isLayerEnabled(layerId)) {
-          console.log('[RefreshPlatform] Layer', layerId, 'disabled during fetch, ignoring payload');
+          debugLog('[RefreshPlatform] Layer', layerId, 'disabled during fetch, ignoring payload');
           return;
         }
         
@@ -4686,7 +4743,7 @@ void main() {
 
     function handleFetchError(error) {
         if (!layerStateManager.isLayerEnabled(layerId)) {
-          console.log('[RefreshPlatform] Layer', layerId, 'disabled during fetch error, ignoring');
+          debugLog('[RefreshPlatform] Layer', layerId, 'disabled during fetch error, ignoring');
           return;
         }
 
@@ -4695,7 +4752,7 @@ void main() {
         var providerInfo = providerHealthTracker.getProviderInfo(layerId);
         var health = providerHealthTracker.getHealth(layerId);
         
-        console.log('[RefreshPlatform]', layerId, 'fetch failed:', error.message, 
+        debugLog('[RefreshPlatform]', layerId, 'fetch failed:', error.message,
                     '| health:', health, 
                     '| consecutive failures:', providerInfo.consecutiveFailures,
                     '| retry in:', Math.ceil(providerInfo.backoffMs / 1000) + 's');
@@ -4703,7 +4760,7 @@ void main() {
         if (providerHealthTracker.shouldUseCachedData(layerId)) {
           var cachedPayload = providerHealthTracker.getCachedPayload(layerId);
           if (cachedPayload) {
-            console.log('[RefreshPlatform]', layerId, 'serving cached data (stale-if-error)');
+            debugLog('[RefreshPlatform]', layerId, 'serving cached data (stale-if-error)');
             
             platformFeeds[layerId] = Object.assign({}, platformFeeds[layerId], {
               status: 'degraded',
@@ -4887,8 +4944,15 @@ void main() {
     var items = feed && Array.isArray(feed.items) ? feed.items : [];
     var active = {};
     var time = platformTime();
+    var baseLimit = definition && definition.maxItems ? definition.maxItems : 1500;
+    var lodLimit = currentLODLevel === "distant" ? 700 : currentLODLevel === "medium" ? 1800 : baseLimit;
+    var activeLayers = layerStateManager.getEnabledLayers().filter(function (id) {
+      return !isRetiredPlatformLayer(id);
+    }).length;
+    var pressureScale = activeLayers > 5 ? 0.6 : activeLayers > 3 ? 0.8 : 1;
+    var limit = Math.min(items.length, Math.max(120, Math.floor(Math.min(baseLimit, lodLimit) * pressureScale)));
 
-    items.forEach(function (item, index) {
+    items.slice(0, limit).forEach(function (item, index) {
       var sample = null;
 
       if (definition.type === "satellite") {
@@ -4926,7 +4990,7 @@ void main() {
   }
 
   function platformUsesEntityFeed(definition) {
-    return definition && definition.type !== "weatherRadar" && definition.type !== "tileset" && definition.type !== "sound";
+    return definition && definition.type !== "weatherRadar" && definition.type !== "tileset";
   }
 
   function cameraRegionQuery() {
@@ -5345,6 +5409,7 @@ void main() {
       label: "Radar",
       endpointMode: "radar",
       sourceLabel: "Zoom Earth radar",
+      refreshMs: 5 * 60 * 1000,
       alpha: 0.78,
       brightness: 1.08,
       contrast: 1.12,
@@ -5357,6 +5422,7 @@ void main() {
       label: "Precipitation",
       endpointMode: "precipitation",
       sourceLabel: "Zoom Earth / DWD ICON",
+      refreshMs: DEFAULT_UPDATE_INTERVAL_MS,
       alpha: 0.74,
       brightness: 1.02,
       contrast: 1.08,
@@ -5369,6 +5435,7 @@ void main() {
       label: "Wind",
       endpointMode: "wind",
       sourceLabel: "Zoom Earth / DWD ICON",
+      refreshMs: DEFAULT_UPDATE_INTERVAL_MS,
       alpha: 0.68,
       brightness: 1.0,
       contrast: 1.1,
@@ -5382,6 +5449,7 @@ void main() {
       label: "Temperature",
       endpointMode: "temperature",
       sourceLabel: "Zoom Earth / DWD ICON",
+      refreshMs: DEFAULT_UPDATE_INTERVAL_MS,
       alpha: 0.76,
       brightness: 1.04,
       contrast: 1.06,
@@ -5394,6 +5462,7 @@ void main() {
       label: "Humidity",
       endpointMode: "humidity",
       sourceLabel: "Zoom Earth / DWD ICON",
+      refreshMs: DEFAULT_UPDATE_INTERVAL_MS,
       alpha: 0.72,
       brightness: 1.0,
       contrast: 1.08,
@@ -5406,6 +5475,7 @@ void main() {
       label: "Pressure",
       endpointMode: "pressure",
       sourceLabel: "Zoom Earth / DWD ICON",
+      refreshMs: DEFAULT_UPDATE_INTERVAL_MS,
       alpha: 0.72,
       brightness: 1.06,
       contrast: 1.05,
@@ -5890,6 +5960,30 @@ void main() {
       });
   }
 
+  function zoomWeatherRefreshInterval(mode, payload) {
+    var config = zoomWeatherModeConfig[mode] || {};
+    var refreshSeconds = payload ? Number(payload.refresh_seconds) : 0;
+    var fromPayload = refreshSeconds > 0 ? refreshSeconds * 1000 : 0;
+    return Math.max(60 * 1000, fromPayload || config.refreshMs || updateIntervalMsForMode(mode));
+  }
+
+  function restartZoomWeatherTimer(mode, payload) {
+    if (zoomWeatherTimer) {
+      window.clearInterval(zoomWeatherTimer);
+      zoomWeatherTimer = null;
+    }
+
+    if (!isZoomWeatherMapMode(mode)) {
+      return;
+    }
+
+    zoomWeatherTimer = window.setInterval(function () {
+      if (isZoomWeatherMapMode(state.weatherMapMode)) {
+        setZoomWeatherMapMode(state.weatherMapMode, true);
+      }
+    }, zoomWeatherRefreshInterval(mode, payload));
+  }
+
   function setZoomWeatherMapMode(mode, force) {
     if (!viewer || !isZoomWeatherMapMode(mode)) {
       clearZoomWeatherLayer();
@@ -5898,6 +5992,7 @@ void main() {
 
     var config = zoomWeatherModeConfig[mode];
     var token = ++zoomWeatherRequestToken;
+    restartZoomWeatherTimer(mode);
 
     platformFeeds.weatherRadar = {
       status: "loading",
@@ -5922,6 +6017,9 @@ void main() {
           items: payload.frames || [],
           payload: payload
         };
+        restartZoomWeatherTimer(mode, payload);
+        syncTimelineModeControls();
+        updateTimelineLabels();
         updatePlatformTelemetry();
       })
       .catch(function (error) {
@@ -5934,14 +6032,6 @@ void main() {
         });
         updatePlatformTelemetry();
       });
-
-    if (!zoomWeatherTimer) {
-      zoomWeatherTimer = window.setInterval(function () {
-        if (isZoomWeatherMapMode(state.weatherMapMode)) {
-          setZoomWeatherMapMode(state.weatherMapMode, true);
-        }
-      }, 10 * 60 * 1000);
-    }
 
     if (force && zoomWeatherLayer && zoomWeatherMode === mode) {
       zoomWeatherLayer.alpha = zoomWeatherLayerAlpha(mode);
@@ -6014,77 +6104,11 @@ void main() {
       });
   }
 
-  function setSoundEngine(enabled) {
-    if (!enabled) {
-      if (soundEngine) {
-        soundEngine.gain.gain.setTargetAtTime(0, soundEngine.context.currentTime, 0.08);
-        window.setTimeout(function () {
-          if (soundEngine) {
-            soundEngine.oscillator.stop();
-            soundEngine.context.close();
-            soundEngine = null;
-          }
-        }, 160);
-      }
-
-      platformFeeds.soundscape = {
-        status: "standby",
-        loadedAt: Date.now(),
-        items: []
-      };
-      return;
-    }
-
-    var AudioContextCtor = window.AudioContext || window.webkitAudioContext;
-
-    if (!AudioContextCtor) {
-      platformFeeds.soundscape = {
-        status: "audio unavailable",
-        loadedAt: Date.now(),
-        items: []
-      };
-      updatePlatformTelemetry();
-      return;
-    }
-
-    if (!soundEngine) {
-      var context = new AudioContextCtor();
-      var oscillator = context.createOscillator();
-      var filter = context.createBiquadFilter();
-      var gain = context.createGain();
-
-      oscillator.type = "sine";
-      oscillator.frequency.value = 56;
-      filter.type = "lowpass";
-      filter.frequency.value = 240;
-      gain.gain.value = 0.0001;
-      oscillator.connect(filter);
-      filter.connect(gain);
-      gain.connect(context.destination);
-      oscillator.start();
-
-      soundEngine = {
-        context: context,
-        oscillator: oscillator,
-        filter: filter,
-        gain: gain
-      };
-    }
-
-    if (soundEngine.context.state === "suspended") {
-      soundEngine.context.resume();
-    }
-
-    soundEngine.gain.gain.setTargetAtTime(0.025, soundEngine.context.currentTime, 0.12);
-    platformFeeds.soundscape = {
-      status: "online",
-      loadedAt: Date.now(),
-      items: [{ name: "Camera-position ambience" }]
-    };
-    updatePlatformTelemetry();
-  }
-
   function setScanMode(mode) {
+    if (mode === "cyber" || mode === "signal") {
+      mode = "standard";
+    }
+
     state.scanMode = mode || "standard";
     document.body.dataset.scanMode = state.scanMode;
     
@@ -6106,10 +6130,6 @@ void main() {
         layers: { weatherRadar: true, lightning: true, volumetricWeather: true, wildfires: true },
         imagery: { clouds: true, infrared: false }
       },
-      cyber: {
-        layers: { cyberNetwork: true, underseaCables: true, rfHeatmap: true },
-        imagery: {}
-      },
       orbital: {
         layers: {
           realtimeSatellites: true,
@@ -6126,12 +6146,8 @@ void main() {
         imagery: { night: true }
       },
       radar: {
-        layers: { weatherRadar: true, defenseAirspace: true, airCorridors: true },
+        layers: { weatherRadar: true, lightning: true },
         imagery: { clouds: true }
-      },
-      signal: {
-        layers: { rfHeatmap: true, cyberNetwork: true, underseaCables: true },
-        imagery: { labels: true }
       },
       thermal: {
         layers: { wildfires: true, volumetricWeather: true },
@@ -6154,7 +6170,7 @@ void main() {
         state.layers[layerId] = preset.imagery[layerId];
       });
       Object.keys(preset.layers || {}).forEach(function (layerId) {
-        if (platformLayerDefinitions[layerId] && state.platformLayers[layerId] !== preset.layers[layerId]) {
+        if (platformLayerDefinitions[layerId] && !isRetiredPlatformLayer(layerId) && state.platformLayers[layerId] !== preset.layers[layerId]) {
           setPlatformLayer(layerId, preset.layers[layerId]);
         }
       });
@@ -6424,6 +6440,11 @@ void main() {
       setZoomWeatherMapMode(state.weatherMapMode, true);
     }
 
+    if (state.timelineMode === "updates") {
+      state.date = alignToUpdateStep(state.date);
+      state.compareDate = alignToUpdateStep(state.compareDate);
+    }
+
     syncControlState();
     updateTelemetry();
   }
@@ -6458,6 +6479,17 @@ void main() {
       return;
     }
 
+    if (isRetiredPlatformLayer(layerId)) {
+      state.platformLayers[layerId] = false;
+      if (elements[platformLayerDefinitions[layerId].controlId]) {
+        elements[platformLayerDefinitions[layerId].controlId].checked = false;
+      }
+      destroyLayerCompletely(layerId, true);
+      syncPlatformControls();
+      updatePlatformTelemetry();
+      return;
+    }
+
     var stateChanged = layerStateManager.setLayerEnabled(layerId, enabled);
     if (!stateChanged) {
       if (enabled) {
@@ -6488,13 +6520,6 @@ void main() {
 
     if (layerId === "cities3d") {
       setCityLayer(enabled);
-      syncPlatformControls();
-      updatePlatformTelemetry();
-      return;
-    }
-
-    if (layerId === "soundscape") {
-      setSoundEngine(enabled);
       syncPlatformControls();
       updatePlatformTelemetry();
       return;
@@ -6545,7 +6570,7 @@ void main() {
       return;
     }
 
-    console.log('[LayerCleanup] Destroying layer:', layerId);
+    debugLog('[LayerCleanup] Destroying layer:', layerId);
 
     var entitiesToRemove = [];
     Object.keys(platformEntities).forEach(function (id) {
@@ -6604,14 +6629,14 @@ void main() {
     }
 
     if (selectedPlatformEntityId && selectedPlatformEntityId.indexOf(layerId + "::") === 0) {
-      console.log('[LayerCleanup] Selected entity belonged to destroyed layer, unlocking camera');
+      debugLog('[LayerCleanup] Selected entity belonged to destroyed layer, unlocking camera');
       clearPlatformSelection("TRACK LOST");
     }
 
     updatePlatformTelemetry();
 
     if (force || entitiesToRemove.length) {
-      console.log('[LayerCleanup] Layer destroyed:', layerId, 
+      debugLog('[LayerCleanup] Layer destroyed:', layerId,
                   'entities removed:', entitiesToRemove.length);
     }
   }
@@ -7232,6 +7257,11 @@ void main() {
         return;
       }
 
+      if (definition.retired) {
+        label.remove();
+        return;
+      }
+
       label.dataset.layerId = layerId;
       label.dataset.category = definition.category;
       label.classList.toggle("merged-platform-source", !!mergedPlatformLayerIds[layerId]);
@@ -7338,6 +7368,19 @@ void main() {
     return count;
   }
 
+  function platformPrimitiveRenderLimit(layerId, items) {
+    var baseLimit = orbitalLayerIds.indexOf(layerId) !== -1
+      ? 12000
+      : (layerId === "liveAircraft" || layerId === "liveShips" ? 10000 : 1000);
+    var lodLimit = currentLODLevel === "distant" ? 3200 : currentLODLevel === "medium" ? 7000 : baseLimit;
+    var activeLayers = layerStateManager.getEnabledLayers().filter(function (id) {
+      return !isRetiredPlatformLayer(id);
+    }).length;
+    var pressureScale = activeLayers > 5 ? 0.58 : activeLayers > 3 ? 0.76 : 1;
+
+    return Math.min(items.length, Math.max(250, Math.floor(Math.min(baseLimit, lodLimit) * pressureScale)));
+  }
+
   function addPrimitiveFeedRows(rows) {
     var time = platformTime();
 
@@ -7354,9 +7397,7 @@ void main() {
         return;
       }
 
-      var limit = orbitalLayerIds.indexOf(layerId) !== -1
-        ? Math.min(items.length, 12000)
-        : (layerId === "liveAircraft" || layerId === "liveShips" ? Math.min(items.length, 10000) : 1000);
+      var limit = platformPrimitiveRenderLimit(layerId, items);
       var category = platformLayerCategoryLabel(layerId, definition);
 
       items.slice(0, limit).forEach(function (item, index) {
@@ -8364,7 +8405,7 @@ void main() {
     cullingManager = new CullingManager(viewer);
     
     lodManager.subscribe(function(level, height) {
-      console.log('LOD changed to:', level, 'at height:', Math.round(height), 'm');
+      debugLog('LOD changed to:', level, 'at height:', Math.round(height), 'm');
       refreshPlatformLayersForLOD();
     });
     
@@ -10295,7 +10336,7 @@ void main() {
     syncTimelineModeControls();
     syncControlState();
     scheduleImageryRefresh();
-    showToast(mode === "updates" ? "Timeline stepping by received map updates." : "Timeline stepping by hour.");
+    showToast(mode === "updates" ? "Timeline stepping by received " + updateCadenceParts().longLabel + " map updates." : "Timeline stepping by hour.");
   }
 
   function syncTimelineModeControls() {
@@ -10304,17 +10345,18 @@ void main() {
     }
 
     var updatesMode = state.timelineMode === "updates";
+    var cadence = updateCadenceParts();
     elements.timelineModeHourly.classList.toggle("active", !updatesMode);
     elements.timelineModeUpdates.classList.toggle("active", updatesMode);
     elements.timelineRange.step = "1";
     elements.compareRange.step = "1";
-    setCommandButton(elements.prevDay, updatesMode ? "10M" : "1H", "<");
-    setCommandButton(elements.nextDay, updatesMode ? "10M" : "1H", ">");
-    elements.prevDay.setAttribute("aria-label", updatesMode ? "Previous 10-minute map update" : "Previous hour");
-    elements.nextDay.setAttribute("aria-label", updatesMode ? "Next 10-minute map update" : "Next hour");
+    setCommandButton(elements.prevDay, updatesMode ? cadence.shortLabel : "1H", "<");
+    setCommandButton(elements.nextDay, updatesMode ? cadence.shortLabel : "1H", ">");
+    elements.prevDay.setAttribute("aria-label", updatesMode ? "Previous " + cadence.longLabel + " map update" : "Previous hour");
+    elements.nextDay.setAttribute("aria-label", updatesMode ? "Next " + cadence.longLabel + " map update" : "Next hour");
 
     Array.prototype.forEach.call(elements.speedSelect.options, function (option) {
-      option.textContent = option.value + (updatesMode ? " 10-min/s" : " h/s");
+      option.textContent = option.value + (updatesMode ? " " + cadence.speedLabel : " h/s");
     });
   }
 
@@ -10341,8 +10383,9 @@ void main() {
     var cursorUnits = updatesMode
       ? clamp(updateStepsBetween(minDate, state.date), 0, timelineRangeMax())
       : clamp(Math.floor(hoursBetween(minDate, state.date)), 0, timelineRangeMax());
-    var cursorDate = updatesMode ? new Date(minDate.getTime() + cursorUnits * UPDATE_INTERVAL_MS) : addHours(minDate, cursorUnits);
+    var cursorDate = updatesMode ? new Date(minDate.getTime() + cursorUnits * currentUpdateIntervalMs()) : addHours(minDate, cursorUnits);
     var liveTrackTime = getTrackingTime();
+    var cadence = updateCadenceParts();
 
     elements.currentDateLabel.textContent = state.tracking.live ? "LIVE - " + readableLiveDateTime(liveTrackTime) : readableDateTime(cursorDate);
     elements.imageDate.textContent = formatDate(cursorDate) + " - " + formatHour(cursorDate) + " UTC";
@@ -10359,7 +10402,7 @@ void main() {
     if (state.tracking.live) {
       elements.feedMeta.textContent = "Live tracks / latest stable imagery";
     } else if (updatesMode) {
-      elements.feedMeta.textContent = "Stepping by received 10-minute map updates";
+      elements.feedMeta.textContent = "Stepping by received " + cadence.longLabel + " map updates";
     } else if (ageHours === 0) {
       elements.feedMeta.textContent = "Latest stable NASA GIBS mosaic";
     } else if (ageDays > 0) {
@@ -10537,7 +10580,7 @@ void main() {
     snapshots: [],
     
     init: function() {
-      console.log('[Orion.Replay] Initialized');
+      debugLog('[Orion.Replay] Initialized');
     },
     
     takeSnapshot: function(label) {
@@ -10549,7 +10592,7 @@ void main() {
         contexts: JSON.parse(JSON.stringify(adaptiveIntelligenceManager.activeContexts))
       };
       this.snapshots.push(snapshot);
-      console.log('[Replay] Snapshot taken:', snapshot.label);
+      debugLog('[Replay] Snapshot taken:', snapshot.label);
       return snapshot;
     },
     
@@ -10558,7 +10601,7 @@ void main() {
       if (!s) return;
       this.active = true;
       state.date = new Date(s.simulationTime);
-      console.log('[Replay] Playing snapshot:', s.label);
+      debugLog('[Replay] Playing snapshot:', s.label);
     }
   };
 
@@ -10577,7 +10620,7 @@ void main() {
         } : null
       };
       localStorage.setItem('orion_session_state', JSON.stringify(session));
-      console.log('[Orion.Session] State persisted');
+      debugLog('[Orion.Session] State persisted');
     },
     
     restore: function() {
@@ -11011,7 +11054,7 @@ void main() {
     bindEvents();
     initCameraWindowControls();
 
-    console.log("DEBUG INIT", {
+    debugLog("DEBUG INIT", {
       Runtime: !!Orion.Runtime,
       Renderer: !!Orion.Renderer,
       TextureManager: !!Orion.Renderer?.TextureManager,
@@ -11093,12 +11136,6 @@ void main() {
     if (state.liveLocation.watchId !== null && navigator.geolocation) {
       navigator.geolocation.clearWatch(state.liveLocation.watchId);
       state.liveLocation.watchId = null;
-    }
-
-    if (soundEngine) {
-      soundEngine.oscillator.stop();
-      soundEngine.context.close();
-      soundEngine = null;
     }
 
     if (clickHandler) {
