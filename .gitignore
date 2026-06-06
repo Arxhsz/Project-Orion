@@ -10,6 +10,7 @@ artifacts/
 pages-data/
 *.md
 !README.md
+!CHANGELOG.md
 test-*.html
 reset-onboarding.html
 .zoom-*.json

@@ -571,6 +571,7 @@ h1 {
 }
 
 .saved-block,
+.location-block,
 .layer-block,
 .tracking-block,
 .platform-block {
@@ -662,6 +663,98 @@ h1 {
   border-color: rgba(243, 196, 107, 0.5);
   background: rgba(243, 196, 107, 0.12);
   color: #ffffff;
+}
+
+.location-block {
+  display: grid;
+  gap: 8px;
+}
+
+.location-command {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  align-items: center;
+  min-height: 48px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.065);
+  color: rgba(255, 255, 255, 0.84);
+  cursor: pointer;
+  text-align: left;
+}
+
+.location-command:hover {
+  border-color: rgba(128, 255, 190, 0.46);
+  background: rgba(128, 255, 190, 0.1);
+}
+
+.location-command.active {
+  border-color: rgba(128, 255, 190, 0.56);
+  background: rgba(128, 255, 190, 0.13);
+  box-shadow: 0 0 22px rgba(128, 255, 190, 0.09);
+}
+
+.location-command.unavailable {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.location-command-icon {
+  position: relative;
+  width: 25px;
+  height: 25px;
+  border: 1px solid rgba(128, 255, 190, 0.76);
+  border-radius: 50%;
+  box-shadow: 0 0 18px rgba(128, 255, 190, 0.16);
+}
+
+.location-command-icon::before,
+.location-command-icon::after {
+  content: "";
+  position: absolute;
+  background: rgba(255, 255, 255, 0.84);
+}
+
+.location-command-icon::before {
+  left: 50%;
+  top: 4px;
+  bottom: 4px;
+  width: 1px;
+  transform: translateX(-50%);
+}
+
+.location-command-icon::after {
+  left: 4px;
+  right: 4px;
+  top: 50%;
+  height: 1px;
+  transform: translateY(-50%);
+}
+
+.location-command-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.location-command-copy > span {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.location-command-copy strong {
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.54);
+  font-size: 11px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .toggle-row {

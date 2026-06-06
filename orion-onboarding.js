@@ -4,7 +4,7 @@ const OrionOnboarding = (function() {
     const STORAGE_KEYS = {
         ONBOARDING_COMPLETE: 'orion_onboarding_complete',
         CHANGELOG_VERSION: 'orion_changelog_dismissed',
-        CURRENT_VERSION: '1.0.0'
+        CURRENT_VERSION: '1.1.0'
     };
 
     const TUTORIAL_STEPS = [
@@ -248,42 +248,31 @@ const OrionOnboarding = (function() {
     ];
 
     const CHANGELOG = {
-        version: '1.0.0',
-        date: 'May 2026',
+        version: '1.1.0',
+        date: 'June 2026',
         sections: [
             {
                 title: 'New Features',
                 items: [
-                    'Added 2200+ intersection cameras (Seattle, NYC, Florida)',
-                    'Cinematic loading screen with random facts and images',
-                    'Smooth camera panning animations',
-                    'Enhanced camera type detection'
+                    'Added live location tracking with an Orion-styled device marker',
+                    'Added a live accuracy ring that updates with the device location fix',
+                    'Added secure browser geolocation support for desktop, mobile, and vehicle browsers that expose location permissions'
                 ]
             },
             {
-                title: 'Performance Improvements',
+                title: 'Tracking Improvements',
                 items: [
-                    'GPU-accelerated loading screen animations',
-                    'Optimized texture management for Chrome',
-                    'Improved billboard rendering performance'
+                    'Location tracking runs independently from aircraft, vessel, satellite, and saved-location markers',
+                    'The first location fix recenters the globe without disrupting later manual orbit controls',
+                    'Location cleanup now clears watch timers and map entities when tracking is disabled'
                 ]
             },
             {
-                title: 'CameraNet Updates',
+                title: 'Publishing',
                 items: [
-                    'Seattle DOT intersection cameras',
-                    'NYC DOT intersection cameras',
-                    'CORS-safe snapshot proxy',
-                    'Auto-refresh every 60 seconds'
-                ]
-            },
-            {
-                title: 'Visual Improvements',
-                items: [
-                    'Smooth loading screen fade transitions',
-                    'Random Earth image rotation',
-                    'Cinematic pan animations',
-                    'Enhanced tactical UI consistency'
+                    'Bumped Project Orion to v1.1.0',
+                    'Published the v1.1.0 changelog in the app and repository',
+                    'Refreshed cache-busting asset versions for GitHub Pages'
                 ]
             }
         ]

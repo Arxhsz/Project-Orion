@@ -6,6 +6,8 @@
 
 Project Orion is a realtime planetary intelligence and Earth visualization platform built on CesiumJS. It combines cinematic satellite imagery, live weather maps, orbital tracking, aircraft and vessel intelligence, CameraNet, environmental monitoring, infrastructure overlays, tactical scan modes, saved locations, and historical timeline playback in a dark glass command interface.
 
+Current version: v1.1.0
+
 ## About
 
 Orion is designed as an operational globe rather than a static map. The application layers public Earth imagery, weather intelligence, live telemetry, and selectable entities into one reusable rendering system. It supports local backend mode for the richest live data and static GitHub Pages mode for the public visualization experience.
@@ -19,6 +21,7 @@ Orion is designed as an operational globe rather than a static map. The applicat
 - Aircraft, vessel, camera, weather, wildfire, earthquake, lightning, cyber, cable, airspace, power, and RF layer systems.
 - Selectable telemetry list with camera locking, free orbit, and unlock controls.
 - CameraNet architecture with provider adapters, clustering, and on-demand stream or snapshot loading.
+- Live device location tracking with an Orion-styled marker and accuracy ring.
 - Saved locations stored in the browser.
 - GitHub Pages static mode for direct public imagery where browser CORS allows it.
 - Local Python server mode for proxying tiles, CameraNet, and backend-only feeds.
@@ -63,7 +66,12 @@ camera_providers.py         CameraNet provider adapters
 cameranet_frontend.js       CameraNet clustering and feed UI
 orion-renderer-*.js         Modular renderers for imagery, primitives, environment, and infrastructure
 assets/orion-logo.svg       Repository logo
+CHANGELOG.md                Version history
 ```
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for release notes.
 
 ## Validation
 

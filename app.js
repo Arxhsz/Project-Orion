@@ -12,6 +12,7 @@
   var GIBS_ROOT = Orion.Config.Constants.GIBS_ROOT;
   var EARTH_HOME = Orion.Config.Constants.EARTH_HOME;
   var SAVED_LOCATIONS_KEY = Orion.Config.Constants.SAVED_LOCATIONS_KEY;
+  var APP_VERSION = Orion.Config.Constants.APP_VERSION || "1.1.0";
   var UPDATE_INTERVAL_MS = 10 * 60 * 1000;
 
   var layerDefinitions = Orion.Config.LayerDefinitions;
@@ -61,6 +62,8 @@
   var viewer;
   var clickHandler;
   var targetEntity;
+  var liveLocationEntity;
+  var liveLocationAccuracyEntity;
   var fallbackBaseLayer;
   var streetDetailLayer;
   var streetRoadsLayer;
@@ -236,6 +239,21 @@
       lat: null,
       lon: null
     },
+    liveLocation: {
+      enabled: false,
+      supported: false,
+      status: "off",
+      watchId: null,
+      lat: null,
+      lon: null,
+      accuracy: null,
+      altitude: null,
+      heading: null,
+      speed: null,
+      timestamp: null,
+      hasFix: false,
+      error: null
+    },
     layers: {
       trueColor: true,
       sentinel: false,
@@ -296,6 +314,8 @@
       "searchInput",
       "savedLocations",
       "saveLocationButton",
+      "liveLocationToggle",
+      "liveLocationStatus",
       "layerTrueColor",
       "layerSentinel",
       "layerCleanEarth",
@@ -1565,7 +1585,8 @@ void main() {
       "soft-dot": true,
       pulse: true,
       "smoke-sheet": true,
-      lightning: true
+      lightning: true,
+      "live-location": true
     };
 
     var sharedIcon = (window.OrionTextureManager && typeof OrionTextureManager.getIcon === "function") ? 
@@ -1581,7 +1602,7 @@ void main() {
       return sharedIcon;
     }
 
-    var size = key === "smoke-sheet" ? 128 : 64;
+    var size = key === "smoke-sheet" ? 128 : key === "live-location" ? 72 : 64;
     var ratio = 2;
     
     var canvasData = window.OrionTextureManager ? 
@@ -1646,6 +1667,58 @@ void main() {
         window.OrionTextureManager.canvasToDataURL(canvas) : canvas.toDataURL("image/png");
       markerIconCache[key] = smokeURL;
       return smokeURL;
+    }
+
+    if (key === "live-location") {
+      var liveCx = size / 2;
+      var liveCy = size / 2;
+      var liveGlow = ctx.createRadialGradient(liveCx, liveCy, 0, liveCx, liveCy, size * 0.48);
+      liveGlow.addColorStop(0, "rgba(128,255,190,0.38)");
+      liveGlow.addColorStop(0.46, "rgba(128,255,190,0.16)");
+      liveGlow.addColorStop(1, "rgba(128,255,190,0)");
+
+      ctx.fillStyle = liveGlow;
+      ctx.beginPath();
+      ctx.arc(liveCx, liveCy, size * 0.46, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.lineWidth = 2.4;
+      ctx.strokeStyle = "rgba(255,255,255,0.9)";
+      ctx.beginPath();
+      ctx.arc(liveCx, liveCy, size * 0.23, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.lineWidth = 1.6;
+      ctx.strokeStyle = "rgba(128,255,190,0.95)";
+      ctx.beginPath();
+      ctx.arc(liveCx, liveCy, size * 0.31, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.strokeStyle = "rgba(255,255,255,0.86)";
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.moveTo(liveCx, liveCy - size * 0.39);
+      ctx.lineTo(liveCx, liveCy - size * 0.17);
+      ctx.moveTo(liveCx, liveCy + size * 0.17);
+      ctx.lineTo(liveCx, liveCy + size * 0.39);
+      ctx.moveTo(liveCx - size * 0.39, liveCy);
+      ctx.lineTo(liveCx - size * 0.17, liveCy);
+      ctx.moveTo(liveCx + size * 0.17, liveCy);
+      ctx.lineTo(liveCx + size * 0.39, liveCy);
+      ctx.stroke();
+
+      ctx.shadowColor = "rgba(128,255,190,0.68)";
+      ctx.shadowBlur = 10;
+      ctx.fillStyle = "rgba(128,255,190,0.96)";
+      ctx.beginPath();
+      ctx.arc(liveCx, liveCy, size * 0.09, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      var liveURL = window.OrionTextureManager ?
+        window.OrionTextureManager.canvasToDataURL(canvas) : canvas.toDataURL("image/png");
+      markerIconCache[key] = liveURL;
+      return liveURL;
     }
 
     var cx = size / 2;
@@ -9137,6 +9210,10 @@ void main() {
       elements.saveLocationButton.addEventListener("click", saveCurrentLocation);
     }
 
+    if (elements.liveLocationToggle) {
+      elements.liveLocationToggle.addEventListener("click", toggleLiveLocationTracking);
+    }
+
     [
       ["layerTrueColor", "trueColor"],
       ["layerSentinel", "sentinel"],
@@ -9791,6 +9868,308 @@ void main() {
     
     if (targetEntity.billboard && window.OrionTextureManager) {
        safeAssignBillboard(targetEntity.billboard, OrionTextureManager.getIcon('target'));
+    }
+  }
+
+  function liveLocationSupported() {
+    var host = window.location.hostname || "";
+    var localHost = /^(localhost|127\.0\.0\.1|\[::1\]|::1)$/i.test(host);
+    return !!(navigator.geolocation && (window.isSecureContext || localHost));
+  }
+
+  function formatAccuracy(meters) {
+    if (!Number.isFinite(meters)) {
+      return "Live fix";
+    }
+
+    if (meters >= 1000) {
+      return "Live +/- " + (meters / 1000).toFixed(1) + " km";
+    }
+
+    return "Live +/- " + Math.max(1, Math.round(meters)) + " m";
+  }
+
+  function syncLiveLocationControls() {
+    state.liveLocation.supported = liveLocationSupported();
+
+    if (elements.liveLocationToggle) {
+      elements.liveLocationToggle.classList.toggle("active", state.liveLocation.enabled);
+      elements.liveLocationToggle.classList.toggle("unavailable", !state.liveLocation.supported);
+      elements.liveLocationToggle.setAttribute("aria-pressed", state.liveLocation.enabled ? "true" : "false");
+    }
+
+    if (elements.liveLocationStatus) {
+      if (!state.liveLocation.supported) {
+        elements.liveLocationStatus.textContent = "Unavailable";
+      } else if (state.liveLocation.status === "locating") {
+        elements.liveLocationStatus.textContent = "Locating";
+      } else if (state.liveLocation.status === "error") {
+        elements.liveLocationStatus.textContent = state.liveLocation.error || "Signal lost";
+      } else if (state.liveLocation.enabled && state.liveLocation.hasFix) {
+        elements.liveLocationStatus.textContent = formatAccuracy(state.liveLocation.accuracy);
+      } else if (state.liveLocation.hasFix) {
+        elements.liveLocationStatus.textContent = "Paused";
+      } else {
+        elements.liveLocationStatus.textContent = "Standby";
+      }
+    }
+  }
+
+  function removeLiveLocationEntities() {
+    if (liveLocationEntity && viewer) {
+      viewer.entities.remove(liveLocationEntity);
+      liveLocationEntity = null;
+    }
+
+    if (liveLocationAccuracyEntity && viewer) {
+      viewer.entities.remove(liveLocationAccuracyEntity);
+      liveLocationAccuracyEntity = null;
+    }
+
+    if (viewer && viewer.scene) {
+      viewer.scene.requestRender();
+    }
+  }
+
+  function normalizeLiveLocationPosition(position) {
+    var coords = position && (position.coords || position);
+    if (!coords) {
+      return null;
+    }
+
+    var lat = Number(coords.latitude !== undefined ? coords.latitude : coords.lat);
+    var lon = Number(coords.longitude !== undefined ? coords.longitude : coords.lon);
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+      return null;
+    }
+
+    return {
+      lat: lat,
+      lon: lon,
+      accuracy: Number(coords.accuracy),
+      altitude: Number(coords.altitude),
+      heading: Number(coords.heading),
+      speed: Number(coords.speed),
+      timestamp: Number(position.timestamp) || Date.now()
+    };
+  }
+
+  function updateLiveLocationEntities(fix) {
+    if (!viewer || !fix) {
+      return;
+    }
+
+    var height = Number.isFinite(fix.altitude) ? clamp(fix.altitude, 0, 12000) : 0;
+    var position = Cesium.Cartesian3.fromDegrees(fix.lon, fix.lat, height);
+    var markerImage = markerIcon("live-location");
+
+    if (!liveLocationEntity) {
+      liveLocationEntity = viewer.entities.add({
+        id: "orion-live-location-marker",
+        name: "Live location",
+        position: position,
+        billboard: {
+          image: markerImage,
+          scale: 0.68,
+          verticalOrigin: Cesium.VerticalOrigin.CENTER,
+          horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 18000000)
+        },
+        label: {
+          text: "YOU",
+          font: "800 11px Inter, sans-serif",
+          fillColor: Cesium.Color.WHITE.withAlpha(0.92),
+          outlineColor: Cesium.Color.BLACK.withAlpha(0.72),
+          outlineWidth: 3,
+          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+          pixelOffset: new Cesium.Cartesian2(0, -34),
+          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+          showBackground: true,
+          backgroundColor: Cesium.Color.BLACK.withAlpha(0.36),
+          backgroundPadding: new Cesium.Cartesian2(7, 4),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 2200000)
+        }
+      });
+    } else {
+      liveLocationEntity.position = position;
+      if (liveLocationEntity.billboard) {
+        safeAssignBillboard(liveLocationEntity.billboard, markerImage);
+      }
+    }
+
+    var accuracy = Number.isFinite(fix.accuracy) ? clamp(fix.accuracy, 8, 50000) : null;
+
+    if (accuracy) {
+      if (!liveLocationAccuracyEntity) {
+        liveLocationAccuracyEntity = viewer.entities.add({
+          id: "orion-live-location-accuracy",
+          name: "Live location accuracy",
+          position: Cesium.Cartesian3.fromDegrees(fix.lon, fix.lat),
+          ellipse: {
+            semiMajorAxis: accuracy,
+            semiMinorAxis: accuracy,
+            height: 0,
+            material: Cesium.Color.fromCssColorString("#80ffbe").withAlpha(0.12),
+            outline: true,
+            outlineColor: Cesium.Color.WHITE.withAlpha(0.32),
+            distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 2200000)
+          }
+        });
+      } else {
+        liveLocationAccuracyEntity.show = true;
+        liveLocationAccuracyEntity.position = Cesium.Cartesian3.fromDegrees(fix.lon, fix.lat);
+        liveLocationAccuracyEntity.ellipse.semiMajorAxis = accuracy;
+        liveLocationAccuracyEntity.ellipse.semiMinorAxis = accuracy;
+      }
+    } else if (liveLocationAccuracyEntity) {
+      liveLocationAccuracyEntity.show = false;
+    }
+
+    viewer.scene.requestRender();
+  }
+
+  function focusLiveLocation(fix) {
+    if (!viewer || !fix) {
+      return;
+    }
+
+    setPlaying(false);
+    clearTrackingSelection();
+    setTarget({
+      name: "Live location",
+      lat: fix.lat,
+      lon: fix.lon
+    });
+
+    var accuracy = Number.isFinite(fix.accuracy) ? fix.accuracy : 250;
+    var height = clamp(Math.max(2200, accuracy * 10), 2200, 82000);
+
+    viewer.camera.flyTo({
+      destination: Cesium.Cartesian3.fromDegrees(fix.lon, fix.lat, height),
+      duration: 1.6,
+      easingFunction: Cesium.EasingFunction.CUBIC_IN_OUT,
+      orientation: {
+        heading: Cesium.Math.toRadians(0),
+        pitch: Cesium.Math.toRadians(-62),
+        roll: 0
+      }
+    });
+  }
+
+  function applyLiveLocationPosition(position, options) {
+    var fix = normalizeLiveLocationPosition(position);
+
+    if (!fix) {
+      state.liveLocation.status = "error";
+      state.liveLocation.error = "Bad fix";
+      syncLiveLocationControls();
+      return false;
+    }
+
+    var hadFix = state.liveLocation.hasFix;
+    state.liveLocation.status = "live";
+    state.liveLocation.error = null;
+    state.liveLocation.hasFix = true;
+    state.liveLocation.lat = fix.lat;
+    state.liveLocation.lon = fix.lon;
+    state.liveLocation.accuracy = Number.isFinite(fix.accuracy) ? fix.accuracy : null;
+    state.liveLocation.altitude = Number.isFinite(fix.altitude) ? fix.altitude : null;
+    state.liveLocation.heading = Number.isFinite(fix.heading) ? fix.heading : null;
+    state.liveLocation.speed = Number.isFinite(fix.speed) ? fix.speed : null;
+    state.liveLocation.timestamp = fix.timestamp;
+
+    updateLiveLocationEntities(fix);
+
+    if ((options && options.focus) || !hadFix) {
+      focusLiveLocation(fix);
+    }
+
+    syncLiveLocationControls();
+    updateTelemetry();
+    return true;
+  }
+
+  function handleLiveLocationError(error) {
+    var message = "Signal lost";
+
+    if (error && error.code === error.PERMISSION_DENIED) {
+      message = "Permission denied";
+      if (state.liveLocation.watchId !== null && navigator.geolocation) {
+        navigator.geolocation.clearWatch(state.liveLocation.watchId);
+      }
+      state.liveLocation.watchId = null;
+      state.liveLocation.enabled = false;
+    } else if (error && error.code === error.POSITION_UNAVAILABLE) {
+      message = "Signal unavailable";
+    } else if (error && error.code === error.TIMEOUT) {
+      message = "Timed out";
+    }
+
+    state.liveLocation.status = "error";
+    state.liveLocation.error = message;
+    syncLiveLocationControls();
+    showToast("Live location " + message.toLowerCase() + ".");
+  }
+
+  function startLiveLocationTracking() {
+    if (!liveLocationSupported()) {
+      state.liveLocation.supported = false;
+      state.liveLocation.status = "error";
+      state.liveLocation.error = "Unavailable";
+      syncLiveLocationControls();
+      showToast("Live location requires browser location support over HTTPS or localhost.");
+      return false;
+    }
+
+    if (state.liveLocation.watchId !== null) {
+      state.liveLocation.enabled = true;
+      syncLiveLocationControls();
+      return true;
+    }
+
+    state.liveLocation.enabled = true;
+    state.liveLocation.status = "locating";
+    state.liveLocation.error = null;
+    syncLiveLocationControls();
+
+    try {
+      state.liveLocation.watchId = navigator.geolocation.watchPosition(function (position) {
+        applyLiveLocationPosition(position, { focus: !state.liveLocation.hasFix });
+      }, handleLiveLocationError, {
+        enableHighAccuracy: true,
+        timeout: 16000,
+        maximumAge: 8000
+      });
+      showToast("Live location requesting device signal...");
+      return true;
+    } catch (error) {
+      handleLiveLocationError({ code: 0 });
+      return false;
+    }
+  }
+
+  function stopLiveLocationTracking() {
+    if (state.liveLocation.watchId !== null && navigator.geolocation) {
+      navigator.geolocation.clearWatch(state.liveLocation.watchId);
+    }
+
+    state.liveLocation.enabled = false;
+    state.liveLocation.status = "off";
+    state.liveLocation.watchId = null;
+    state.liveLocation.error = null;
+    removeLiveLocationEntities();
+    syncLiveLocationControls();
+    showToast("Live location off.");
+  }
+
+  function toggleLiveLocationTracking() {
+    if (state.liveLocation.enabled) {
+      stopLiveLocationTracking();
+    } else {
+      startLiveLocationTracking();
     }
   }
 
@@ -10571,6 +10950,7 @@ void main() {
     syncTimelineModeControls();
     syncTrackingControls();
     syncPlatformControls();
+    syncLiveLocationControls();
     if (elements.scanModeSelect) {
       elements.scanModeSelect.value = state.scanMode;
     }
@@ -10625,6 +11005,7 @@ void main() {
     cacheElements();
     document.body.dataset.scanMode = state.scanMode;
     document.body.dataset.weatherMap = state.weatherMapMode;
+    state.liveLocation.supported = liveLocationSupported();
     enhancePlatformLayerUi();
     renderSavedLocations();
     bindEvents();
@@ -10709,6 +11090,10 @@ void main() {
     window.clearInterval(weatherRadarAnimationTimer);
     window.clearInterval(zoomWeatherTimer);
     window.cancelAnimationFrame(weatherEffectFrame);
+    if (state.liveLocation.watchId !== null && navigator.geolocation) {
+      navigator.geolocation.clearWatch(state.liveLocation.watchId);
+      state.liveLocation.watchId = null;
+    }
 
     if (soundEngine) {
       soundEngine.oscillator.stop();
@@ -10732,6 +11117,42 @@ void main() {
         staged: stagedImageryLayers.length,
         gibsDate: formatDate(effectiveGibsDate(state.date)),
         timelineDate: formatDate(state.date)
+      };
+    }
+  };
+
+  window.OrionLiveLocation = {
+    version: APP_VERSION,
+    start: startLiveLocationTracking,
+    stop: stopLiveLocationTracking,
+    toggle: toggleLiveLocationTracking,
+    isSupported: liveLocationSupported,
+    testPosition: function (position) {
+      return applyLiveLocationPosition(position, { focus: false });
+    },
+    center: function () {
+      if (!state.liveLocation.hasFix) {
+        return false;
+      }
+      focusLiveLocation({
+        lat: state.liveLocation.lat,
+        lon: state.liveLocation.lon,
+        accuracy: state.liveLocation.accuracy,
+        altitude: state.liveLocation.altitude
+      });
+      return true;
+    },
+    getState: function () {
+      return {
+        enabled: state.liveLocation.enabled,
+        supported: liveLocationSupported(),
+        status: state.liveLocation.status,
+        hasFix: state.liveLocation.hasFix,
+        lat: state.liveLocation.lat,
+        lon: state.liveLocation.lon,
+        accuracy: state.liveLocation.accuracy,
+        marker: !!liveLocationEntity,
+        accuracyRing: !!liveLocationAccuracyEntity
       };
     }
   };

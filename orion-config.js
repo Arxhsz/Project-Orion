@@ -554,6 +554,8 @@
   ];
 
   Orion.Config.Constants = {
+    APP_VERSION: "1.1.0",
+    APP_VERSION_LABEL: "v1.1.0",
     MS_PER_DAY: 24 * 60 * 60 * 1000,
     MS_PER_HOUR: 60 * 60 * 1000,
     GIBS_IMAGERY_LAG_DAYS: 1,
