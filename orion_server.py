@@ -9,7 +9,7 @@ import math
 import os
 import io
 import copy
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 import re
 import struct
 import sys
@@ -76,28 +76,8 @@ USGS_EARTHQUAKE_FEEDS = {
     "all_day": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson",
     "all_week": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_week.geojson",
 }
-RAINVIEWER_MAPS_URL = "https://api.rainviewer.com/public/weather-maps.json"
-RAINVIEWER_ORIGIN = "https://tilecache.rainviewer.com"
-ZOOM_EARTH_TILE_ORIGIN = "https://tiles.zoom.earth"
-ZOOM_EARTH_TIMES_ORIGIN = "https://tiles.zoom.earth/times"
-ZOOM_EARTH_MODEL = "icon"
-ZOOM_EARTH_MODEL_VERSION = "v1"
-ZOOM_EARTH_MODE_MAP = {
-    "precipitation": ("precipitation", "surface"),
-    "wind": ("wind-speed", "10m"),
-    "wind-speed": ("wind-speed", "10m"),
-    "temperature": ("temperature", "2m"),
-    "humidity": ("humidity", "2m"),
-    "pressure": ("pressure", "msl"),
-}
-ZOOM_EARTH_TILE_PREFIXES = (
-    "/icon/",
-    "/gfs/",
-    "/radar/reflectivity/",
-    "/radar/coverage/",
-    "/static/land/",
-    "/static/bluemarble/",
-)
+NOAA_RADAR_MAPSERVER_URL = "https://mapservices.weather.noaa.gov/eventdriven/rest/services/radar/radar_base_reflectivity/MapServer"
+OPEN_METEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 NASA_EONET_WILDFIRES_URL = "https://eonet.gsfc.nasa.gov/api/v3/events?category=wildfires&status=open&limit=200"
 NWS_ACTIVE_ALERTS_URL = "https://api.weather.gov/alerts/active?status=actual&message_type=alert"
 FL511_CAMERA_LAYER_URL = "https://services.arcgis.com/3wFbqsFPLeKqOlIK/ArcGIS/rest/services/FL511_Traffic_Cameras/FeatureServer/0"
@@ -115,9 +95,9 @@ CSP_HEADER = (
     "script-src-elem 'self' blob: https://cdn.jsdelivr.net 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'; "
     "script-src-attr 'unsafe-inline'; "
     "style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; "
-    "img-src 'self' data: blob: https://cdn.jsdelivr.net https://gibs.earthdata.nasa.gov https://server.arcgisonline.com https://tile.openstreetmap.org https://tilecache.rainviewer.com https://tiles.zoom.earth https://images-dim.divas.cloud https://*.divas.cloud https://*.divas.cloud:8200 https://images.unsplash.com; "
+    "img-src 'self' data: blob: https://cdn.jsdelivr.net https://gibs.earthdata.nasa.gov https://server.arcgisonline.com https://tile.openstreetmap.org https://mapservices.weather.noaa.gov https://images-dim.divas.cloud https://*.divas.cloud https://*.divas.cloud:8200 https://images.unsplash.com; "
     "media-src 'self' blob: https://divas.cloud https://*.divas.cloud https://*.divas.cloud:8200; "
-    "connect-src 'self' data: https://cdn.jsdelivr.net https://gibs.earthdata.nasa.gov https://server.arcgisonline.com https://tile.openstreetmap.org https://tilecache.rainviewer.com https://api.rainviewer.com https://tiles.zoom.earth https://raw.githubusercontent.com https://nominatim.openstreetmap.org https://fl511.com https://divas.cloud https://*.divas.cloud https://*.divas.cloud:8200 https://data.seattle.gov https://data.cityofnewyork.us; "
+    "connect-src 'self' data: https://cdn.jsdelivr.net https://gibs.earthdata.nasa.gov https://server.arcgisonline.com https://tile.openstreetmap.org https://mapservices.weather.noaa.gov https://api.open-meteo.com https://raw.githubusercontent.com https://nominatim.openstreetmap.org https://fl511.com https://divas.cloud https://*.divas.cloud https://*.divas.cloud:8200 https://data.seattle.gov https://data.cityofnewyork.us; "
     "worker-src 'self' blob: data: https://cdn.jsdelivr.net; "
     "child-src blob:; "
     "font-src 'self' data: https://cdn.jsdelivr.net; "
@@ -285,7 +265,7 @@ STATIC_INTEL_LAYERS = {
         ],
     },
     "volumetricWeather": {
-        "source": "NOAA / RainViewer volumetric adapter fallback",
+        "source": "NOAA/NWS weather metadata fallback",
         "features": [
             {"id": "storm-atlantic", "name": "Atlantic convective cell", "kind": "volume", "lat": 29.2, "lon": -67.0, "radius": 380000, "height": 115000, "intensity": 0.62},
             {"id": "storm-pacific", "name": "Pacific storm column", "kind": "volume", "lat": 42.4, "lon": -151.0, "radius": 520000, "height": 145000, "intensity": 0.54},
@@ -1795,14 +1775,6 @@ class OrionHandler(SimpleHTTPRequestHandler):
             self.proxy_gibs()
             return
 
-        if self.path.startswith("/rainviewer/"):
-            self.proxy_rainviewer()
-            return
-
-        if self.path.startswith("/zoom-earth/"):
-            self.proxy_zoom_earth_tile()
-            return
-
         if self.path.startswith("/osm/"):
             self.proxy_osm()
             return
@@ -1863,8 +1835,8 @@ class OrionHandler(SimpleHTTPRequestHandler):
             self.proxy_weather_radar()
             return
 
-        if self.path.startswith("/live/weather/zoom-earth"):
-            self.proxy_zoom_earth_weather()
+        if self.path.startswith("/live/weather/fields"):
+            self.proxy_weather_fields()
             return
 
         if self.path.startswith("/live/wildfires"):
@@ -2105,301 +2077,6 @@ class OrionHandler(SimpleHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "image/png")
             self.send_header("Cache-Control", "public, max-age=60")
-            self.send_header("X-Orion-Tile-Fallback", "transparent")
-            self.send_header("Content-Length", str(len(TRANSPARENT_PNG)))
-            self.end_headers()
-            self.write_payload(TRANSPARENT_PNG)
-
-    def proxy_rainviewer(self):
-        target_path = self.path[len("/rainviewer") :]
-
-        if "?" in target_path:
-            target_path = target_path.split("?")[0]
-
-        target_url = RAINVIEWER_ORIGIN + quote(target_path, safe="/:?=&._-")
-        cache_path = TILE_CACHE_ROOT / "rainviewer" / target_path.strip("/").replace("..", "")
-        if cache_path.exists():
-            payload = cache_path.read_bytes()
-            self.send_response(200)
-            self.send_header("Content-Type", "image/png")
-            self.send_header("Cache-Control", "public, max-age=1800")
-            self.send_header("Content-Length", str(len(payload)))
-            self.end_headers()
-            self.write_payload(payload)
-            return
-
-        request = Request(target_url, headers={"User-Agent": "Project-Orion/1.0"})
-
-        try:
-            with urlopen(request, timeout=14) as response:
-                payload = response.read()
-                content_type = response.headers.get("Content-Type", "image/png")
-                try:
-                    cache_path.parent.mkdir(parents=True, exist_ok=True)
-                    cache_path.write_bytes(payload)
-                except Exception:
-                    pass
-                self.send_response(200)
-                self.send_header("Content-Type", content_type)
-                self.send_header("Cache-Control", "public, max-age=300")
-                self.send_header("Content-Length", str(len(payload)))
-                self.end_headers()
-                self.write_payload(payload)
-        except Exception:
-            self.send_response(200)
-            self.send_header("Content-Type", "image/png")
-            self.send_header("Cache-Control", "public, max-age=60")
-            self.send_header("X-Orion-Tile-Fallback", "transparent")
-            self.send_header("Content-Length", str(len(TRANSPARENT_PNG)))
-            self.end_headers()
-            self.write_payload(TRANSPARENT_PNG)
-
-    def zoom_earth_iso(self, epoch_seconds):
-        return datetime.utcfromtimestamp(int(epoch_seconds)).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-    def fetch_zoom_earth_times(self, kind):
-        cache_key = f"zoom-earth:times:{kind}"
-        ttl = 90 if kind == "radar" else 600
-        cached = self.cached_feed(cache_key, ttl)
-        if cached is not None:
-            return cached
-
-        url = f"{ZOOM_EARTH_TIMES_ORIGIN}/{kind}.json"
-        request = Request(url, headers={
-            "User-Agent": "Mozilla/5.0 Project-Orion/1.0",
-            "Accept": "application/json,text/plain,*/*",
-            "Referer": "https://zoom.earth/",
-        })
-        with urlopen(request, timeout=12) as response:
-            payload = json.loads(response.read().decode("utf-8", errors="replace"))
-
-        self.store_cached_feed(cache_key, payload)
-        return payload
-
-    def build_zoom_earth_forecast_frames(self, times_payload, layer_name, level_name, limit=72):
-        layer_payload = (times_payload or {}).get(layer_name) or {}
-        level_payload = layer_payload.get(level_name) or {}
-        now = time.time()
-        candidates = []
-
-        for run_epoch, forecast_hours in level_payload.items():
-            try:
-                run_ts = int(run_epoch)
-            except (TypeError, ValueError):
-                continue
-
-            if not isinstance(forecast_hours, list):
-                continue
-
-            for hour in forecast_hours:
-                try:
-                    forecast_hour = int(hour)
-                except (TypeError, ValueError):
-                    continue
-
-                valid_ts = run_ts + forecast_hour * 3600
-                candidates.append({
-                    "run_ts": run_ts,
-                    "forecast_hour": forecast_hour,
-                    "valid_ts": valid_ts,
-                })
-
-        deduped = {}
-        for entry in candidates:
-            current = deduped.get(entry["valid_ts"])
-            if current is None or entry["run_ts"] > current["run_ts"]:
-                deduped[entry["valid_ts"]] = entry
-        candidates = sorted(deduped.values(), key=lambda entry: (entry["valid_ts"], entry["run_ts"]))
-        selected = ([entry for entry in candidates if entry["valid_ts"] <= now] or candidates)[-limit:]
-        frames = []
-
-        for entry in selected:
-            run_dt = datetime.utcfromtimestamp(entry["run_ts"])
-            run_path = run_dt.strftime("%Y-%m-%d/%H%M")
-            forecast_path = f"f{entry['forecast_hour']:03d}"
-            tile_path = (
-                f"/zoom-earth/{ZOOM_EARTH_MODEL}/{ZOOM_EARTH_MODEL_VERSION}/"
-                f"{layer_name}/webp/{level_name}/{run_path}/{forecast_path}/"
-                "{z}/{y}/{x}.webp"
-            )
-            frames.append({
-                "path": tile_path,
-                "run_time": self.zoom_earth_iso(entry["run_ts"]),
-                "valid_time": self.zoom_earth_iso(entry["valid_ts"]),
-                "forecast_hour": entry["forecast_hour"],
-            })
-
-        return frames
-
-    def select_zoom_earth_forecast(self, times_payload, layer_name, level_name):
-        frames = self.build_zoom_earth_forecast_frames(times_payload, layer_name, level_name, limit=1)
-        return frames[-1] if frames else None
-
-    def select_zoom_earth_radar_frames(self, times_payload):
-        reflectivity = (times_payload or {}).get("reflectivity") or {}
-        frames = []
-        now = time.time()
-
-        for epoch, tile_hash in reflectivity.items():
-            try:
-                ts = int(epoch)
-            except (TypeError, ValueError):
-                continue
-            if not tile_hash:
-                continue
-            frames.append((ts, str(tile_hash)))
-
-        frames.sort(key=lambda entry: entry[0])
-        past_frames = [entry for entry in frames if entry[0] <= now]
-        selected = (past_frames or frames)[-12:]
-        payload_frames = []
-
-        for ts, tile_hash in selected:
-            stamp = datetime.utcfromtimestamp(ts)
-            payload_frames.append({
-                "time": self.zoom_earth_iso(ts),
-                "hash": tile_hash,
-                "path": (
-                    f"/zoom-earth/radar/reflectivity/{stamp.strftime('%Y-%m-%d')}/"
-                    f"{stamp.strftime('%H%M')}/{tile_hash}/" + "{z}/{y}/{x}.webp"
-                ),
-            })
-
-        return payload_frames
-
-    def proxy_zoom_earth_weather(self):
-        parsed = urlparse(self.path)
-        params = parse_qs(parsed.query)
-        mode = (params.get("mode") or ["wind"])[0].strip().lower()
-
-        try:
-            if mode == "radar":
-                times_payload = self.fetch_zoom_earth_times("radar")
-                frames = self.select_zoom_earth_radar_frames(times_payload)
-                latest = frames[-1] if frames else None
-                payload = {
-                    "source": "Zoom Earth",
-                    "provider": "Zoom Earth radar",
-                    "mode": "live",
-                    "weather_mode": "radar",
-                    "generated": int(time.time()),
-                    "refresh_seconds": 300,
-                    "count": len(frames),
-                    "latest": latest,
-                    "frames": frames,
-                    "tile_template": latest["path"] if latest else None,
-                    "fallback": False,
-                }
-                self.send_json(payload, cache_seconds=60)
-                return
-
-            if mode not in ZOOM_EARTH_MODE_MAP:
-                mode = "wind"
-
-            layer_name, level_name = ZOOM_EARTH_MODE_MAP[mode]
-            times_payload = self.fetch_zoom_earth_times(ZOOM_EARTH_MODEL)
-            frames = self.build_zoom_earth_forecast_frames(times_payload, layer_name, level_name)
-            frame = frames[-1] if frames else None
-
-            if not frame:
-                raise ValueError(f"No Zoom Earth frame for {mode}")
-
-            payload = {
-                "source": "Zoom Earth",
-                "provider": "DWD ICON via Zoom Earth",
-                "mode": "live",
-                "weather_mode": mode,
-                "zoom_layer": layer_name,
-                "level": level_name,
-                "generated": int(time.time()),
-                "refresh_seconds": 600,
-                "count": len(frames),
-                "latest": frame,
-                "frames": frames,
-                "tile_template": frame["path"],
-                "fallback": False,
-            }
-            self.send_json(payload, cache_seconds=120)
-        except (HTTPError, URLError, TimeoutError, json.JSONDecodeError, ValueError) as error:
-            self.send_json({
-                "source": "Zoom Earth",
-                "provider": "Zoom Earth",
-                "mode": "error",
-                "weather_mode": mode,
-                "generated": int(time.time()),
-                "refresh_seconds": 600,
-                "count": 0,
-                "latest": None,
-                "frames": [],
-                "tile_template": None,
-                "fallback": False,
-                "error": type(error).__name__,
-                "message": str(error),
-            }, cache_seconds=20)
-
-    def proxy_zoom_earth_tile(self):
-        target_path = unquote(self.path[len("/zoom-earth") :])
-
-        if "?" in target_path:
-            target_path = target_path.split("?")[0]
-
-        if not target_path.startswith("/") or ".." in target_path or not target_path.endswith((".webp", ".png", ".jpg", ".jpeg")):
-            self.send_response(404)
-            self.end_headers()
-            return
-
-        if not any(target_path.startswith(prefix) for prefix in ZOOM_EARTH_TILE_PREFIXES):
-            self.send_response(404)
-            self.end_headers()
-            return
-
-        target_url = ZOOM_EARTH_TILE_ORIGIN + quote(target_path, safe="/:?=&._-")
-        cache_path = TILE_CACHE_ROOT / "zoom-earth" / target_path.strip("/").replace("..", "")
-        suffix = Path(target_path).suffix.lower()
-        content_type = {
-            ".webp": "image/webp",
-            ".png": "image/png",
-            ".jpg": "image/jpeg",
-            ".jpeg": "image/jpeg",
-        }.get(suffix, "application/octet-stream")
-
-        if cache_path.exists():
-            payload = cache_path.read_bytes()
-            self.send_response(200)
-            self.send_header("Content-Type", content_type)
-            self.send_header("Cache-Control", "public, max-age=604800")
-            self.send_header("Content-Length", str(len(payload)))
-            self.end_headers()
-            self.write_payload(payload)
-            return
-
-        request = Request(target_url, headers={
-            "User-Agent": "Mozilla/5.0 Project-Orion/1.0",
-            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-            "Referer": "https://zoom.earth/",
-        })
-
-        try:
-            with urlopen(request, timeout=12) as response:
-                payload = response.read()
-                response_type = response.headers.get("Content-Type", content_type)
-                if not payload or len(payload) < 16:
-                    raise HTTPError(target_url, 404, "Empty tile", response.headers, None)
-                try:
-                    cache_path.parent.mkdir(parents=True, exist_ok=True)
-                    cache_path.write_bytes(payload)
-                except Exception:
-                    pass
-                self.send_response(200)
-                self.send_header("Content-Type", response_type)
-                self.send_header("Cache-Control", "public, max-age=86400")
-                self.send_header("Content-Length", str(len(payload)))
-                self.end_headers()
-                self.write_payload(payload)
-        except Exception:
-            self.send_response(200)
-            self.send_header("Content-Type", "image/png")
-            self.send_header("Cache-Control", "public, max-age=120")
             self.send_header("X-Orion-Tile-Fallback", "transparent")
             self.send_header("Content-Length", str(len(TRANSPARENT_PNG)))
             self.end_headers()
@@ -2751,51 +2428,52 @@ class OrionHandler(SimpleHTTPRequestHandler):
             self.send_json(payload, cache_seconds=10)
 
     def proxy_weather_radar(self):
-        cached = self.cached_feed("weather:rainviewer", 5 * 60)
-        if cached is not None:
-            self.send_json(cached, cache_seconds=120)
-            return
+        payload = {
+            "source": "NOAA/NWS",
+            "provider": "radar_base_reflectivity",
+            "map_service": NOAA_RADAR_MAPSERVER_URL,
+            "generated": int(time.time()),
+            "count": 1,
+            "mode": "live-map-service",
+            "fallback": False,
+            "supportsHistorical": False,
+            "refresh_seconds": 300,
+            "latest": {
+                "time": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "url": NOAA_RADAR_MAPSERVER_URL,
+            },
+            "frames": [],
+            "attribution": "NOAA / National Weather Service",
+        }
+        self.send_json(payload, cache_seconds=300)
 
-        try:
-            request = Request(RAINVIEWER_MAPS_URL, headers={"User-Agent": "Project-Orion/1.0"})
+    def proxy_weather_fields(self):
+        parsed = urlparse(self.path)
+        params = parse_qs(parsed.query)
+        mode = (params.get("mode") or ["wind"])[0].strip().lower()
+        allowed_modes = {"precipitation", "wind", "wind-speed", "temperature", "humidity", "pressure"}
+        if mode not in allowed_modes:
+            mode = "wind"
 
-            with urlopen(request, timeout=12) as response:
-                upstream = json.loads(response.read().decode("utf-8"))
-
-            past = upstream.get("radar", {}).get("past") or []
-            nowcast = upstream.get("radar", {}).get("nowcast") or []
-            frames = (past + nowcast)[-12:]
-            latest = frames[-1] if frames else None
-            payload = {
-                "source": "RainViewer",
-                "generated": upstream.get("generated"),
-                "count": len(frames),
-                "mode": "live",
-                "fallback": False,
-                "host": upstream.get("host") or RAINVIEWER_ORIGIN,
-                "latest": latest,
-                "frames": frames,
-            }
-            self.store_cached_feed("weather:rainviewer", payload)
-            self.send_json(payload, cache_seconds=120)
-        except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as error:
-            stale = self.cached_feed_stale("weather:rainviewer", 30 * 60)
-            if stale is not None:
-                stale["error"] = type(error).__name__
-                self.send_json(stale, cache_seconds=45)
-                return
-
-            self.send_json({
-                "source": "RainViewer",
-                "error": type(error).__name__,
-                "generated": int(time.time()),
-                "count": 0,
-                "mode": "degraded-empty",
-                "provider_health": "offline",
-                "fallback": False,
-                "latest": None,
-                "frames": [],
-            }, cache_seconds=30)
+        payload = {
+            "source": "Open-Meteo",
+            "provider": "Open-Meteo Forecast API",
+            "api": OPEN_METEO_FORECAST_URL,
+            "weather_mode": mode,
+            "generated": int(time.time()),
+            "refresh_seconds": 600,
+            "count": 0,
+            "mode": "metadata-only",
+            "fallback": False,
+            "latest": None,
+            "frames": [],
+            "tile_template": None,
+            "supportsHistorical": True,
+            "supportsLive": True,
+            "attribution": "Open-Meteo",
+            "message": "Documented Open-Meteo JSON fields are approved, but Orion has no approved raster tile renderer for this mode yet.",
+        }
+        self.send_json(payload, cache_seconds=300)
 
     def proxy_wildfires(self):
         cached = self.cached_feed("wildfires:eonet", 5 * 60)
@@ -3855,7 +3533,7 @@ class OrionHandler(SimpleHTTPRequestHandler):
         self.write_payload(encoded)
 
     def log_message(self, fmt, *args):
-        if self.path.startswith("/gibs/") or self.path.startswith("/live/") or self.path.startswith("/osm/") or self.path.startswith("/esri/") or self.path.startswith("/rainviewer/") or self.path.startswith("/zoom-earth/") or self.path.startswith("/camera/"):
+        if self.path.startswith("/gibs/") or self.path.startswith("/live/") or self.path.startswith("/osm/") or self.path.startswith("/esri/") or self.path.startswith("/camera/"):
             return
 
         super().log_message(fmt, *args)

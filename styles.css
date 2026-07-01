@@ -1297,6 +1297,46 @@ h1 {
   white-space: nowrap;
 }
 
+.data-sources-card {
+  display: grid;
+  gap: 8px;
+  padding: 10px 0 2px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.data-sources-card summary {
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.data-sources-grid {
+  display: grid;
+  grid-template-columns: minmax(82px, 0.7fr) minmax(0, 1fr);
+  gap: 6px 10px;
+  padding-top: 2px;
+  font-size: 10px;
+}
+
+.data-sources-grid span {
+  color: rgba(255, 255, 255, 0.48);
+  text-transform: uppercase;
+}
+
+.data-sources-grid strong {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 10px;
+  font-weight: 650;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .intel-detail-card {
   display: grid;
   gap: 9px;

@@ -1,0 +1,10 @@
+{
+  "name": "project-orion",
+  "version": "1.1.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check:js": "node --check app.js && node --check orion-config.js && node --check orion-provider-registry.js && node --check orion-runtime-state.js && node --check orion-telemetry-health.js && node --check orion-onboarding.js && node --check cameranet_frontend.js && node --check orion-renderer-environment.js && node --check orion-renderer-primitive.js && node --check orion-renderer-imagery.js && node --check orion-renderer-infrastructure.js",
+    "test": "node --test tests/*.test.mjs"
+  }
+}

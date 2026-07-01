@@ -4,7 +4,7 @@ const OrionOnboarding = (function() {
     const STORAGE_KEYS = {
         ONBOARDING_COMPLETE: 'orion_onboarding_complete',
         CHANGELOG_VERSION: 'orion_changelog_dismissed',
-        CURRENT_VERSION: '1.1.0-ops'
+        CURRENT_VERSION: '1.1.1-hardening'
     };
 
     const TUTORIAL_STEPS = [
@@ -248,39 +248,39 @@ const OrionOnboarding = (function() {
     ];
 
     const CHANGELOG = {
-        version: '1.1.0',
-        date: 'June 2026',
+        version: '1.1.1',
+        date: 'July 2026',
         sections: [
             {
-                title: 'Operations Cleanup',
+                title: 'Provider Hardening',
                 items: [
-                    'Retired degraded experimental controls for cyber arcs, sea cables, airspace, power grid, RF heat, event heat, and air routes',
-                    'Updated timeline Updates mode so its buttons, speed labels, and status text follow the active map refresh cadence',
-                    'Reduced renderer pressure when several live layers are enabled together'
+                    'Replaced direct RainViewer radar tile use with documented NOAA/NWS radar metadata and map-service support',
+                    'Disabled undocumented weather tile providers until an approved raster renderer is available',
+                    'Added provider health metadata with retry timing, static/live support, and attribution'
                 ]
             },
             {
-                title: 'Live Location',
+                title: 'Safer Defaults',
                 items: [
-                    'Added live location tracking with an Orion-styled device marker',
-                    'Added a live accuracy ring that updates with the device location fix',
-                    'Added secure browser geolocation support for desktop, mobile, and vehicle browsers that expose location permissions'
+                    'Moved first-run layer defaults into one authoritative configuration',
+                    'Kept heavy live, radar, weather, camera, aircraft, vessel, satellite, and debris layers off by default',
+                    'Persisted explicit user choices without re-enabling heavy layers for first-time visitors'
                 ]
             },
             {
-                title: 'Tracking Improvements',
+                title: 'Static And Local Modes',
                 items: [
-                    'Location tracking runs independently from aircraft, vessel, satellite, and saved-location markers',
-                    'The first location fix recenters the globe without disrupting later manual orbit controls',
-                    'Location cleanup now clears watch timers and map entities when tracking is disabled'
+                    'Added request cancellation and provider gating for unsupported static-mode layers',
+                    'Updated GitHub Pages snapshot generation for NOAA/NWS radar and metadata-only weather fields',
+                    'Removed dead RainViewer and undocumented weather proxy routes from the Python backend'
                 ]
             },
             {
-                title: 'Publishing',
+                title: 'Documentation',
                 items: [
-                    'Refreshed the GitHub README brand panel and screenshot gallery',
-                    'Published the v1.1.0 cleanup notes in the app and repository',
-                    'Refreshed cache-busting asset versions for GitHub Pages'
+                    'Added audit, architecture, issue inventory, data source, and implementation-plan documents',
+                    'Added a visible Data Sources and Attribution panel in the command HUD',
+                    'Updated README setup, provider, static deployment, validation, and troubleshooting notes'
                 ]
             }
         ]

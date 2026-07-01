@@ -12,7 +12,9 @@
   var GIBS_ROOT = Orion.Config.Constants.GIBS_ROOT;
   var EARTH_HOME = Orion.Config.Constants.EARTH_HOME;
   var SAVED_LOCATIONS_KEY = Orion.Config.Constants.SAVED_LOCATIONS_KEY;
-  var APP_VERSION = Orion.Config.Constants.APP_VERSION || "1.1.0";
+  var APP_VERSION = Orion.Config.Constants.APP_VERSION || "1.1.1";
+  var USER_STATE_KEY = "orion:userState:v2";
+  var NOAA_RADAR_MAPSERVER_URL = "https://mapservices.weather.noaa.gov/eventdriven/rest/services/radar/radar_base_reflectivity/MapServer";
   var DEFAULT_UPDATE_INTERVAL_MS = 10 * 60 * 1000;
   var UPDATE_CADENCE_BY_MODE = {
     satellite: 20 * 60 * 1000,
@@ -162,6 +164,7 @@
   var zoomWeatherMode = null;
   var zoomWeatherTimer = null;
   var zoomWeatherRequestToken = 0;
+  var providerRequestControllers = {};
   var activeTimelineFrameBounds = null;
   var weatherEffectCanvas = null;
   var weatherEffectContext = null;
@@ -185,11 +188,84 @@
 
   var lodManager = null;
   var cullingManager = null;
-  var currentLODLevel = Orion.Runtime.StateManager.lodLevel;
+
+  function ensureRuntimeStateManager() {
+    Orion.Runtime = Orion.Runtime || {};
+    if (Orion.Runtime.StateManager) {
+      return Orion.Runtime.StateManager;
+    }
+
+    var fallback = {
+      layerStates: {},
+      stateHistory: [],
+      maxHistorySize: 50,
+      lodLevel: "close",
+      init: function () {
+        var self = this;
+        Object.keys(platformLayerDefinitions).forEach(function (layerId) {
+          if (!self.layerStates[layerId]) {
+            self.layerStates[layerId] = {
+              enabled: false,
+              lastChanged: Date.now(),
+              changeCount: 0,
+              lockedUntil: 0
+            };
+          }
+        });
+      },
+      setLayerEnabled: function (layerId, enabled) {
+        if (!this.layerStates[layerId]) {
+          this.layerStates[layerId] = {
+            enabled: false,
+            lastChanged: Date.now(),
+            changeCount: 0,
+            lockedUntil: 0
+          };
+        }
+        var current = this.layerStates[layerId];
+        if (current.enabled === enabled) {
+          return false;
+        }
+        this.layerStates[layerId] = {
+          enabled: !!enabled,
+          lastChanged: Date.now(),
+          changeCount: current.changeCount + 1,
+          lockedUntil: 0
+        };
+        return true;
+      },
+      isLayerEnabled: function (layerId) {
+        return !!(this.layerStates[layerId] && this.layerStates[layerId].enabled);
+      },
+      lockLayer: function (layerId, durationMs) {
+        if (!this.layerStates[layerId]) {
+          return;
+        }
+        this.layerStates[layerId].lockedUntil = Date.now() + durationMs;
+      },
+      getEnabledLayers: function () {
+        var self = this;
+        return Object.keys(this.layerStates).filter(function (layerId) {
+          return self.layerStates[layerId].enabled;
+        });
+      },
+      getLayerInfo: function (layerId) {
+        return this.layerStates[layerId] || null;
+      },
+      getHistory: function (limit) {
+        return this.stateHistory.slice(-(limit || 10));
+      }
+    };
+    Orion.Runtime.StateManager = fallback;
+    return fallback;
+  }
+
+  var layerStateManager = ensureRuntimeStateManager();
+  var currentLODLevel = layerStateManager.lodLevel || "close";
   
   function setLODLevel(newLevel) {
     currentLODLevel = newLevel;
-    Orion.Runtime.StateManager.lodLevel = newLevel;
+    layerStateManager.lodLevel = newLevel;
   }
 
   var primitiveCollections = {
@@ -214,9 +290,6 @@
   var currentImageryMode = "standard";
   var activeShaderStage = null;
 
-  var layerStateManager = Orion.Runtime.StateManager;
-
-
   var providerHealthTracker = Orion.Telemetry.ProviderHealth;
 
   var performanceBudgetManager = Orion.Runtime.PerformanceBudget;
@@ -240,6 +313,8 @@
 
   var maxDate = latestStableGibsTime(new Date());
   var minDate = addDays(maxDate, -30);
+  var defaultStateConfig = Orion.Config.DefaultState || {};
+  var persistedUserState = loadPersistedUserState();
 
   var state = {
     date: maxDate,
@@ -251,16 +326,16 @@
     speed: 1,
     autoDetailActive: false,
     detailTier: "orbital",
-    scanMode: "standard",
+    scanMode: defaultStateConfig.scanMode || "standard",
     cameraMoving: false,
     cameraMovingFast: false,
     timelapseRecording: false,
     earthquakeFeed: "2.5_day",
     earthquakeMinMagnitude: 2.5,
     radarOpacity: 0.44,
-    radarAnimating: true,
-    weatherMapMode: "satellite",
-    satelliteSource: "public-geostat",
+    radarAnimating: !!defaultStateConfig.radarAnimating,
+    weatherMapMode: defaultStateConfig.weatherMapMode || "satellite",
+    satelliteSource: defaultStateConfig.satelliteSource || "public-geostat",
     orbitalDataset: "all",
     cleanEarth: false,
     intelSearch: "",
@@ -285,7 +360,26 @@
       hasFix: false,
       error: null
     },
-    layers: {
+    layers: configuredLayerDefaults(),
+    platformLayers: configuredPlatformLayerDefaults(),
+    tracking: configuredTrackingDefaults()
+  };
+  applyPersistedUserState(state, persistedUserState);
+  window.appState = state;
+
+  function $(id) {
+    return document.getElementById(id);
+  }
+
+  function clonePlainObject(value) {
+    if (!value || typeof value !== "object") {
+      return {};
+    }
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  function configuredLayerDefaults() {
+    return Object.assign({
       trueColor: true,
       sentinel: false,
       clouds: false,
@@ -293,35 +387,21 @@
       night: false,
       labels: true,
       boundaries: false
-    },
-    platformLayers: {
-      realtimeSatellites: false,
-      satInternet: false,
-      satCommunications: false,
-      satPositioning: false,
-      satEarthImaging: false,
-      satWeather: false,
-      satScience: false,
-      satIot: false,
-      starlink: false,
-      debris: false,
-      earthquakes: false,
-      cameras: false,
-      weatherRadar: false,
-      liveShips: false,
-      wildfires: false,
-      cyberNetwork: false,
-      defenseAirspace: false,
-      underseaCables: false,
-      powerGrid: false,
-      rfHeatmap: false,
-      emergencyIncidents: false,
-      volumetricWeather: false,
-      lightning: false,
-      airCorridors: false,
-      cities3d: false
-    },
-    tracking: {
+    }, clonePlainObject(defaultStateConfig.layers));
+  }
+
+  function configuredPlatformLayerDefaults() {
+    var defaults = Object.assign({}, clonePlainObject(defaultStateConfig.platformLayers));
+    Object.keys(platformLayerDefinitions).forEach(function (layerId) {
+      if (!Object.prototype.hasOwnProperty.call(defaults, layerId)) {
+        defaults[layerId] = false;
+      }
+    });
+    return defaults;
+  }
+
+  function configuredTrackingDefaults() {
+    return Object.assign({
       filter: "all",
       air: false,
       sat: false,
@@ -331,12 +411,79 @@
       followReady: false,
       selectedId: null,
       dirty: true
-    }
-  };
-  window.appState = state;
+    }, clonePlainObject(defaultStateConfig.tracking));
+  }
 
-  function $(id) {
-    return document.getElementById(id);
+  function loadPersistedUserState() {
+    try {
+      var raw = window.localStorage.getItem(USER_STATE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function applyKnownBooleanMap(targetMap, savedMap, allowedMap) {
+    if (!savedMap || typeof savedMap !== "object") {
+      return;
+    }
+    Object.keys(allowedMap).forEach(function (key) {
+      if (Object.prototype.hasOwnProperty.call(savedMap, key)) {
+        targetMap[key] = !!savedMap[key];
+      }
+    });
+  }
+
+  function applyPersistedUserState(target, saved) {
+    if (!saved || typeof saved !== "object") {
+      return;
+    }
+    applyKnownBooleanMap(target.layers, saved.layers, target.layers);
+    applyKnownBooleanMap(target.platformLayers, saved.platformLayers, target.platformLayers);
+    applyKnownBooleanMap(target.tracking, saved.tracking, {
+      air: true,
+      sat: true,
+      sea: true,
+      live: true
+    });
+
+    if (typeof saved.weatherMapMode === "string") {
+      target.weatherMapMode = saved.weatherMapMode;
+    }
+    if (typeof saved.satelliteSource === "string") {
+      target.satelliteSource = saved.satelliteSource;
+    }
+    if (typeof saved.orbitalDataset === "string") {
+      target.orbitalDataset = saved.orbitalDataset;
+    }
+    if (typeof saved.scanMode === "string") {
+      target.scanMode = saved.scanMode;
+    }
+    if (typeof saved.radarAnimating === "boolean") {
+      target.radarAnimating = saved.radarAnimating;
+    }
+  }
+
+  function persistUserState() {
+    try {
+      window.localStorage.setItem(USER_STATE_KEY, JSON.stringify({
+        savedAt: Date.now(),
+        layers: state.layers,
+        platformLayers: state.platformLayers,
+        tracking: {
+          air: state.tracking.air,
+          sat: state.tracking.sat,
+          sea: state.tracking.sea,
+          live: state.tracking.live
+        },
+        weatherMapMode: state.weatherMapMode,
+        satelliteSource: state.satelliteSource,
+        orbitalDataset: state.orbitalDataset,
+        scanMode: state.scanMode,
+        radarAnimating: state.radarAnimating
+      }));
+    } catch (error) {
+    }
   }
 
   function cacheElements() {
@@ -4813,6 +4960,17 @@ void main() {
       return;
     }
 
+    if (!providerSupportsCurrentMode(layerId)) {
+      platformFeeds[layerId] = Object.assign({}, feed, {
+        status: "unavailable",
+        error: "Provider requires local backend mode",
+        loadedAt: Date.now(),
+        items: []
+      });
+      updatePlatformTelemetry();
+      return;
+    }
+
     if (!force && state.cameraMovingFast && layerId !== "cameras") {
       return;
     }
@@ -4863,7 +5021,10 @@ void main() {
       return;
     }
 
-    fetchJsonEndpoint(endpoint)
+    var controller = createProviderRequestController(layerId);
+    var signal = controller ? controller.signal : undefined;
+
+    fetchJsonEndpoint(endpoint, { signal: signal })
       .then(function (payload) {
         if (!layerStateManager.isLayerEnabled(layerId)) {
           debugLog('[RefreshPlatform] Layer', layerId, 'disabled during fetch, ignoring payload');
@@ -4875,9 +5036,17 @@ void main() {
         platformFeeds[layerId].retryCount = 0; 
         applyPlatformPayload(layerId, payload || {});
       })
-      .catch(handleFetchError);
+      .catch(handleFetchError)
+      .finally(function () {
+        clearProviderRequestController(layerId, controller);
+      });
 
     function handleFetchError(error) {
+        if (error && error.name === "AbortError") {
+          debugLog('[RefreshPlatform] Layer', layerId, 'request aborted');
+          return;
+        }
+
         if (!layerStateManager.isLayerEnabled(layerId)) {
           debugLog('[RefreshPlatform] Layer', layerId, 'disabled during fetch error, ignoring');
           return;
@@ -5394,6 +5563,7 @@ void main() {
     }
 
     if (!enabled) {
+      abortProviderRequest("weatherRadar");
       if (weatherRadarTimer) {
         window.clearInterval(weatherRadarTimer);
         weatherRadarTimer = null;
@@ -5439,54 +5609,97 @@ void main() {
   }
 
   function applyWeatherRadarFrame(frame) {
-    if (!frame || !frame.path || !Cesium.UrlTemplateImageryProvider) {
-      return false;
+    applyNoaaRadarLayer();
+    return true;
+  }
+
+  function createNoaaRadarProvider() {
+    if (!Cesium.ArcGisMapServerImageryProvider) {
+      throw new Error("NOAA radar provider unavailable in Cesium");
     }
 
-    var frameKey = frameTemplate(frame);
+    var options = {
+      layers: "show:3",
+      enablePickFeatures: false,
+      credit: "NOAA / National Weather Service"
+    };
 
-    if (weatherRadarLayer && imageryLayerExists(weatherRadarLayer) && weatherRadarLayer.orionFrameKey === frameKey) {
+    if (typeof Cesium.ArcGisMapServerImageryProvider.fromUrl === "function") {
+      return Cesium.ArcGisMapServerImageryProvider.fromUrl(NOAA_RADAR_MAPSERVER_URL, options);
+    }
+
+    return new Cesium.ArcGisMapServerImageryProvider(Object.assign({ url: NOAA_RADAR_MAPSERVER_URL }, options));
+  }
+
+  function applyNoaaRadarLayer() {
+    if (!viewer) {
+      return Promise.resolve(false);
+    }
+
+    if (weatherRadarLayer && imageryLayerExists(weatherRadarLayer) && weatherRadarLayer.orionProviderId === "noaa-nws-radar") {
       weatherRadarLayer.alpha = state.radarOpacity;
       raiseOperationalLayers();
       viewer.scene.requestRender();
-      return true;
+      return Promise.resolve(true);
     }
 
-    if (weatherRadarLayer) {
-      weatherRadarLayer.alpha = Math.max(0.08, state.radarOpacity * 0.42);
-      weatherRadarPreviousLayers.push(weatherRadarLayer);
-      window.setTimeout(function () {
-        var oldLayer = weatherRadarPreviousLayers.shift();
-        if (oldLayer && imageryLayerExists(oldLayer)) {
-          viewer.imageryLayers.remove(oldLayer, true);
-          viewer.scene.requestRender();
+    abortProviderRequest("weatherRadar");
+    var controller = createProviderRequestController("weatherRadar");
+    var token = controller ? controller.signal : null;
+
+    return Promise.resolve()
+      .then(createNoaaRadarProvider)
+      .then(function (provider) {
+        if (token && token.aborted) {
+          return false;
         }
-      }, 2600);
-      weatherRadarLayer = null;
-    }
+        if (!state.platformLayers.weatherRadar) {
+          return false;
+        }
 
-    weatherRadarLayer = viewer.imageryLayers.addImageryProvider(new Cesium.UrlTemplateImageryProvider({
-      url: (isStaticHostMode() ? "https://tilecache.rainviewer.com" : "/rainviewer") + frame.path + "/256/{z}/{x}/{y}/2/1_1.png",
-      tilingScheme: new Cesium.WebMercatorTilingScheme(),
-      minimumLevel: 0,
-      maximumLevel: 10,
-      credit: "RainViewer"
-    }));
-    if (weatherRadarLayer.imageryProvider && weatherRadarLayer.imageryProvider.errorEvent) {
-      weatherRadarLayer.imageryProvider.errorEvent.addEventListener(function (tileProviderError) {
-        tileProviderError.retry = tileProviderError.timesRetried < 1;
+        if (weatherRadarLayer && imageryLayerExists(weatherRadarLayer)) {
+          weatherRadarLayer.alpha = Math.max(0.08, state.radarOpacity * 0.42);
+          weatherRadarPreviousLayers.push(weatherRadarLayer);
+          window.setTimeout(function () {
+            var oldLayer = weatherRadarPreviousLayers.shift();
+            if (oldLayer && imageryLayerExists(oldLayer)) {
+              viewer.imageryLayers.remove(oldLayer, true);
+              viewer.scene.requestRender();
+            }
+          }, 1800);
+          weatherRadarLayer = null;
+        }
+
+        weatherRadarLayer = viewer.imageryLayers.addImageryProvider(provider);
+        weatherRadarLayer.alpha = state.radarOpacity;
+        weatherRadarLayer.brightness = 1.04;
+        weatherRadarLayer.contrast = 1.18;
+        weatherRadarLayer.saturation = 0.82;
+        weatherRadarLayer.orionKey = "weatherRadar";
+        weatherRadarLayer.orionProviderId = "noaa-nws-radar";
+        weatherRadarLayer.orionFrameTime = Date.now();
+
+        if (weatherRadarLayer.imageryProvider && weatherRadarLayer.imageryProvider.errorEvent) {
+          weatherRadarLayer.imageryProvider.errorEvent.addEventListener(function (tileProviderError) {
+            tileProviderError.retry = tileProviderError.timesRetried < 1;
+          });
+        }
+
+        raiseOperationalLayers();
+        viewer.scene.requestRender();
+        providerHealthTracker.recordSuccess("weatherRadar", {
+          source: "NOAA/NWS",
+          provider: "radar_base_reflectivity",
+          mode: "live-map-service",
+          fallback: false,
+          generated: Date.now(),
+          features: [{ id: "noaa-radar-map-service" }]
+        });
+        return true;
+      })
+      .finally(function () {
+        clearProviderRequestController("weatherRadar", controller);
       });
-    }
-    weatherRadarLayer.alpha = state.radarOpacity;
-    weatherRadarLayer.brightness = 1.04;
-    weatherRadarLayer.contrast = 1.18;
-    weatherRadarLayer.saturation = 0.42;
-    weatherRadarLayer.orionKey = "weatherRadar";
-    weatherRadarLayer.orionFrameKey = frameKey;
-    weatherRadarLayer.orionFrameTime = frame.time || frame.valid_time || null;
-    raiseOperationalLayers();
-    viewer.scene.requestRender();
-    return true;
   }
 
   function selectWeatherRadarFrameForDate(frames, date) {
@@ -5548,30 +5761,32 @@ void main() {
     });
     updatePlatformTelemetry();
 
-    fetchJsonEndpoint(platformLayerDefinitions.weatherRadar.endpoint)
-      .then(function (payload) {
-        var frames = payload.frames || [];
-        var selection = selectWeatherRadarFrameForDate(frames, state.date);
-        var frame = selection && selection.frame ? selection.frame : payload.latest;
-
-        if (!applyWeatherRadarFrame(frame)) {
-          throw new Error("No radar frame");
+    applyNoaaRadarLayer()
+      .then(function (applied) {
+        if (!applied) {
+          throw new Error("NOAA radar layer unavailable");
         }
-        weatherRadarFrameIndex = selection ? Math.max(0, selection.index) : Math.max(0, frames.length - 1);
-
         platformFeeds.weatherRadar = {
           status: "online",
           loadedAt: Date.now(),
-          items: frames,
-          payload: payload
+          items: [{ id: "noaa-radar-map-service", name: "NOAA/NWS radar base reflectivity" }],
+          payload: {
+            source: "NOAA/NWS",
+            provider: "radar_base_reflectivity",
+            mode: "live-map-service",
+            fallback: false,
+            generated: Date.now(),
+            supportsHistorical: false
+          }
         };
-        syncWeatherRadarAnimation();
         updatePlatformTelemetry();
         viewer.scene.requestRender();
       })
       .catch(function (error) {
+        providerHealthTracker.recordFailure("weatherRadar", error);
         platformFeeds.weatherRadar = Object.assign({}, platformFeeds.weatherRadar, {
-          status: error && error.message ? error.message : "offline",
+          status: "offline",
+          error: error && error.message ? error.message : "NOAA radar unavailable",
           loadedAt: Date.now()
         });
         updatePlatformTelemetry();
@@ -5582,7 +5797,7 @@ void main() {
     radar: {
       label: "Radar",
       endpointMode: "radar",
-      sourceLabel: "Zoom Earth radar",
+      sourceLabel: "NOAA/NWS radar",
       refreshMs: 5 * 60 * 1000,
       alpha: 0.78,
       brightness: 1.08,
@@ -5595,7 +5810,7 @@ void main() {
     precipitation: {
       label: "Precipitation",
       endpointMode: "precipitation",
-      sourceLabel: "Zoom Earth / DWD ICON",
+      sourceLabel: "Open-Meteo model fields",
       refreshMs: DEFAULT_UPDATE_INTERVAL_MS,
       alpha: 0.74,
       brightness: 1.02,
@@ -5608,7 +5823,7 @@ void main() {
     wind: {
       label: "Wind",
       endpointMode: "wind",
-      sourceLabel: "Zoom Earth / DWD ICON",
+      sourceLabel: "Open-Meteo model fields",
       refreshMs: DEFAULT_UPDATE_INTERVAL_MS,
       alpha: 0.68,
       brightness: 1.0,
@@ -5622,7 +5837,7 @@ void main() {
     temperature: {
       label: "Temperature",
       endpointMode: "temperature",
-      sourceLabel: "Zoom Earth / DWD ICON",
+      sourceLabel: "Open-Meteo model fields",
       refreshMs: DEFAULT_UPDATE_INTERVAL_MS,
       alpha: 0.76,
       brightness: 1.04,
@@ -5635,7 +5850,7 @@ void main() {
     humidity: {
       label: "Humidity",
       endpointMode: "humidity",
-      sourceLabel: "Zoom Earth / DWD ICON",
+      sourceLabel: "Open-Meteo model fields",
       refreshMs: DEFAULT_UPDATE_INTERVAL_MS,
       alpha: 0.72,
       brightness: 1.0,
@@ -5648,7 +5863,7 @@ void main() {
     pressure: {
       label: "Pressure",
       endpointMode: "pressure",
-      sourceLabel: "Zoom Earth / DWD ICON",
+      sourceLabel: "Open-Meteo model fields",
       refreshMs: DEFAULT_UPDATE_INTERVAL_MS,
       alpha: 0.72,
       brightness: 1.06,
@@ -6040,7 +6255,7 @@ void main() {
       tilingScheme: new Cesium.WebMercatorTilingScheme(),
       minimumLevel: 0,
       maximumLevel: config.maxLevel || 8,
-      credit: payload.provider || config.sourceLabel || "Zoom Earth"
+      credit: payload.provider || config.sourceLabel || "Weather provider"
     }));
     zoomWeatherLayer.orionKey = "zoomWeather";
     zoomWeatherLayer.orionFrameKey = frameKey;
@@ -6127,8 +6342,44 @@ void main() {
     return endpoint;
   }
 
-  function fetchJsonEndpoint(endpoint) {
-    return fetch(staticDataUrlForEndpoint(endpoint), { headers: { Accept: "application/json" } })
+  function abortProviderRequest(layerId) {
+    var controller = providerRequestControllers[layerId];
+    if (controller) {
+      try {
+        controller.abort();
+      } catch (error) {
+      }
+      delete providerRequestControllers[layerId];
+    }
+  }
+
+  function createProviderRequestController(layerId) {
+    abortProviderRequest(layerId);
+    if (typeof AbortController === "undefined") {
+      return null;
+    }
+    providerRequestControllers[layerId] = new AbortController();
+    return providerRequestControllers[layerId];
+  }
+
+  function clearProviderRequestController(layerId, controller) {
+    if (!controller || providerRequestControllers[layerId] === controller) {
+      delete providerRequestControllers[layerId];
+    }
+  }
+
+  function providerSupportsCurrentMode(layerId) {
+    var registry = Orion.Providers && Orion.Providers.Registry;
+    return !registry || registry.supportsCurrentMode(layerId);
+  }
+
+  function fetchJsonEndpoint(endpoint, options) {
+    options = options || {};
+    var fetchOptions = { headers: { Accept: "application/json" } };
+    if (options.signal) {
+      fetchOptions.signal = options.signal;
+    }
+    return fetch(staticDataUrlForEndpoint(endpoint), fetchOptions)
       .then(function (response) {
         if (!response.ok) {
           throw new Error("HTTP " + response.status);
@@ -6138,7 +6389,7 @@ void main() {
   }
 
   function zoomEarthTileBase() {
-    return isStaticHostMode() ? "https://tiles.zoom.earth" : "/zoom-earth";
+    return "";
   }
 
   function toUtcStamp(seconds) {
@@ -6184,7 +6435,7 @@ void main() {
     var forecastPath = "f" + String(best.forecastHour).padStart(3, "0");
 
     return {
-      path: zoomEarthTileBase() + "/icon/v1/" + layerName + "/webp/" + levelName + "/" + datePath + "/" + forecastPath + "/{z}/{y}/{x}.webp",
+        path: "",
       run_time: toUtcStamp(best.runTs),
       valid_time: toUtcStamp(best.validTs),
       forecast_hour: best.forecastHour
@@ -6213,7 +6464,7 @@ void main() {
       return {
         time: toUtcStamp(frame.time),
         hash: frame.hash,
-        path: zoomEarthTileBase() + "/radar/reflectivity/" + day + "/" + hm + "/" + frame.hash + "/{z}/{y}/{x}.webp"
+        path: ""
       };
     });
   }
@@ -6222,25 +6473,25 @@ void main() {
     var config = zoomWeatherModeConfig[mode];
 
     if (!isStaticHostMode()) {
-      return fetch("/live/weather/zoom-earth?mode=" + encodeURIComponent(config.endpointMode), { headers: { Accept: "application/json" } })
+      return fetch("/live/weather/fields?mode=" + encodeURIComponent(config.endpointMode), { headers: { Accept: "application/json" } })
         .then(function (response) {
           if (!response.ok) {
-            throw new Error("Zoom Earth weather unavailable");
+            throw new Error("Weather field provider unavailable");
           }
           return response.json();
         });
     }
 
-    return fetch("pages-data/live/weather/zoom-" + encodeURIComponent(mode) + ".json", { headers: { Accept: "application/json" } })
+    return fetch("pages-data/live/weather/field-" + encodeURIComponent(mode) + ".json", { headers: { Accept: "application/json" } })
       .then(function (response) {
         if (!response.ok) {
-          throw new Error("Zoom Earth pages snapshot unavailable");
+          throw new Error("Weather field pages snapshot unavailable");
         }
         return response.json();
       })
       .then(function (payload) {
         if (!payload || !payload.tile_template) {
-          throw new Error("No Zoom Earth weather snapshot");
+          throw new Error((payload && payload.message) || "Weather field map tiles are not implemented");
         }
         return payload;
       });
@@ -6302,7 +6553,7 @@ void main() {
         syncTimelineBoundsFromZoomPayload(payload, mode, true);
 
         if (!applyZoomWeatherLayer(payload, mode)) {
-          throw new Error("No Zoom Earth weather tile");
+          throw new Error((payload && payload.message) || "No approved weather tile provider");
         }
 
         restartZoomWeatherTimer(mode, payload);
@@ -6315,8 +6566,13 @@ void main() {
         if (token !== zoomWeatherRequestToken) {
           return;
         }
+        if (zoomWeatherTimer) {
+          window.clearInterval(zoomWeatherTimer);
+          zoomWeatherTimer = null;
+        }
         platformFeeds.weatherRadar = Object.assign({}, platformFeeds.weatherRadar, {
-          status: error && error.message ? error.message : "offline",
+          status: "unavailable",
+          error: error && error.message ? error.message : "Weather field map unavailable",
           loadedAt: Date.now()
         });
         updatePlatformTelemetry();
@@ -6477,6 +6733,7 @@ void main() {
     }
 
     showToast("Scan mode: " + state.scanMode.toUpperCase());
+    persistUserState();
   }
 
   function downloadBlob(blob, filename) {
@@ -6651,6 +6908,7 @@ void main() {
     }
     state.tracking.dirty = true;
     updateTrackingLayer(true);
+    persistUserState();
   }
 
   function setTrackingDomain(type, enabled) {
@@ -6676,6 +6934,7 @@ void main() {
     state.tracking[type] = !!enabled;
     syncTrackingControls();
     updateTrackingLayer(true);
+    persistUserState();
   }
 
   function syncTrackingDomainFromPlatformLayer(layerId) {
@@ -6716,6 +6975,16 @@ void main() {
       state.layers.clouds = false;
       state.layers.infrared = false;
       scheduleImageryRefresh();
+    } else if (state.weatherMapMode === "radar") {
+      state.scanMode = "weather";
+      document.body.dataset.scanMode = "weather";
+      switchImageryMode("weather");
+      if (elements.scanModeSelect) {
+        elements.scanModeSelect.value = "weather";
+      }
+      clearZoomWeatherLayer();
+      state.radarOpacity = Math.max(state.radarOpacity, 0.58);
+      setPlatformLayer("weatherRadar", true);
     } else if (isZoomWeatherMapMode(state.weatherMapMode)) {
       state.scanMode = "weather";
       document.body.dataset.scanMode = "weather";
@@ -6723,6 +6992,7 @@ void main() {
       if (elements.scanModeSelect) {
         elements.scanModeSelect.value = "weather";
       }
+      setPlatformLayer("weatherRadar", false);
       if (state.weatherMapMode === "radar" || state.weatherMapMode === "precipitation") {
         state.radarOpacity = Math.max(state.radarOpacity, 0.58);
       }
@@ -6736,6 +7006,7 @@ void main() {
 
     syncControlState();
     updateTelemetry();
+    persistUserState();
   }
 
   function applySatelliteSource(source) {
@@ -6761,6 +7032,7 @@ void main() {
     scheduleImageryRefresh();
     syncControlState();
     updateTelemetry();
+    persistUserState();
   }
 
   function setPlatformLayer(layerId, enabled) {
@@ -6798,6 +7070,7 @@ void main() {
     }
 
     state.platformLayers[layerId] = enabled;
+    persistUserState();
     syncTrackingDomainFromPlatformLayer(layerId);
 
     if (layerId === "weatherRadar") {
@@ -6855,6 +7128,8 @@ void main() {
   }
 
   function destroyLayerCompletely(layerId, force) {
+    abortProviderRequest(layerId);
+
     if (!force && !layerHasRenderableState(layerId)) {
       return;
     }
@@ -8485,6 +8760,7 @@ void main() {
     updatePlatformSystems(false);
     updateTimelineLabels();
     showToast(enabled ? "Live tracking clock engaged." : "Tracking synced to historical timeline.");
+    persistUserState();
   }
 
   function selectTrackingObject(trackId) {
@@ -9613,9 +9889,11 @@ void main() {
         if (pair[1] === "boundaries") {
           updateBoundaryLayer();
           syncControlState();
+          persistUserState();
           return;
         }
         scheduleImageryRefresh();
+        persistUserState();
       });
     });
 
@@ -9629,6 +9907,7 @@ void main() {
         scheduleImageryRefresh();
         syncControlState();
         updateTelemetry();
+        persistUserState();
       });
     }
 
@@ -9707,6 +9986,7 @@ void main() {
         state.radarAnimating = !state.radarAnimating;
         elements.radarAnimateToggle.classList.toggle("active", state.radarAnimating);
         syncWeatherRadarAnimation();
+        persistUserState();
       });
     }
 
@@ -11317,6 +11597,14 @@ void main() {
     });
   }
 
+  function syncRuntimeLayerStateFromAppState() {
+    Object.keys(platformLayerDefinitions).forEach(function (layerId) {
+      if (!isRetiredPlatformLayer(layerId)) {
+        layerStateManager.setLayerEnabled(layerId, !!state.platformLayers[layerId]);
+      }
+    });
+  }
+
   function syncControlState() {
     syncTimelineRangeControls();
     elements.splitRange.value = String(state.splitPosition);
@@ -11449,6 +11737,7 @@ void main() {
     stabilityManager.init();
     replayManager.init();
     Orion.Session.restore();
+    syncRuntimeLayerStateFromAppState();
     initTrackingLayer();
     initPlatformSystems();
     syncControlState();

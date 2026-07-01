@@ -11,6 +11,8 @@ pages-data/
 *.md
 !README.md
 !CHANGELOG.md
+!docs/
+!docs/*.md
 test-*.html
 reset-onboarding.html
 .zoom-*.json
@@ -26,5 +28,6 @@ test_*.py
 node_modules/
 .env
 .env.*
+!.env.example
 .DS_Store
 Thumbs.db

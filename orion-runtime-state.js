@@ -2,6 +2,7 @@
   'use strict';
 
   var Orion = window.Orion || {};
+  Orion.Runtime = Orion.Runtime || {};
   var debugEnabled = false;
 
   try {

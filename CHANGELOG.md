@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.1.1 - 2026-07-01
+
+- Added repository audit docs for architecture, issue inventory, data sources, and implementation planning.
+- Centralized first-run layer defaults and provider metadata in `orion-config.js`.
+- Added `orion-provider-registry.js` and expanded provider health state with static/live/historical support, retry-after, attribution, and backoff helpers.
+- Replaced RainViewer browser tile usage with the documented NOAA/NWS radar base reflectivity map service.
+- Removed undocumented Zoom Earth tile/time provider paths from frontend, backend, and Pages data generation.
+- Marked non-radar weather fields as explicit Open-Meteo metadata-only unavailable states until an approved renderer is implemented.
+- Added request cancellation for platform provider fetches when layers are disabled.
+- Removed heavy tracking defaults from HTML and persisted deliberate user layer choices in local storage.
+- Added an in-app Data Sources and Attribution panel.
+- Added `.env.example`, `package.json`, and Node tests for provider defaults and removed weather tile providers.
+- Refreshed GitHub Pages cache-busting asset versions.
+
 ## v1.1.0 - 2026-06-06
 
 - Added live location tracking through the browser Geolocation API.

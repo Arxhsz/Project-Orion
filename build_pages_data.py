@@ -1,6 +1,5 @@
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote
 from urllib.request import Request, urlopen
 import json
 import os
@@ -95,179 +94,48 @@ def build_earthquakes():
 
 
 def build_weather_radar():
-    try:
-        upstream = fetch_json(orion_server.RAINVIEWER_MAPS_URL, timeout=15)
-        past = upstream.get("radar", {}).get("past") or []
-        nowcast = upstream.get("radar", {}).get("nowcast") or []
-        frames = (past + nowcast)[-12:]
-        payload = {
-            "source": "RainViewer",
-            "generated": upstream.get("generated"),
-            "count": len(frames),
-            "mode": "pages-snapshot",
-            "fallback": False,
-            "host": upstream.get("host") or orion_server.RAINVIEWER_ORIGIN,
-            "latest": frames[-1] if frames else None,
-            "frames": frames,
-        }
-    except Exception as error:
-        payload = {
-            "source": "RainViewer",
-            "error": type(error).__name__,
-            "generated": int(time.time()),
-            "count": 0,
-            "mode": "pages-error",
-            "fallback": False,
-            "latest": None,
-            "frames": [],
-        }
+    payload = {
+        "source": "NOAA/NWS",
+        "provider": "radar_base_reflectivity",
+        "map_service": orion_server.NOAA_RADAR_MAPSERVER_URL,
+        "generated": int(time.time()),
+        "count": 1,
+        "mode": "pages-map-service",
+        "fallback": False,
+        "supportsHistorical": False,
+        "refresh_seconds": 300,
+        "latest": {
+            "time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "url": orion_server.NOAA_RADAR_MAPSERVER_URL,
+        },
+        "frames": [],
+        "attribution": "NOAA / National Weather Service",
+    }
     write_json(OUT / "weather" / "radar.json", payload)
 
 
-def zoom_iso(seconds):
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(int(seconds)))
-
-
-def build_zoom_forecast_frames(times_payload, layer_name, level_name, limit=72):
-    level_payload = ((times_payload or {}).get(layer_name) or {}).get(level_name) or {}
-    now = time.time()
-    candidates = []
-    for run_key, hours in level_payload.items():
-        try:
-            run_ts = int(run_key)
-        except (TypeError, ValueError):
-            continue
-        if not isinstance(hours, list):
-            continue
-        for value in hours:
-            try:
-                forecast_hour = int(value)
-            except (TypeError, ValueError):
-                continue
-            valid_ts = run_ts + forecast_hour * 3600
-            candidates.append({
-                "run_ts": run_ts,
-                "forecast_hour": forecast_hour,
-                "valid_ts": valid_ts,
-            })
-    deduped = {}
-    for entry in candidates:
-        current = deduped.get(entry["valid_ts"])
-        if current is None or entry["run_ts"] > current["run_ts"]:
-            deduped[entry["valid_ts"]] = entry
-    candidates = sorted(deduped.values(), key=lambda entry: (entry["valid_ts"], entry["run_ts"]))
-    selected = ([entry for entry in candidates if entry["valid_ts"] <= now] or candidates)[-limit:]
-    frames = []
-    for entry in selected:
-        run_path = time.strftime("%Y-%m-%d/%H%M", time.gmtime(entry["run_ts"]))
-        forecast_path = f"f{entry['forecast_hour']:03d}"
-        frames.append({
-            "path": f"https://tiles.zoom.earth/icon/v1/{layer_name}/webp/{level_name}/{run_path}/{forecast_path}/" + "{z}/{y}/{x}.webp",
-            "run_time": zoom_iso(entry["run_ts"]),
-            "valid_time": zoom_iso(entry["valid_ts"]),
-            "forecast_hour": entry["forecast_hour"],
-        })
-    return frames
-
-
-def select_zoom_forecast(times_payload, layer_name, level_name):
-    frames = build_zoom_forecast_frames(times_payload, layer_name, level_name, limit=1)
-    return frames[-1] if frames else None
-
-
-def select_zoom_radar(times_payload):
-    reflectivity = (times_payload or {}).get("reflectivity") or {}
-    now = time.time()
-    frames = []
-    for key, tile_hash in reflectivity.items():
-        try:
-            ts = int(key)
-        except (TypeError, ValueError):
-            continue
-        if tile_hash:
-            frames.append((ts, str(tile_hash)))
-    frames.sort(key=lambda entry: entry[0])
-    selected = ([entry for entry in frames if entry[0] <= now] or frames)[-12:]
-    output = []
-    for ts, tile_hash in selected:
-        day = time.strftime("%Y-%m-%d", time.gmtime(ts))
-        hm = time.strftime("%H%M", time.gmtime(ts))
-        output.append({
-            "time": zoom_iso(ts),
-            "hash": tile_hash,
-            "path": f"https://tiles.zoom.earth/radar/reflectivity/{day}/{hm}/{tile_hash}/" + "{z}/{y}/{x}.webp",
-        })
-    return output
-
-
-def build_zoom_weather():
-    modes = {
-        "precipitation": ("precipitation", "surface"),
-        "wind": ("wind-speed", "10m"),
-        "temperature": ("temperature", "2m"),
-        "humidity": ("humidity", "2m"),
-        "pressure": ("pressure", "msl"),
-    }
-    try:
-        radar_times = fetch_json(f"{orion_server.ZOOM_EARTH_TIMES_ORIGIN}/radar.json", timeout=15)
-        frames = select_zoom_radar(radar_times)
-        latest = frames[-1] if frames else None
-        write_json(OUT / "weather" / "zoom-radar.json", {
-            "source": "Zoom Earth",
-            "provider": "Zoom Earth radar",
-            "mode": "pages-snapshot",
-            "weather_mode": "radar",
+def build_weather_fields():
+    modes = ["precipitation", "wind", "temperature", "humidity", "pressure"]
+    for mode in modes:
+        payload = {
+            "source": "Open-Meteo",
+            "provider": "Open-Meteo Forecast API",
+            "api": orion_server.OPEN_METEO_FORECAST_URL,
+            "weather_mode": mode,
             "generated": int(time.time()),
-            "refresh_seconds": 300,
-            "count": len(frames),
-            "latest": latest,
-            "frames": frames,
-            "tile_template": latest["path"] if latest else None,
-            "fallback": False,
-        })
-    except Exception as error:
-        write_json(OUT / "weather" / "zoom-radar.json", {
-            "source": "Zoom Earth",
-            "provider": "Zoom Earth radar",
-            "mode": "pages-error",
-            "weather_mode": "radar",
-            "generated": int(time.time()),
-            "refresh_seconds": 300,
+            "refresh_seconds": 600,
             "count": 0,
+            "mode": "metadata-only",
+            "fallback": False,
             "latest": None,
             "frames": [],
             "tile_template": None,
-            "fallback": False,
-            "error": type(error).__name__,
-        })
-    try:
-        icon_times = fetch_json(f"{orion_server.ZOOM_EARTH_TIMES_ORIGIN}/icon.json", timeout=15)
-    except Exception as error:
-        icon_times = None
-        icon_error = type(error).__name__
-    else:
-        icon_error = None
-    for mode, mapping in modes.items():
-        frames = build_zoom_forecast_frames(icon_times, mapping[0], mapping[1]) if icon_times else []
-        frame = frames[-1] if frames else None
-        payload = {
-            "source": "Zoom Earth",
-            "provider": "DWD ICON via Zoom Earth",
-            "mode": "pages-snapshot" if frame else "pages-error",
-            "weather_mode": mode,
-            "zoom_layer": mapping[0],
-            "level": mapping[1],
-            "generated": int(time.time()),
-            "refresh_seconds": 600,
-            "count": len(frames),
-            "latest": frame,
-            "frames": frames,
-            "tile_template": frame["path"] if frame else None,
-            "fallback": False,
+            "supportsHistorical": True,
+            "supportsLive": True,
+            "attribution": "Open-Meteo",
+            "message": "Documented Open-Meteo JSON fields are approved, but Orion has no approved raster tile renderer for this mode yet.",
         }
-        if icon_error:
-            payload["error"] = icon_error
-        write_json(OUT / "weather" / f"zoom-{mode}.json", payload)
+        write_json(OUT / "weather" / f"field-{mode}.json", payload)
 
 
 def build_wildfires():
@@ -430,7 +298,7 @@ def main():
     build_satellites()
     build_earthquakes()
     build_weather_radar()
-    build_zoom_weather()
+    build_weather_fields()
     build_wildfires()
     build_aircraft()
     build_cameras()

@@ -258,7 +258,7 @@
     },
     weatherRadar: {
       label: "Weather radar",
-      source: "RainViewer",
+      source: "NOAA/NWS radar_base_reflectivity",
       type: "weatherRadar",
       endpoint: "/live/weather/radar",
       controlId: "platformWeatherRadar",
@@ -365,7 +365,7 @@
     },
     volumetricWeather: {
       label: "Weather volume",
-      source: "NOAA / RainViewer adapter",
+      source: "NOAA/NWS weather metadata adapter",
       type: "intel",
       endpoint: "/live/intel?layer=volumetricWeather",
       controlId: "platformWeatherVolume",
@@ -436,6 +436,190 @@
   Object.keys(Orion.Config.PlatformLayerDefinitions).forEach(function (layerId) {
     Orion.Config.PlatformLayerDefinitions[layerId].category = Orion.Config.PlatformLayerCategories[layerId] || "Intel";
   });
+
+  Orion.Config.DefaultState = {
+    layers: {
+      trueColor: true,
+      sentinel: false,
+      clouds: false,
+      infrared: false,
+      night: false,
+      labels: true,
+      boundaries: false
+    },
+    platformLayers: {
+      realtimeSatellites: false,
+      satInternet: false,
+      satCommunications: false,
+      satPositioning: false,
+      satEarthImaging: false,
+      satWeather: false,
+      satScience: false,
+      satIot: false,
+      starlink: false,
+      debris: false,
+      earthquakes: false,
+      cameras: false,
+      weatherRadar: false,
+      liveShips: false,
+      liveAircraft: false,
+      wildfires: false,
+      cyberNetwork: false,
+      defenseAirspace: false,
+      underseaCables: false,
+      powerGrid: false,
+      rfHeatmap: false,
+      emergencyIncidents: false,
+      volumetricWeather: false,
+      lightning: false,
+      airCorridors: false,
+      cities3d: false
+    },
+    tracking: {
+      filter: "all",
+      air: false,
+      sat: false,
+      sea: false,
+      live: false,
+      follow: false,
+      followReady: false,
+      selectedId: null,
+      dirty: true
+    },
+    weatherMapMode: "satellite",
+    satelliteSource: "public-geostat",
+    scanMode: "standard",
+    radarAnimating: false
+  };
+
+  Orion.Config.ProviderDefinitions = {
+    gibsImagery: {
+      id: "gibsImagery",
+      label: "NASA GIBS imagery",
+      status: "unknown",
+      supportsStaticMode: true,
+      supportsHistorical: true,
+      supportsLive: true,
+      minimumRefreshMs: 20 * 60 * 1000,
+      maximumRecommendedRequestFrequencyMs: 60 * 1000,
+      requiresBackendProxy: false,
+      requiresApiKey: false,
+      attribution: "NASA GIBS / NASA ESDIS",
+      licensingNotes: "NASA Earthdata/GIBS public visualization services."
+    },
+    weatherRadar: {
+      id: "weatherRadar",
+      label: "NOAA/NWS radar base reflectivity",
+      status: "unknown",
+      supportsStaticMode: true,
+      supportsHistorical: false,
+      supportsLive: true,
+      minimumRefreshMs: 5 * 60 * 1000,
+      maximumRecommendedRequestFrequencyMs: 60 * 1000,
+      requiresBackendProxy: false,
+      requiresApiKey: false,
+      attribution: "NOAA / National Weather Service",
+      licensingNotes: "NOAA/NWS public radar map service; current service is not time enabled."
+    },
+    weatherFields: {
+      id: "weatherFields",
+      label: "Open-Meteo weather fields",
+      status: "unavailable",
+      supportsStaticMode: true,
+      supportsHistorical: true,
+      supportsLive: true,
+      minimumRefreshMs: 10 * 60 * 1000,
+      maximumRecommendedRequestFrequencyMs: 60 * 1000,
+      requiresBackendProxy: false,
+      requiresApiKey: false,
+      attribution: "Open-Meteo",
+      licensingNotes: "Documented JSON APIs only; raster map tiles are not implemented yet."
+    },
+    liveAircraft: {
+      id: "liveAircraft",
+      label: "ADS-B aircraft",
+      status: "unknown",
+      supportsStaticMode: true,
+      supportsHistorical: false,
+      supportsLive: true,
+      minimumRefreshMs: 30 * 1000,
+      maximumRecommendedRequestFrequencyMs: 30 * 1000,
+      requiresBackendProxy: true,
+      requiresApiKey: false,
+      attribution: "OpenSky / public ADS-B providers as configured",
+      licensingNotes: "Credentials and provider-specific rate limits must stay server-side."
+    },
+    liveShips: {
+      id: "liveShips",
+      label: "AIS vessels",
+      status: "unknown",
+      supportsStaticMode: false,
+      supportsHistorical: false,
+      supportsLive: true,
+      minimumRefreshMs: 60 * 1000,
+      maximumRecommendedRequestFrequencyMs: 60 * 1000,
+      requiresBackendProxy: true,
+      requiresApiKey: true,
+      attribution: "Configured AIS provider",
+      licensingNotes: "No random synthetic vessels in production mode."
+    },
+    cameras: {
+      id: "cameras",
+      label: "CameraNet",
+      status: "unknown",
+      supportsStaticMode: true,
+      supportsHistorical: false,
+      supportsLive: true,
+      minimumRefreshMs: 45 * 1000,
+      maximumRecommendedRequestFrequencyMs: 45 * 1000,
+      requiresBackendProxy: true,
+      requiresApiKey: false,
+      attribution: "Public DOT/511/open-data camera providers",
+      licensingNotes: "Provider-specific stream and snapshot terms apply."
+    },
+    satellites: {
+      id: "satellites",
+      label: "CelesTrak TLE satellites",
+      status: "unknown",
+      supportsStaticMode: true,
+      supportsHistorical: false,
+      supportsLive: true,
+      minimumRefreshMs: 6 * 60 * 60 * 1000,
+      maximumRecommendedRequestFrequencyMs: 30 * 60 * 1000,
+      requiresBackendProxy: false,
+      requiresApiKey: false,
+      attribution: "CelesTrak",
+      licensingNotes: "Uses documented GP/TLE element sets."
+    },
+    earthquakes: {
+      id: "earthquakes",
+      label: "USGS earthquakes",
+      status: "unknown",
+      supportsStaticMode: true,
+      supportsHistorical: true,
+      supportsLive: true,
+      minimumRefreshMs: 60 * 1000,
+      maximumRecommendedRequestFrequencyMs: 60 * 1000,
+      requiresBackendProxy: false,
+      requiresApiKey: false,
+      attribution: "USGS Earthquake Hazards Program",
+      licensingNotes: "USGS GeoJSON summary feeds."
+    },
+    wildfires: {
+      id: "wildfires",
+      label: "NASA EONET wildfires",
+      status: "unknown",
+      supportsStaticMode: true,
+      supportsHistorical: true,
+      supportsLive: true,
+      minimumRefreshMs: 5 * 60 * 1000,
+      maximumRecommendedRequestFrequencyMs: 5 * 60 * 1000,
+      requiresBackendProxy: false,
+      requiresApiKey: false,
+      attribution: "NASA EONET",
+      licensingNotes: "Curated natural event metadata."
+    }
+  };
 
   Orion.Config.TrackingDefinitions = [
     {
@@ -561,8 +745,8 @@
   ];
 
   Orion.Config.Constants = {
-    APP_VERSION: "1.1.0",
-    APP_VERSION_LABEL: "v1.1.0",
+    APP_VERSION: "1.1.1",
+    APP_VERSION_LABEL: "v1.1.1",
     MS_PER_DAY: 24 * 60 * 60 * 1000,
     MS_PER_HOUR: 60 * 60 * 1000,
     GIBS_IMAGERY_LAG_DAYS: 1,

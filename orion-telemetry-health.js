@@ -18,10 +18,28 @@
     init: function() {
       var self = this;
       var platformLayerDefinitions = Orion.Config.PlatformLayerDefinitions;
+      var registry = Orion.Providers && Orion.Providers.Registry;
 
       Object.keys(platformLayerDefinitions).forEach(function(layerId) {
+        var providerState = registry ? registry.createState(layerId) : {
+          id: layerId,
+          label: layerId,
+          status: self.HEALTH_STATES.UNKNOWN,
+          lastSuccess: null,
+          lastFailure: null,
+          failureCount: 0,
+          retryAfter: null,
+          supportsStaticMode: false,
+          supportsHistorical: false,
+          supportsLive: false,
+          attribution: platformLayerDefinitions[layerId].source || "Unspecified",
+          licensingNotes: ""
+        };
         self.providers[layerId] = {
+          id: providerState.id,
           layerId: layerId,
+          label: providerState.label,
+          status: providerState.status || self.HEALTH_STATES.UNKNOWN,
           health: self.HEALTH_STATES.UNKNOWN,
           consecutiveFailures: 0,
           consecutiveSuccesses: 0,
@@ -35,10 +53,22 @@
           lastError: null,
           retryCount: 0,
           nextRetryAt: null,
-          backoffMs: 5000
+          retryAfter: null,
+          backoffMs: 5000,
+          supportsStaticMode: !!providerState.supportsStaticMode,
+          supportsHistorical: !!providerState.supportsHistorical,
+          supportsLive: !!providerState.supportsLive,
+          minimumRefreshMs: providerState.minimumRefreshMs || platformLayerDefinitions[layerId].refreshMs || 60000,
+          maximumRecommendedRequestFrequencyMs: providerState.maximumRecommendedRequestFrequencyMs || platformLayerDefinitions[layerId].refreshMs || 60000,
+          requiresBackendProxy: !!providerState.requiresBackendProxy,
+          requiresApiKey: !!providerState.requiresApiKey,
+          attribution: providerState.attribution || platformLayerDefinitions[layerId].source || "Unspecified",
+          licensingNotes: providerState.licensingNotes || ""
         };
       });
-      console.log('[Orion.Telemetry.ProviderHealth] Initialized');
+      if (Orion.Runtime && Orion.Runtime.Logger) {
+        Orion.Runtime.Logger.debug('[Orion.Telemetry.ProviderHealth] Initialized');
+      }
     },
     
     recordSuccess: function(layerId, payload) {
@@ -50,9 +80,11 @@
       provider.totalAttempts += 1;
       provider.totalSuccesses += 1;
       provider.lastSuccess = now;
+      provider.status = this.HEALTH_STATES.ONLINE;
       provider.lastPayload = payload;
       provider.retryCount = 0;
       provider.nextRetryAt = null;
+      provider.retryAfter = null;
       provider.backoffMs = 5000;
       
       if (payload && !payload.error && !payload.fallback) {
@@ -90,10 +122,12 @@
       provider.retryCount += 1;
       provider.backoffMs = Math.min(60000, 5000 * Math.pow(2, provider.retryCount - 1));
       provider.nextRetryAt = now + provider.backoffMs;
+      provider.retryAfter = provider.nextRetryAt;
       
       var previousHealth = provider.health;
       if (provider.consecutiveFailures >= 3) provider.health = this.HEALTH_STATES.OFFLINE;
       else provider.health = this.HEALTH_STATES.DEGRADED;
+      provider.status = provider.health;
       
       if (previousHealth !== provider.health) {
         this.addToHistory(layerId, provider.health, 'failure', provider.lastError);
@@ -128,6 +162,11 @@
       if (!this.providers[layerId]) return true;
       return !this.providers[layerId].nextRetryAt || Date.now() >= this.providers[layerId].nextRetryAt;
     },
+
+    getTimeUntilRetry: function(layerId) {
+      if (!this.providers[layerId] || !this.providers[layerId].nextRetryAt) return 0;
+      return Math.max(0, this.providers[layerId].nextRetryAt - Date.now());
+    },
     
     resetProvider: function(layerId) {
       if (!this.providers[layerId]) return;
@@ -135,7 +174,9 @@
       p.consecutiveFailures = 0;
       p.retryCount = 0;
       p.nextRetryAt = null;
+      p.retryAfter = null;
       p.health = this.HEALTH_STATES.UNKNOWN;
+      p.status = this.HEALTH_STATES.UNKNOWN;
     },
     
     addToHistory: function(layerId, health, event, error) {
@@ -154,11 +195,48 @@
       return Object.keys(this.providers).map(function(layerId) {
         var p = self.providers[layerId];
         return {
+          id: p.id,
           layerId: layerId,
+          label: p.label,
           health: p.health,
+          status: p.status,
+          lastSuccess: p.lastSuccess,
+          lastFailure: p.lastFailure,
+          failureCount: p.totalFailures,
+          retryAfter: p.retryAfter,
+          supportsStaticMode: p.supportsStaticMode,
+          supportsHistorical: p.supportsHistorical,
+          supportsLive: p.supportsLive,
+          attribution: p.attribution,
           successRate: p.totalAttempts > 0 ? (p.totalSuccesses / p.totalAttempts * 100).toFixed(1) + '%' : 'N/A'
         };
       });
+    },
+
+    getProviderState: function(layerId) {
+      var p = this.providers[layerId];
+      if (!p) return null;
+      return {
+        id: p.id,
+        layerId: layerId,
+        label: p.label,
+        status: p.status,
+        health: p.health,
+        lastSuccess: p.lastSuccess,
+        lastFailure: p.lastFailure,
+        failureCount: p.totalFailures,
+        retryAfter: p.retryAfter,
+        supportsStaticMode: p.supportsStaticMode,
+        supportsHistorical: p.supportsHistorical,
+        supportsLive: p.supportsLive,
+        minimumRefreshMs: p.minimumRefreshMs,
+        maximumRecommendedRequestFrequencyMs: p.maximumRecommendedRequestFrequencyMs,
+        requiresBackendProxy: p.requiresBackendProxy,
+        requiresApiKey: p.requiresApiKey,
+        attribution: p.attribution,
+        licensingNotes: p.licensingNotes,
+        lastError: p.lastError
+      };
     },
 
     getGlobalHealthScore: function() {
