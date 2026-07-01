@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.1.2 - 2026-07-01
+
+- Reactivated selectable submarine cable and power-grid Intel layers with visible controls, provider metadata, adapter modules, and selectable-intelligence rows.
+- Added bounded OpenStreetMap/Overpass local backend support for power-grid viewport queries, with static Pages fallback snapshots for broad/static views.
+- Fixed timeline refresh keys so hourly selections trigger map redraws instead of only changing labels within the same day.
+- Added `Orion.SimulationClock` as the shared live/historical/playback clock state.
+- Updated live aircraft rendering to keep a keyed aircraft store and update Cesium billboards in place with stale visual marking.
+
 ## v1.1.1 - 2026-07-01
 
 - Added repository audit docs for architecture, issue inventory, data sources, and implementation planning.

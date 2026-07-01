@@ -27,7 +27,9 @@
       liveShips: "liveShips",
       cameras: "cameras",
       earthquakes: "earthquakes",
-      wildfires: "wildfires"
+      wildfires: "wildfires",
+      underseaCables: "underseaCables",
+      powerGrid: "powerGrid"
     };
     return layerMap[id] || id;
   }

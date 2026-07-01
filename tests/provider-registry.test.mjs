@@ -83,6 +83,28 @@ test("provider registry exposes prompt-required provider state metadata", () => 
   assert.equal(Orion.Telemetry.ProviderHealth.getTimeUntilRetry("weatherRadar"), 0);
 });
 
+test("infrastructure providers are active selectable layers", () => {
+  const Orion = loadBrowserModules([
+    "orion-config.js",
+    "orion-provider-registry.js",
+    "orion-telemetry-health.js"
+  ]);
+  Orion.Telemetry.ProviderHealth.init();
+
+  for (const layerId of ["underseaCables", "powerGrid"]) {
+    const layer = Orion.Config.PlatformLayerDefinitions[layerId];
+    const provider = Orion.Telemetry.ProviderHealth.getProviderState(layerId);
+
+    assert.ok(layer, `${layerId} layer should exist`);
+    assert.notEqual(layer.retired, true, `${layerId} should not be retired`);
+    assert.equal(Orion.Config.DefaultState.platformLayers[layerId], false, `${layerId} should default off`);
+    assert.equal(provider.supportsStaticMode, true, `${layerId} should support static Pages snapshots`);
+    assert.equal(provider.supportsLive, true, `${layerId} should support local live mode`);
+    assert.equal(provider.requiresApiKey, false, `${layerId} should not require frontend keys`);
+    assert.ok(provider.attribution, `${layerId} should expose attribution`);
+  }
+});
+
 test("runtime code no longer contains removed weather tile providers", () => {
   const checkedFiles = [
     "app.js",

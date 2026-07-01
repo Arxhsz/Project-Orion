@@ -17,7 +17,7 @@
 
 ## P2
 
-1. Retired layer definitions remain in config and backend fallback payloads.
+1. Several experimental layer definitions remain retired in config and backend fallback payloads.
 2. `app.js` remains too large and owns state, providers, rendering, UI, telemetry, timeline, and timelapse behavior.
 3. CameraNet has many provider parsers but limited per-provider health details in the visible diagnostics panel.
 4. OpenStreetMap and Nominatim browser calls should document policy considerations and rate limits.
@@ -35,10 +35,10 @@
 
 - Cyber arcs
 - Defense airspace
-- Undersea cables
-- Power grid
 - RF heatmap
 - Emergency incidents
 - Air corridors
 
 The UI hides retired layers, but config/backend support remains for future reactivation or documented removal.
+
+Undersea cables and power grid were reactivated as selectable Intel layers with explicit provider metadata, local backend adapters, and static Pages fallback snapshots.

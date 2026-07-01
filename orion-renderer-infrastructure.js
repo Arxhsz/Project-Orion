@@ -24,6 +24,21 @@
     });
   }
 
+  function platformEntityKey(layerId, id) {
+    return layerId + "::" + String(id || "").replace(/[^a-zA-Z0-9:_-]/g, "-");
+  }
+
+  function primitivePickId(layerId, item, index) {
+    var rawId = item && (item.id || item.name || index);
+    var id = platformEntityKey(layerId, rawId);
+    return {
+      orionPlatformEntityId: id,
+      orionPrimitivePlatformEntityId: id,
+      orionLayerId: layerId,
+      orionItemId: rawId
+    };
+  }
+
   Orion.Renderer.Infrastructure = Orion.Renderer.Infrastructure || {
     init: function(viewer) {
       this.viewer = viewer;
@@ -169,12 +184,17 @@
       var color = Cesium.Color.fromCssColorString(Orion.Config.PlatformLayerDefinitions.underseaCables.color);
       
       var lodVisible = 0;
-      items.forEach(function(item) {
+      items.forEach(function(item, index) {
         var path = normalizedPath(item);
         if (!path.length) return;
         lodVisible++;
         var pts = pathToCartesian(path, 0);
-        this.collection.add({ positions: pts, width: 1.8, material: Cesium.Material.fromType('Color', { color: color.withAlpha(0.6) }) });
+        this.collection.add({
+          id: primitivePickId("underseaCables", item, index),
+          positions: pts,
+          width: 1.8,
+          material: Cesium.Material.fromType('Color', { color: color.withAlpha(0.6) })
+        });
       }, this);
       console.log('[UnderseaCables] Provider:', providerCount, 'LOD Visible:', lodVisible, 'Allocated:', this.collection.length);
     }
@@ -197,7 +217,7 @@
       var color = Cesium.Color.fromCssColorString(Orion.Config.PlatformLayerDefinitions.powerGrid.color);
       
       var lodVisible = 0;
-      items.forEach(function(item) {
+      items.forEach(function(item, index) {
         var path = normalizedPath(item);
         if (!path.length) return;
         
@@ -210,6 +230,7 @@
         if (pts.length < 2) return;
         
         self.collection.add({ 
+          id: primitivePickId("powerGrid", item, index),
           positions: pts, 
           width: height > 1000000 ? 1.2 : 1.8, 
           material: Cesium.Material.fromType('Color', { 

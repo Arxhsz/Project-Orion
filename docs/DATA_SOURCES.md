@@ -14,8 +14,8 @@ This matrix documents the providers currently used or approved for use. It separ
 | NASA EONET | Natural event metadata, wildfires | Event metadata dependent | Curated event delay | Global events | Event history via API | No | Yes | Optional | NASA | NASA EONET |
 | Open-Meteo | Weather model point/area fields | Hourly/model dependent | Model dependent | Global | Forecast and historical APIs | No for standard usage | JSON API supports static-compatible requests | Optional cache recommended | Open-Meteo terms | Open-Meteo |
 | CameraNet DOT/511/open data | Traffic cameras | Provider dependent | Provider dependent | Regional | Usually current metadata/snapshots | Some providers require tokens or blocked media | Mixed | Yes for stream/snapshot resolution | Provider-specific | Provider name |
-| OpenStreetMap / Overpass | Power grid and map data | OSM diff dependent | Community update dependent | Global OSM coverage | Current OSM data | No | Direct overpass use must be throttled | Backend recommended | ODbL and OSM usage policies | OpenStreetMap contributors |
-| TeleGeography Submarine Cable Map | Global cable routes/landing data | Commercial dataset updates | N/A | Global | Current/planned/in-service | Licensed access required for raw GeoJSON | No public raw data guaranteed | Yes or licensed static data | Annual data license | TeleGeography, if licensed |
+| OpenStreetMap / Overpass | Power transmission lines within current viewport | OSM diff dependent; app cache 20 minutes | Community update dependent | Global OSM coverage where tagged | Current OSM data | No | Static Pages uses generated fallback snapshot; local mode uses bounded backend queries | Yes for live viewport queries | ODbL and OSM/Overpass usage policies | OpenStreetMap contributors |
+| Submarine Cable Map public GeoJSON | Global submarine cable routes | Provider dataset dependent; app cache 24 hours | Dataset snapshot dependent | Global routes in feed | Current feed snapshot | No frontend key | Static Pages uses generated snapshot; local mode proxies JSON | Yes for live/cached local mode | Provider terms for public GeoJSON reuse | Submarine Cable Map |
 | NOAA Submarine Cable Areas | U.S. and affiliated territories cable areas | Dataset dependent | Dataset dependent | U.S. waters and affiliated territories | Dataset snapshot | No | WMS/OGC/GeoJSON support varies | Optional | U.S. government/open data terms | NOAA / data.gov dataset |
 
 ## Removed or Disabled Provider Paths
@@ -30,5 +30,5 @@ This matrix documents the providers currently used or approved for use. It separ
 - USGS documents GeoJSON earthquake summary feeds.
 - CelesTrak documents GP/TLE access.
 - OpenSky documents state vector bounding-box requests, OAuth credentials, rate limits, and retry-after behavior.
-- OpenStreetMap/Overpass use must respect OSMF and Overpass policies.
-- TeleGeography raw geocoded cable data is licensed, not an unrestricted public scrape target.
+- OpenStreetMap/Overpass use must respect OSMF and Overpass policies; Project Orion only queries bounded local viewports and falls back to static data for broad views.
+- Submarine cable rendering uses the configured public GeoJSON endpoint through local cache or generated Pages snapshots, with attribution shown in provider metadata.

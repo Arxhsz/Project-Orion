@@ -4,7 +4,7 @@ const OrionOnboarding = (function() {
     const STORAGE_KEYS = {
         ONBOARDING_COMPLETE: 'orion_onboarding_complete',
         CHANGELOG_VERSION: 'orion_changelog_dismissed',
-        CURRENT_VERSION: '1.1.1-hardening'
+        CURRENT_VERSION: '1.1.2-infrastructure'
     };
 
     const TUTORIAL_STEPS = [
@@ -248,7 +248,7 @@ const OrionOnboarding = (function() {
     ];
 
     const CHANGELOG = {
-        version: '1.1.1',
+        version: '1.1.2',
         date: 'July 2026',
         sections: [
             {

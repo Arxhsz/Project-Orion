@@ -321,25 +321,23 @@
     },
     underseaCables: {
       label: "Undersea cables",
-      source: "Submarine cable GeoJSON adapter",
+      source: "Submarine Cable Map public GeoJSON",
       type: "intel",
       endpoint: "/live/intel?layer=underseaCables",
       controlId: "platformCables",
       maxItems: 5000,
       refreshMs: 15 * 60 * 1000,
-      color: "#b7ecff",
-      retired: true
+      color: "#b7ecff"
     },
     powerGrid: {
       label: "Power grid",
-      source: "EIA / GridStatus / ENTSO-E adapter",
+      source: "OpenStreetMap / Overpass power infrastructure",
       type: "intel",
       endpoint: "/live/intel?layer=powerGrid",
       controlId: "platformPower",
       maxItems: 5000,
       refreshMs: 5 * 60 * 1000,
-      color: "#ffe29a",
-      retired: true
+      color: "#ffe29a"
     },
     rfHeatmap: {
       label: "RF heatmap",
@@ -425,7 +423,7 @@
     lightning: "Environment",
     cameras: "Ground Cameras",
     cyberNetwork: "Cyber",
-    underseaCables: "Cyber",
+    underseaCables: "Infrastructure",
     defenseAirspace: "Airspace",
     powerGrid: "Infrastructure",
     cities3d: "Infrastructure",
@@ -618,6 +616,34 @@
       requiresApiKey: false,
       attribution: "NASA EONET",
       licensingNotes: "Curated natural event metadata."
+    },
+    underseaCables: {
+      id: "underseaCables",
+      label: "Submarine cable routes",
+      status: "unknown",
+      supportsStaticMode: true,
+      supportsHistorical: false,
+      supportsLive: true,
+      minimumRefreshMs: 15 * 60 * 1000,
+      maximumRecommendedRequestFrequencyMs: 15 * 60 * 1000,
+      requiresBackendProxy: true,
+      requiresApiKey: false,
+      attribution: "Submarine Cable Map",
+      licensingNotes: "Public GeoJSON route visualization; use source attribution with cached/static snapshots."
+    },
+    powerGrid: {
+      id: "powerGrid",
+      label: "Power transmission grid",
+      status: "unknown",
+      supportsStaticMode: true,
+      supportsHistorical: false,
+      supportsLive: true,
+      minimumRefreshMs: 5 * 60 * 1000,
+      maximumRecommendedRequestFrequencyMs: 5 * 60 * 1000,
+      requiresBackendProxy: true,
+      requiresApiKey: false,
+      attribution: "OpenStreetMap contributors / Overpass API",
+      licensingNotes: "OpenStreetMap data is available under ODbL; local mode uses bounded viewport queries only."
     }
   };
 
@@ -745,8 +771,8 @@
   ];
 
   Orion.Config.Constants = {
-    APP_VERSION: "1.1.1",
-    APP_VERSION_LABEL: "v1.1.1",
+    APP_VERSION: "1.1.2",
+    APP_VERSION_LABEL: "v1.1.2",
     MS_PER_DAY: 24 * 60 * 60 * 1000,
     MS_PER_HOUR: 60 * 60 * 1000,
     GIBS_IMAGERY_LAG_DAYS: 1,

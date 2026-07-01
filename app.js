@@ -12,7 +12,7 @@
   var GIBS_ROOT = Orion.Config.Constants.GIBS_ROOT;
   var EARTH_HOME = Orion.Config.Constants.EARTH_HOME;
   var SAVED_LOCATIONS_KEY = Orion.Config.Constants.SAVED_LOCATIONS_KEY;
-  var APP_VERSION = Orion.Config.Constants.APP_VERSION || "1.1.1";
+  var APP_VERSION = Orion.Config.Constants.APP_VERSION || "1.1.2";
   var USER_STATE_KEY = "orion:userState:v2";
   var NOAA_RADAR_MAPSERVER_URL = "https://mapservices.weather.noaa.gov/eventdriven/rest/services/radar/radar_base_reflectivity/MapServer";
   var DEFAULT_UPDATE_INTERVAL_MS = 10 * 60 * 1000;
@@ -145,7 +145,9 @@
     'lightning',
     'cameras',
     'liveShips',
-    'liveAircraft'
+    'liveAircraft',
+    'underseaCables',
+    'powerGrid'
   ];
 
   var platformEntities = {};
@@ -366,6 +368,27 @@
   };
   applyPersistedUserState(state, persistedUserState);
   window.appState = state;
+  var SimulationClock = {
+    mode: "historical",
+    currentTime: state.date,
+    startTime: minDate,
+    endTime: maxDate,
+    stepMs: DEFAULT_UPDATE_INTERVAL_MS,
+    speed: state.speed,
+    isPlaying: state.playing
+  };
+  Orion.SimulationClock = SimulationClock;
+
+  function syncSimulationClock(modeOverride) {
+    SimulationClock.mode = modeOverride || (state.tracking.live ? "live" : (state.playing ? "playback" : "historical"));
+    SimulationClock.currentTime = state.tracking.live ? timelineMaxDate() : state.date;
+    SimulationClock.startTime = timelineMinDate();
+    SimulationClock.endTime = timelineMaxDate();
+    SimulationClock.stepMs = currentUpdateIntervalMs();
+    SimulationClock.speed = state.speed;
+    SimulationClock.isPlaying = !!state.playing;
+    return SimulationClock;
+  }
 
   function $(id) {
     return document.getElementById(id);
@@ -512,6 +535,8 @@
       "platformWeatherRadar",
       "platformLiveShips",
       "platformAircraft",
+      "platformCables",
+      "platformPower",
       "platformWildfires",
       "platformWeatherVolume",
       "platformLightning",
@@ -870,9 +895,7 @@
   }
 
   function timelineRefreshKey(date) {
-    return state && state.timelineMode === "updates"
-      ? formatDate(date) + "T" + formatHour(date)
-      : formatDate(date);
+    return formatDate(date) + "T" + formatHour(date);
   }
 
   function buildTrackingCatalog(seedDefinitions) {
@@ -1680,7 +1703,14 @@ void main() {
   }
 
   function getTrackingTime() {
-    return state.tracking.live ? new Date() : state.date;
+    if (state.tracking.live) {
+      SimulationClock.mode = "live";
+      SimulationClock.currentTime = new Date();
+      return SimulationClock.currentTime;
+    }
+
+    syncSimulationClock(state.playing ? "playback" : "historical");
+    return SimulationClock.currentTime;
   }
 
   function trackTypeLabel(type) {
@@ -1891,7 +1921,14 @@ void main() {
   }
 
   function platformTime() {
-    return state.tracking.live ? new Date() : state.date;
+    if (state.tracking.live) {
+      SimulationClock.mode = "live";
+      SimulationClock.currentTime = new Date();
+      return SimulationClock.currentTime;
+    }
+
+    syncSimulationClock(state.playing ? "playback" : "historical");
+    return SimulationClock.currentTime;
   }
 
   function platformIcon(type, color) {
@@ -4739,9 +4776,21 @@ void main() {
       }).filter(function (item) {
         return Number.isFinite(item.lat) && Number.isFinite(item.lon);
       });
+    } else if (layerId === "underseaCables") {
+      if (Orion.Providers && Orion.Providers.SubmarineCables && typeof Orion.Providers.SubmarineCables.normalize === "function") {
+        items = Orion.Providers.SubmarineCables.normalize(payload).slice(0, definition.maxItems || 5000);
+      } else {
+        items = normalizeIntelPayloadItems(layerId, payload, definition);
+      }
+    } else if (layerId === "powerGrid") {
+      if (Orion.Providers && Orion.Providers.PowerGrid && typeof Orion.Providers.PowerGrid.normalize === "function") {
+        items = Orion.Providers.PowerGrid.normalize(payload).slice(0, definition.maxItems || 5000);
+      } else {
+        items = normalizeIntelPayloadItems(layerId, payload, definition);
+      }
     } else if (definition.type === "intel" || definition.type === "moving") {
       items = normalizeIntelPayloadItems(layerId, payload, definition);
-    } else if (layerId === "cyberNetwork" || layerId === "underseaCables" || layerId === "powerGrid") {
+    } else if (layerId === "cyberNetwork") {
       items = (payload.features || payload.items || []).slice(0, definition.maxItems || 800);
     }
 
@@ -5011,6 +5060,8 @@ void main() {
       endpoint += "?feed=" + encodeURIComponent(state.earthquakeFeed);
     } else if (layerId === "cameras") {
       endpoint += cameraRegionQuery();
+    } else if (layerId === "powerGrid") {
+      endpoint += cameraRegionQuery();
     }
 
     if (hardeningManager.simulationActive && Math.random() > 0.6) {
@@ -5106,17 +5157,18 @@ void main() {
   function updatePlatformLayerPrimitives(layerId) {
     var feed = platformFeeds[layerId];
     var items = feed && Array.isArray(feed.items) ? feed.items : [];
+    var time = platformTime();
 
     if (layerId === 'liveAircraft') {
-      AviationRenderer.render(trackingFilterMatchesPlatformLayer(layerId) ? items : []);
+      AviationRenderer.render(trackingFilterMatchesPlatformLayer(layerId) ? items : [], time);
       return;
     }
     if (layerId === 'liveShips') {
-      MaritimeRenderer.render(trackingFilterMatchesPlatformLayer(layerId) ? items : []);
+      MaritimeRenderer.render(trackingFilterMatchesPlatformLayer(layerId) ? items : [], time);
       return;
     }
     if (orbitalLayerIds.indexOf(layerId) !== -1) {
-      OrbitalRenderer.render(trackingFilterMatchesPlatformLayer(layerId) ? items : [], layerId);
+      OrbitalRenderer.render(trackingFilterMatchesPlatformLayer(layerId) ? items : [], layerId, time);
       return;
     }
 
@@ -5135,8 +5187,6 @@ void main() {
     }
 
     var active = {};
-    var time = platformTime();
-
     items.forEach(function (item, index) {
       var sample = null;
 
@@ -7039,6 +7089,7 @@ void main() {
     if (!platformLayerDefinitions[layerId]) {
       return;
     }
+    enabled = !!enabled;
 
     if (isRetiredPlatformLayer(layerId)) {
       state.platformLayers[layerId] = false;
@@ -7052,6 +7103,15 @@ void main() {
     }
 
     var stateChanged = layerStateManager.setLayerEnabled(layerId, enabled);
+    var runtimeEnabled = layerStateManager.isLayerEnabled(layerId);
+    if (!stateChanged && runtimeEnabled !== enabled) {
+      state.platformLayers[layerId] = runtimeEnabled;
+      syncPlatformControls();
+      updatePlatformTelemetry();
+      return;
+    }
+    state.platformLayers[layerId] = enabled;
+
     if (!stateChanged) {
       if (enabled) {
         var existingFeed = platformFeeds[layerId];
@@ -7059,17 +7119,18 @@ void main() {
         if (platformUsesEntityFeed(platformLayerDefinitions[layerId]) && !hasItems) {
           refreshPlatformLayer(layerId, true);
         }
+        persistUserState();
         syncPlatformControls();
         updatePlatformTelemetry();
       } else {
         destroyLayerCompletely(layerId, true);
+        persistUserState();
         syncPlatformControls();
         updatePlatformTelemetry();
       }
       return;
     }
 
-    state.platformLayers[layerId] = enabled;
     persistUserState();
     syncTrackingDomainFromPlatformLayer(layerId);
 
@@ -8744,6 +8805,7 @@ void main() {
   function setLiveMode(enabled) {
     state.tracking.live = enabled;
     state.tracking.dirty = true;
+    syncSimulationClock(enabled ? "live" : "historical");
 
     if (enabled) {
       setPlaying(false);
@@ -8756,6 +8818,7 @@ void main() {
     }
 
     syncTrackingControls();
+    syncSimulationClock(enabled ? "live" : "historical");
     updateTrackingLayer(true);
     updatePlatformSystems(false);
     updateTimelineLabels();
@@ -10263,6 +10326,7 @@ void main() {
 
     elements.speedSelect.addEventListener("change", function (event) {
       state.speed = Number(event.target.value);
+      syncSimulationClock();
     });
 
     document.addEventListener("keydown", function (event) {
@@ -10839,6 +10903,7 @@ void main() {
   function setDate(date, refresh) {
     var previousTileKey = timelineRefreshKey(state.date);
     state.date = clampTimelineDate(date);
+    syncSimulationClock(state.playing ? "playback" : "historical");
     elements.timelineRange.value = String(rangeFromDate(state.date));
     updateTimelineLabels();
     updateTrackingLayer(false);
@@ -10884,6 +10949,7 @@ void main() {
 
   function setPlaying(isPlaying) {
     state.playing = isPlaying;
+    syncSimulationClock(isPlaying ? "playback" : (state.tracking.live ? "live" : "historical"));
     setCommandButton(elements.playPause, isPlaying ? "PAUSE" : "PLAY", isPlaying ? "||" : ">");
     elements.playPause.setAttribute("aria-label", isPlaying ? "Pause timeline" : "Play timeline");
 
@@ -10952,10 +11018,12 @@ void main() {
 
     setPlaying(false);
     state.timelineMode = mode;
+    syncSimulationClock("historical");
 
     if (mode === "updates") {
       state.date = alignToUpdateStep(state.date);
       state.compareDate = alignToUpdateStep(state.compareDate);
+      syncSimulationClock("historical");
     }
 
     syncTimelineModeControls();
@@ -11005,6 +11073,7 @@ void main() {
   }
 
   function updateTimelineLabels() {
+    syncSimulationClock();
     var updatesMode = state.timelineMode === "updates";
     var cursorUnits = updatesMode
       ? clamp(updateStepsBetween(timelineMinDate(), state.date), 0, timelineRangeMax())

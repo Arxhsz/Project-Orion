@@ -9,17 +9,18 @@ Project Orion runs in two modes:
 
 ## Frontend Flow
 
-1. `index.html` loads Cesium, HLS.js, satellite.js, runtime modules, renderers, CameraNet, and `app.js`.
-2. `orion-config.js` defines imagery layers, platform layers, tracking definitions, and constants.
-3. `app.js` owns the main state object, binds controls, initializes Cesium, loads imagery, refreshes providers, renders layers, and updates telemetry.
+1. `index.html` loads Cesium, HLS.js, satellite.js, runtime modules, provider adapters, renderers, CameraNet, and `app.js`.
+2. `orion-config.js` defines imagery layers, platform layers, provider metadata, tracking definitions, and constants.
+3. `app.js` owns the main state object and `Orion.SimulationClock`, binds controls, initializes Cesium, loads imagery, refreshes providers, renders layers, and updates telemetry.
 4. `orion-telemetry-health.js` tracks provider health and retry/backoff.
 5. Renderer modules manage Cesium primitives for imagery, environment, infrastructure, aircraft, maritime, and orbital layers.
-6. `cameranet_frontend.js` manages camera discovery, clustering, selection, media playback, and snapshot fallback.
+6. `orion-provider-submarine-cables.js` and `orion-provider-power-grid.js` normalize infrastructure payloads before Cesium rendering and selectable-intelligence rows.
+7. `cameranet_frontend.js` manages camera discovery, clustering, selection, media playback, and snapshot fallback.
 
 ## Backend Flow
 
 1. `orion_server.py` handles static files and API/proxy routes.
-2. Live endpoints fetch or synthesize provider payloads with in-memory caches.
+2. Live endpoints fetch or synthesize provider payloads with in-memory caches. Infrastructure routes include cached submarine-cable GeoJSON and bounded OpenStreetMap/Overpass power-grid viewport queries.
 3. Camera provider adapters live in `camera_providers.py`.
 4. `build_pages_data.py` runs during the Pages workflow and writes snapshot JSON into `pages-data/live/*`.
 

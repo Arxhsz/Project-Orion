@@ -93,7 +93,7 @@ No repository reference was found for the prompt's missing assets `0.png`, `1.jp
 - `/camera/*`
 - static file fallback from repository root
 
-Backend provider constants include NASA GIBS, Esri, OpenSky, ADS-B point providers, CelesTrak, USGS, RainViewer, Zoom Earth, NASA EONET, NWS alerts, ArcGIS camera feeds, Seattle/NYC open data, geographic boundaries, and submarine cable GeoJSON.
+Backend provider constants include NASA GIBS, Esri, OpenSky, ADS-B point providers, CelesTrak, USGS, RainViewer, Zoom Earth, NASA EONET, NWS alerts, ArcGIS camera feeds, Seattle/NYC open data, geographic boundaries, submarine cable GeoJSON, and OpenStreetMap/Overpass power-grid queries.
 
 ## Disabled or Retired Layers
 
@@ -101,11 +101,14 @@ Retired in `orion-config.js`:
 
 - `cyberNetwork`
 - `defenseAirspace`
-- `underseaCables`
-- `powerGrid`
 - `rfHeatmap`
 - `emergencyIncidents`
 - `airCorridors`
+
+Reactivated after the initial hardening pass:
+
+- `underseaCables`
+- `powerGrid`
 
 Hidden by `enhancePlatformLayerUi()`:
 

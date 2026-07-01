@@ -89,6 +89,7 @@ NYC_CAMERAS_URL = "https://data.cityofnewyork.us/resource/qcdj-rwhu.json"
 COUNTRIES_GEOJSON_URL = "https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson"
 US_STATES_GEOJSON_URL = "https://raw.githubusercontent.com/PublicaMundi/MappingAPI/master/data/geojson/us-states.json"
 SUBMARINE_CABLE_GEOJSON_URL = "https://www.submarinecablemap.com/api/v3/cable/cable-geo.json"
+OVERPASS_INTERPRETER_URL = "https://overpass-api.de/api/interpreter"
 CSP_HEADER = (
     "default-src 'self'; "
     "script-src 'self' blob: https://cdn.jsdelivr.net 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'; "
@@ -1203,6 +1204,151 @@ def submarine_cables_payload(force=False):
         "generated": generated_at(),
         "count": len(rendered),
         "features": rendered,
+    }
+    FEED_CACHE[cache_key] = {"timestamp": time.time(), "payload": payload}
+    return payload
+
+
+def bounded_power_bbox(bbox):
+    if not bbox:
+        return None, "ViewportBoundsRequired"
+
+    width = max(0.0, bbox["east"] - bbox["west"])
+    height = max(0.0, bbox["north"] - bbox["south"])
+    area = width * height
+
+    if width <= 0 or height <= 0:
+        return None, "InvalidViewportBounds"
+
+    if width > 12 or height > 12 or area > 80:
+        return None, "ViewportTooLarge"
+
+    return bbox, None
+
+
+def parse_osm_voltage(value):
+    if value is None:
+        return None
+
+    matches = re.findall(r"\d+(?:\.\d+)?", str(value))
+    if not matches:
+        return None
+
+    numbers = [float(match) for match in matches]
+    voltage = max(numbers)
+    if voltage < 1000:
+        voltage *= 1000
+    return int(voltage)
+
+
+def power_grid_payload(bbox_value=None, force=False):
+    bbox, bbox_error = bounded_power_bbox(parse_bbox_value(bbox_value))
+    if bbox_error:
+        fallback = static_intel_payload("powerGrid", mode="regional-reference", error=None)
+        if fallback is not None:
+            fallback["source"] = "Global high-voltage corridor reference; zoom to a regional viewport for OpenStreetMap/Overpass live lines"
+            fallback["bbox"] = bbox_value or None
+            fallback["provider_health"] = "fallback"
+            fallback["notice"] = bbox_error
+            return fallback
+
+        return {
+            "source": "OpenStreetMap / Overpass",
+            "mode": "regional-reference",
+            "notice": bbox_error,
+            "fallback": True,
+            "provider_health": "fallback",
+            "generated": generated_at(),
+            "count": 0,
+            "features": [],
+        }
+
+    bbox_key = ",".join([
+        f"{bbox['west']:.3f}",
+        f"{bbox['south']:.3f}",
+        f"{bbox['east']:.3f}",
+        f"{bbox['north']:.3f}",
+    ])
+    cache_key = f"power-grid:{bbox_key}"
+    cached = FEED_CACHE.get(cache_key)
+    if not force and cached and time.time() - cached["timestamp"] < 20 * 60:
+        payload = dict(cached["payload"])
+        payload["cached"] = True
+        return payload
+
+    south = bbox["south"]
+    west = bbox["west"]
+    north = bbox["north"]
+    east = bbox["east"]
+    query = f"""
+    [out:json][timeout:12];
+    (
+      way["power"~"^(line|minor_line)$"]({south:.5f},{west:.5f},{north:.5f},{east:.5f});
+    );
+    out tags geom 240;
+    """
+    data = urlencode({"data": query}).encode("utf-8")
+    request = Request(OVERPASS_INTERPRETER_URL, data=data, headers={
+        "User-Agent": "Project-Orion/1.0 (local power-grid visualization)",
+        "Accept": "application/json",
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+    })
+
+    with urlopen(request, timeout=18) as response:
+        upstream = json.loads(response.read().decode("utf-8", errors="replace"))
+
+    features = []
+    for element in upstream.get("elements") or []:
+        geometry = element.get("geometry") or []
+        if element.get("type") != "way" or len(geometry) < 2:
+            continue
+
+        tags = element.get("tags") or {}
+        path = []
+        for point in geometry:
+            lat = parse_float(point.get("lat"))
+            lon = parse_float(point.get("lon"))
+            if lat is None or lon is None:
+                continue
+            path.append([round(lon, 6), round(lat, 6), 48])
+
+        path = downsample_path(path, 90)
+        if len(path) < 2:
+            continue
+
+        voltage = parse_osm_voltage(tags.get("voltage"))
+        features.append({
+            "id": f"osm-power-way-{element.get('id')}",
+            "name": tags.get("name") or tags.get("operator") or "OSM power transmission line",
+            "kind": "line",
+            "category": tags.get("power") or "line",
+            "status": "active",
+            "source": "OpenStreetMap / Overpass",
+            "provider": "OpenStreetMap contributors",
+            "voltage": voltage or 0,
+            "points": path,
+            "metadata": {
+                "osm_id": element.get("id"),
+                "operator": tags.get("operator"),
+                "circuits": tags.get("circuits"),
+                "frequency": tags.get("frequency"),
+                "wires": tags.get("wires"),
+            },
+        })
+
+        if len(features) >= 500:
+            break
+
+    payload = {
+        "source": "OpenStreetMap / Overpass",
+        "mode": "public_no_token",
+        "fallback": False,
+        "cached": False,
+        "generated": generated_at(),
+        "bbox": bbox_key,
+        "count": len(features),
+        "features": features,
+        "attribution": "OpenStreetMap contributors",
     }
     FEED_CACHE[cache_key] = {"timestamp": time.time(), "payload": payload}
     return payload
@@ -2710,6 +2856,37 @@ class OrionHandler(SimpleHTTPRequestHandler):
                     return
                 self.send_json({
                     "source": "Submarine Cable Map public GeoJSON",
+                    "error": type(error).__name__,
+                    "generated": int(time.time()),
+                    "count": 0,
+                    "mode": "error",
+                    "fallback": False,
+                    "features": [],
+                }, cache_seconds=30)
+                return
+
+        if layer == "powerGrid":
+            bbox_value = (params.get("bbox") or [""])[0]
+            try:
+                payload = power_grid_payload(bbox_value)
+                if payload.get("count", 0) > 0 and not payload.get("fallback"):
+                    self.store_cached_feed(f"intel:powerGrid:{bbox_value or 'fallback'}", payload)
+                    self.send_json(payload, cache_seconds=180)
+                    return
+                self.send_json(payload, cache_seconds=120)
+                return
+            except Exception as error:
+                stale = self.cached_feed_stale(f"intel:powerGrid:{bbox_value or 'fallback'}", 2 * 60 * 60)
+                if stale is not None:
+                    stale["error"] = type(error).__name__
+                    self.send_json(stale, cache_seconds=60)
+                    return
+                fallback = static_intel_payload(layer, error=type(error).__name__)
+                if fallback is not None:
+                    self.send_json(fallback, cache_seconds=90)
+                    return
+                self.send_json({
+                    "source": "OpenStreetMap / Overpass",
                     "error": type(error).__name__,
                     "generated": int(time.time()),
                     "count": 0,

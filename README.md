@@ -6,7 +6,7 @@
 
 Project Orion is a real-time planetary command map built on CesiumJS. It combines NASA GIBS satellite imagery, NOAA/NWS radar, orbital tracking, aircraft and vessel adapters, CameraNet, environmental monitoring, saved locations, live device location, and historical timeline playback in a dark glass command interface.
 
-Current version: v1.1.1
+Current version: v1.1.2
 
 ## Architecture
 
