@@ -190,16 +190,14 @@ def prepare_gibs_tile_for_client(target_path, payload, suffix):
 
 STATIC_INTEL_LAYERS = {
     "liveShips": {
-        "source": "AIS adapter / high-density fallback",
-        "features": [
-            {"id": "ais-north-atlantic-01", "name": "ATLANTIC MERCHANT", "kind": "moving", "category": "container", "periodHours": 92, "phase": 0.16, "route": [[-74.0, 40.5, 28], [-52.0, 43.8, 28], [-25.0, 49.0, 28], [-5.5, 50.2, 28], [4.3, 51.9, 28]]},
-            {"id": "ais-pacific-02", "name": "PACIFIC RUNNER", "kind": "moving", "category": "bulk", "periodHours": 120, "phase": 0.48, "route": [[140.3, 35.0, 28], [166.0, 34.0, 28], [-162.0, 35.2, 28], [-139.0, 37.8, 28], [-122.7, 37.6, 28]]},
-            {"id": "ais-suez-03", "name": "SUEZ VECTOR", "kind": "moving", "category": "tanker", "periodHours": 58, "phase": 0.71, "route": [[32.3, 29.9, 28], [34.2, 25.3, 28], [39.2, 18.4, 28], [48.7, 14.2, 28], [56.3, 23.7, 28]]},
-            {"id": "ais-north-sea-04", "name": "NORDIC STAR", "kind": "moving", "category": "cargo", "periodHours": 42, "phase": 0.22, "route": [[4.5, 52.4, 28], [2.1, 54.6, 28], [-1.2, 57.8, 28]]},
-            {"id": "ais-med-05", "name": "MEDITERRANEAN ECHO", "kind": "moving", "category": "passenger", "periodHours": 76, "phase": 0.88, "route": [[12.5, 41.9, 28], [14.3, 38.1, 28], [24.1, 37.2, 28]]},
-            {"id": "ais-gulf-06", "name": "ARABIAN EXPRESS", "kind": "moving", "category": "oil", "periodHours": 110, "phase": 0.05, "route": [[55.3, 25.2, 28], [62.4, 22.8, 28], [72.1, 18.9, 28]]},
-            {"id": "ais-singapore-07", "name": "MALACCA SPIRIT", "kind": "moving", "category": "container", "periodHours": 64, "phase": 0.34, "route": [[103.8, 1.3, 28], [101.2, 2.5, 28], [98.5, 5.2, 28]]}
-        ],
+        "source": "Configured AIS provider required",
+        "adapter": "AISStream, AISHub, MarineTraffic, or another licensed AIS source must be configured server-side",
+        "mode": "provider-unavailable",
+        "provider_health": "unavailable",
+        "requires_credentials": True,
+        "fallback": False,
+        "notice": "Live AIS is unavailable until a licensed provider is configured. Orion does not emit synthetic vessel tracks in production mode.",
+        "features": [],
     },
     "cyberNetwork": {
         "source": "Cloudflare / RIPE / BGP adapter fallback",
@@ -1639,9 +1637,10 @@ def build_expanded_intel_layers():
             "phase": round((index * 0.137) % 1, 3),
             "route": route,
             "status": "underway",
-            "provider": "AISStream/AISHub adapter fallback",
+            "provider": "ORION_SYNTHETIC_INTEL demo vessel",
         }
-    augment_layer("liveShips", 96, ship_factory)
+    if STATIC_INTEL_LAYERS.get("liveShips", {}).get("provider_health") != "unavailable":
+        augment_layer("liveShips", 96, ship_factory)
 
     cyber_pairs = [(i % len(GLOBAL_HUBS), (i * 7 + 5) % len(GLOBAL_HUBS)) for i in range(50)]
     def cyber_factory(index):
@@ -1795,10 +1794,15 @@ def static_intel_payload(layer, mode="fallback-static", error=None):
     features = payload.get("features") or []
     payload["generated"] = int(time.time())
     payload["count"] = len(features)
-    payload["mode"] = mode
+    unavailable = payload.get("provider_health") == "unavailable"
+    payload["mode"] = payload.get("mode") if unavailable else mode
     pages_snapshot = str(mode).startswith("pages-") and not error
-    payload["provider_health"] = "online" if pages_snapshot else "degraded"
-    payload["fallback"] = False if pages_snapshot else True
+    if unavailable:
+        payload["provider_health"] = "unavailable"
+        payload["fallback"] = False
+    else:
+        payload["provider_health"] = "online" if pages_snapshot else "degraded"
+        payload["fallback"] = False if pages_snapshot else True
     if error:
         payload["error"] = error
     return payload
@@ -2883,6 +2887,10 @@ class OrionHandler(SimpleHTTPRequestHandler):
                     return
                 fallback = static_intel_payload(layer, error=type(error).__name__)
                 if fallback is not None:
+                    fallback["source"] = "Global high-voltage corridor reference; OpenStreetMap/Overpass live query failed"
+                    fallback["provider_health"] = "fallback"
+                    fallback["mode"] = "regional-reference"
+                    fallback["notice"] = type(error).__name__
                     self.send_json(fallback, cache_seconds=90)
                     return
                 self.send_json({

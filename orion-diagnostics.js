@@ -170,6 +170,10 @@
     history: [],
     startTime: Date.now(),
     lastLongHaulLog: 0,
+    monitorInterval: null,
+    lastMemoryWarning: 0,
+    lastPrimitiveWarning: 0,
+    warningCooldownMs: 5 * 60 * 1000,
     leakThresholds: {
       memory: 250 * 1048576,
       primitives: 100,
@@ -177,8 +181,12 @@
     },
 
     init: function() {
+      if (this.monitorInterval) {
+        return;
+      }
+
       console.log('[Orion.Diagnostics.Stability] Long-haul monitor active.');
-      this.history.push(this.sample());
+      this.history = [this.sample()];
       this.lastLongHaulLog = Date.now();
       
       var self = this;
@@ -246,11 +254,13 @@
       var memGrowth = current.mem - initial.mem;
       var primGrowth = current.primitives - initial.primitives;
       
-      if (memGrowth > this.leakThresholds.memory) {
+      if (memGrowth > this.leakThresholds.memory && current.ts - this.lastMemoryWarning > this.warningCooldownMs) {
+        this.lastMemoryWarning = current.ts;
         console.warn('[Stability] High memory growth detected:', Math.round(memGrowth / 1048576), 'MB');
       }
       
-      if (primGrowth > this.leakThresholds.primitives) {
+      if (primGrowth > this.leakThresholds.primitives && current.ts - this.lastPrimitiveWarning > this.warningCooldownMs) {
+        this.lastPrimitiveWarning = current.ts;
         console.warn('[Stability] Potential primitive leak detected:', primGrowth, 'orphans');
         this.detectOrphanPrimitives();
       }

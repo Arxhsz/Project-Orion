@@ -267,7 +267,7 @@
     },
     liveShips: {
       label: "AIS vessels",
-      source: "AIS stream adapter",
+      source: "Configured AIS provider",
       type: "moving",
       endpoint: "/live/intel?layer=liveShips",
       controlId: "platformLiveShips",

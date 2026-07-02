@@ -11,6 +11,7 @@ This matrix documents the providers currently used or approved for use. It separ
 | CelesTrak | GP/TLE element sets | Provider dependent | TLE epoch dependent | Space objects by group | Current TLE sets | No | Text/JSON availability varies by browser | Optional snapshot/proxy | CelesTrak terms/documentation | CelesTrak |
 | OpenSky Network | Aircraft state vectors | Rate limited; current state vectors | Live/current, with limits | Network coverage dependent | Authenticated users can request recent history within documented limits | OAuth client credentials recommended | Direct browser use not suitable for secrets | Yes for credentials/rate control | OpenSky terms and credits | OpenSky Network |
 | ADS-B public point feeds | Aircraft point queries | Provider dependent | Live/current | Area/radius dependent | No | No embedded frontend keys | Backend only | Yes | Provider-specific | Provider name in payload |
+| Licensed AIS provider | Vessel positions | Provider dependent | Live/current | Provider coverage dependent | Provider dependent | Yes | No embedded frontend keys | Yes | Yes | Provider-specific AIS terms | Configured AIS provider |
 | NASA EONET | Natural event metadata, wildfires | Event metadata dependent | Curated event delay | Global events | Event history via API | No | Yes | Optional | NASA | NASA EONET |
 | Open-Meteo | Weather model point/area fields | Hourly/model dependent | Model dependent | Global | Forecast and historical APIs | No for standard usage | JSON API supports static-compatible requests | Optional cache recommended | Open-Meteo terms | Open-Meteo |
 | CameraNet DOT/511/open data | Traffic cameras | Provider dependent | Provider dependent | Regional | Usually current metadata/snapshots | Some providers require tokens or blocked media | Mixed | Yes for stream/snapshot resolution | Provider-specific | Provider name |
@@ -30,5 +31,6 @@ This matrix documents the providers currently used or approved for use. It separ
 - USGS documents GeoJSON earthquake summary feeds.
 - CelesTrak documents GP/TLE access.
 - OpenSky documents state vector bounding-box requests, OAuth credentials, rate limits, and retry-after behavior.
+- Live AIS is intentionally disabled until a licensed provider is configured server-side; Orion must not emit synthetic vessel tracks in production mode.
 - OpenStreetMap/Overpass use must respect OSMF and Overpass policies; Project Orion only queries bounded local viewports and falls back to static data for broad views.
 - Submarine cable rendering uses the configured public GeoJSON endpoint through local cache or generated Pages snapshots, with attribution shown in provider metadata.

@@ -153,7 +153,7 @@ The default-state source is still scattered between HTML attributes and `app.js`
 ## Placeholder, Demo, or Synthetic Paths
 
 - `Orion.Config.TrackingDefinitions` is a synthetic mission feed and is labeled as such in telemetry.
-- `STATIC_INTEL_LAYERS` in `orion_server.py` contains fallback/synthetic features for live ships, cyber arcs, defense airspace, undersea cables, power grid, RF heatmap, emergency incidents, weather volume, lightning, events, air corridors, and traffic.
+- `STATIC_INTEL_LAYERS` in `orion_server.py` keeps live ships as an explicit unavailable/credential-required provider state; other inactive or fallback layers still include synthetic/reference payloads for cyber arcs, defense airspace, RF heatmap, emergency incidents, weather volume, lightning, events, air corridors, and traffic.
 - Several backend fallback payloads set `fallback` or `mode` fields, but frontend badges do not consistently expose source/freshness/attribution to the user.
 - `orion-core.js` creates placeholder runtime modules if modules are missing.
 

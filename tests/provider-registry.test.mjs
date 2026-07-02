@@ -126,3 +126,14 @@ test("runtime code no longer contains removed weather tile providers", () => {
     }
   }
 });
+
+test("production AIS provider is unavailable instead of synthetic fallback", () => {
+  const source = fs.readFileSync(path.join(root, "orion_server.py"), "utf8");
+  const liveShipsBlock = source.match(/"liveShips": \{[\s\S]*?\n    \},\n    "cyberNetwork"/);
+
+  assert.ok(liveShipsBlock, "liveShips server payload should be declared");
+  assert.match(liveShipsBlock[0], /"provider_health": "unavailable"/);
+  assert.match(liveShipsBlock[0], /"features": \[\]/);
+  assert.equal(liveShipsBlock[0].includes("ATLANTIC MERCHANT"), false);
+  assert.equal(liveShipsBlock[0].includes("AISStream/AISHub adapter fallback"), false);
+});

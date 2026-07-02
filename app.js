@@ -2342,7 +2342,34 @@ void main() {
       ].join("");
     }
 
+    if (layerId === "underseaCables" || layerId === "powerGrid") {
+      var rowsInfra = infrastructureDetailRows(record);
+      rowsInfra.push(
+        ["Status", item.status || (platformFeeds[layerId] && platformFeeds[layerId].status) || "online"],
+        ["Location", record.sample ? record.sample.lat.toFixed(4) + ", " + record.sample.lon.toFixed(4) : "-"],
+        ["Source", item.source || item.provider || (record.definition && record.definition.source) || "-"]
+      );
+      var gridInfra = rowsInfra.map(function(row) {
+        return "<dt>" + escapeHtml(row[0]) + "</dt><dd>" + escapeHtml(row[1]) + "</dd>";
+      }).join("");
+      var description = platformDetailDescription(record);
+
+      return [
+        "<div class='intel-map-callout-kicker'>", escapeHtml(record.definition.label || "Infrastructure"), "</div>",
+        "<h3>", escapeHtml(item.name || record.definition.label || "Infrastructure object"), "</h3>",
+        "<dl class='intel-map-callout-grid'>", gridInfra, "</dl>",
+        description ? "<p class='intel-map-callout-desc'>" + escapeHtml(description) + "</p>" : ""
+      ].join("");
+    }
+
     return "";
+  }
+
+  function supportsIntelMapCalloutLayer(layerId) {
+    return layerId === "emergencyIncidents" ||
+      layerId === "socialEvents" ||
+      layerId === "underseaCables" ||
+      layerId === "powerGrid";
   }
 
   function showIntelMapCalloutForRecord(record) {
@@ -2352,7 +2379,7 @@ void main() {
 
     var lid = record.layerId;
 
-    if (lid !== "emergencyIncidents" && lid !== "socialEvents") {
+    if (!supportsIntelMapCalloutLayer(lid)) {
       hideIntelMapCallout();
       return;
     }
@@ -2383,7 +2410,7 @@ void main() {
 
     var rec = platformEntities[id];
 
-    if (!rec || !rec.currentPosition || (rec.layerId !== "emergencyIncidents" && rec.layerId !== "socialEvents")) {
+    if (!rec || !rec.currentPosition || !supportsIntelMapCalloutLayer(rec.layerId)) {
       return;
     }
 
@@ -4797,9 +4824,13 @@ void main() {
     feed.payload = payload;
     feed.items = items;
     feed.loadedAt = Date.now();
-    feed.status = payload.provider_health === "degraded"
-      ? "degraded"
-      : (payload.error ? payload.error : (payload.fallback ? "fallback" : (items.length ? "online" : "empty")));
+    if (payload.provider_health === "unavailable") {
+      feed.status = "unavailable";
+    } else if (payload.provider_health === "degraded") {
+      feed.status = "degraded";
+    } else {
+      feed.status = payload.error ? payload.error : (payload.fallback ? "fallback" : (items.length ? "online" : "empty"));
+    }
     platformFeeds[layerId] = feed;
 
     var renderTime = platformTime();
@@ -7284,6 +7315,78 @@ void main() {
     return platformTime();
   }
 
+  function compactDetailValue(value) {
+    if (value === null || value === undefined || value === "") {
+      return "";
+    }
+
+    if (Array.isArray(value)) {
+      var parts = value.map(compactDetailValue).filter(Boolean);
+      if (!parts.length) {
+        return "";
+      }
+      return parts.slice(0, 6).join(", ") + (parts.length > 6 ? " +" + String(parts.length - 6) : "");
+    }
+
+    if (typeof value === "object") {
+      if (value.name || value.id || value.label) {
+        return compactDetailValue(value.name || value.id || value.label);
+      }
+      return Object.keys(value).slice(0, 5).map(function(key) {
+        return key + ": " + compactDetailValue(value[key]);
+      }).filter(function(part) {
+        return part.indexOf(": ") !== part.length - 2;
+      }).join(", ");
+    }
+
+    var text = String(value).trim();
+    return text.length > 180 ? text.slice(0, 177) + "..." : text;
+  }
+
+  function pushDetailRow(rows, label, value) {
+    var text = compactDetailValue(value);
+    if (text) {
+      rows.push([label, text]);
+    }
+  }
+
+  function distanceDetailValue(value) {
+    if (value === null || value === undefined || value === "") {
+      return "";
+    }
+
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return Math.round(value).toLocaleString() + " km";
+    }
+
+    return compactDetailValue(value);
+  }
+
+  function infrastructureDetailRows(record) {
+    var rows = [];
+    var item = record.item || {};
+
+    if (record.layerId === "underseaCables") {
+      pushDetailRow(rows, "Cable ID", item.id || item.cable_id || item.slug);
+      pushDetailRow(rows, "Owners", item.owners || item.owner || item.operator);
+      pushDetailRow(rows, "Length", distanceDetailValue(item.length_km || item.lengthKm || item.length));
+      pushDetailRow(rows, "Ready for service", item.ready_for_service || item.rfs || item.service_date);
+      pushDetailRow(rows, "Landing points", item.landing_points || item.landingPoints || item.landings);
+      return rows;
+    }
+
+    if (record.layerId === "powerGrid") {
+      pushDetailRow(rows, "Power type", item.power || item.power_type || item.type || item.category);
+      pushDetailRow(rows, "Voltage", item.voltage);
+      pushDetailRow(rows, "Operator", item.operator || item.owner);
+      pushDetailRow(rows, "Frequency", item.frequency);
+      pushDetailRow(rows, "Cables", item.cables || item.cable_count);
+      return rows;
+    }
+
+    return rows;
+  }
+
   function platformDetailDescription(record) {
     var item = record.item || {};
 
@@ -7317,6 +7420,14 @@ void main() {
       return "Camera metadata is loaded regionally. Live video or a refreshed snapshot is opened only when selected.";
     }
 
+    if (record.layerId === "underseaCables") {
+      return "Submarine cable route loaded from a public GeoJSON source and rendered as selectable Cesium linework.";
+    }
+
+    if (record.layerId === "powerGrid") {
+      return "Power infrastructure loaded from OpenStreetMap/Overpass when a bounded local query is available, with labeled static-compatible fallback coverage at broad zoom.";
+    }
+
     return entityDetail(record.definition.type, item, record.sample);
   }
 
@@ -7341,6 +7452,11 @@ void main() {
       ["Confidence", (confidence * 100).toFixed(0) + "%"],
       ["Data Age", ageMin > 0 ? ageMin + "m ago" : "LIVE"]
     ];
+
+    var infraRows = infrastructureDetailRows(record);
+    if (infraRows.length) {
+      rows.splice.apply(rows, [1, 0].concat(infraRows));
+    }
 
     if (record.sample && record.sample.heading) {
       rows.push(["Heading", record.sample.heading.toFixed(0) + " deg (" + getCompassDirection(record.sample.heading) + ")"]);
@@ -7381,7 +7497,7 @@ void main() {
 
     var mediaHtml = mediaUrl
       ? "<img class=\"intel-detail-media\" alt=\"Intel media\" src=\"" + escapeHtml(mediaUrl) + "\">"
-      : "<div class=\"intel-detail-placeholder\"><span>NO MEDIA</span><strong>TACTICAL PLACEHOLDER</strong></div>";
+      : "<div class=\"intel-detail-placeholder\"><span>NO MEDIA</span><strong>METADATA ONLY</strong></div>";
 
     elements.intelDetailCard.innerHTML = [
       "<div class=\"intel-detail-head\">",
@@ -7838,9 +7954,12 @@ void main() {
     var empty = enabled.filter(function (layerId) {
       return platformFeeds[layerId] && platformFeeds[layerId].status === "empty";
     }).length;
+    var unavailable = enabled.filter(function (layerId) {
+      return platformFeeds[layerId] && platformFeeds[layerId].status === "unavailable";
+    }).length;
     var error = enabled.filter(function (layerId) {
       var status = platformFeeds[layerId] && platformFeeds[layerId].status;
-      return status && ["online", "loading", "fallback", "degraded", "empty", "standby"].indexOf(status) === -1;
+      return status && ["online", "loading", "fallback", "degraded", "empty", "unavailable", "standby"].indexOf(status) === -1;
     }).length;
 
     elements.platformLayerCount.textContent = enabled.length + " layers / " + objectCount + " objects";
@@ -7855,6 +7974,7 @@ void main() {
       if (degraded) parts.push(degraded + " degraded");
       if (fallback) parts.push(fallback + " fallback");
       if (empty) parts.push(empty + " empty");
+      if (unavailable) parts.push(unavailable + " unavailable");
       if (error) parts.push(error + " error");
       elements.platformFeedStatus.textContent = (parts.length ? parts.join(" / ") : "0 active") + " / " + enabled.length + " enabled";
     }
@@ -8781,7 +8901,7 @@ void main() {
 
   function trackingSourceLabel() {
     if (!legacyTrackingVisualsEnabled) {
-      return "OpenSky / CelesTrak / AIS platform feeds";
+      return "OpenSky / CelesTrak / configured AIS";
     }
     return liveAircraftActive ? "OpenSky aircraft + synthetic sea/orbit" : TRACK_SOURCE_LABEL;
   }
