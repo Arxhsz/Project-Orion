@@ -29,6 +29,10 @@ def write_json(path, payload):
     path.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
 
 
+def log(message):
+    print(f"[pages-data] {message}", flush=True)
+
+
 def fetch_json(url, timeout=20):
     request = Request(url, headers={"User-Agent": "Project-Orion-Pages/1.0", "Accept": "application/json"})
     with urlopen(request, timeout=timeout) as response:
@@ -36,6 +40,7 @@ def fetch_json(url, timeout=20):
 
 
 def build_satellites():
+    log("building satellite snapshots")
     client = TleClient()
     for requested_group, group in orion_server.CELESTRAK_GROUPS.items():
         try:
@@ -66,6 +71,7 @@ def build_satellites():
 
 
 def build_earthquakes():
+    log("building earthquake snapshots")
     for feed, url in orion_server.USGS_EARTHQUAKE_FEEDS.items():
         try:
             upstream = fetch_json(url, timeout=15)
@@ -94,6 +100,7 @@ def build_earthquakes():
 
 
 def build_weather_radar():
+    log("building weather radar metadata")
     payload = {
         "source": "NOAA/NWS",
         "provider": "radar_base_reflectivity",
@@ -115,6 +122,7 @@ def build_weather_radar():
 
 
 def build_weather_fields():
+    log("building weather field metadata")
     modes = ["precipitation", "wind", "temperature", "humidity", "pressure"]
     for mode in modes:
         payload = {
@@ -139,6 +147,7 @@ def build_weather_fields():
 
 
 def build_wildfires():
+    log("building wildfire snapshot")
     try:
         upstream = fetch_json(orion_server.NASA_EONET_WILDFIRES_URL, timeout=15)
         features = []
@@ -181,6 +190,7 @@ def build_wildfires():
 
 
 def build_aircraft():
+    log("building aircraft snapshot")
     seen = set()
     states = []
     generated = int(time.time())
@@ -218,6 +228,7 @@ def build_aircraft():
 
 
 def build_cameras():
+    log("building camera snapshot")
     try:
         cameras, providers = get_all_cameras((-125.2, 24.1, -66.7, 49.6), None, None)
         clean = []
@@ -253,6 +264,7 @@ def build_cameras():
 
 
 def build_intel():
+    log("building intel layer snapshots")
     live_functions = {
         "emergencyIncidents": orion_server.nws_alerts_payload,
         "volumetricWeather": orion_server.nws_weather_volume_payload,
@@ -295,6 +307,7 @@ def build_intel():
 
 
 def main():
+    started = time.time()
     build_satellites()
     build_earthquakes()
     build_weather_radar()
@@ -303,6 +316,7 @@ def main():
     build_aircraft()
     build_cameras()
     build_intel()
+    log(f"finished in {time.time() - started:.1f}s")
 
 
 if __name__ == "__main__":
