@@ -137,3 +137,30 @@ test("production AIS provider is unavailable instead of synthetic fallback", () 
   assert.equal(liveShipsBlock[0].includes("ATLANTIC MERCHANT"), false);
   assert.equal(liveShipsBlock[0].includes("AISStream/AISHub adapter fallback"), false);
 });
+
+test("live provider fetches tolerate incomplete upstream reads", () => {
+  const source = fs.readFileSync(path.join(root, "orion_server.py"), "utf8");
+
+  assert.match(source, /http\.client\.IncompleteRead/);
+  assert.match(source, /UPSTREAM_PAYLOAD_ERRORS/);
+  assert.equal(source.includes("except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as error"), false);
+});
+
+test("power grid refreshes when the viewport region changes", () => {
+  const source = fs.readFileSync(path.join(root, "app.js"), "utf8");
+
+  assert.match(source, /lastViewportRegionKeys/);
+  assert.match(source, /cameraRegionQuery\("powerGrid"\)/);
+  assert.match(source, /viewportBoundPlatformLayers\.forEach/);
+  assert.match(source, /refreshPlatformLayer\(layerId, true\)/);
+});
+
+test("wildfire provider falls back to usable reference features", () => {
+  const server = fs.readFileSync(path.join(root, "orion_server.py"), "utf8");
+  const pages = fs.readFileSync(path.join(root, "build_pages_data.py"), "utf8");
+
+  assert.match(server, /def wildfire_fallback_payload/);
+  assert.match(server, /provider_health": "fallback"/);
+  assert.match(server, /self\.send_json\(wildfire_fallback_payload/);
+  assert.match(pages, /orion_server\.wildfire_fallback_payload/);
+});

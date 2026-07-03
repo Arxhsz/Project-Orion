@@ -4,6 +4,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, quote, unquote, urlencode, urljoin, urlparse, urlunparse
 from urllib.request import Request, urlopen
 import html
+import http.client
 import json
 import math
 import os
@@ -78,7 +79,7 @@ USGS_EARTHQUAKE_FEEDS = {
 }
 NOAA_RADAR_MAPSERVER_URL = "https://mapservices.weather.noaa.gov/eventdriven/rest/services/radar/radar_base_reflectivity/MapServer"
 OPEN_METEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
-NASA_EONET_WILDFIRES_URL = "https://eonet.gsfc.nasa.gov/api/v3/events?category=wildfires&status=open&limit=200"
+NASA_EONET_WILDFIRES_URL = "https://eonet.gsfc.nasa.gov/api/v3/events?category=wildfires&days=30&status=open&limit=200"
 NWS_ACTIVE_ALERTS_URL = "https://api.weather.gov/alerts/active?status=actual&message_type=alert"
 FL511_CAMERA_LAYER_URL = "https://services.arcgis.com/3wFbqsFPLeKqOlIK/ArcGIS/rest/services/FL511_Traffic_Cameras/FeatureServer/0"
 FL511_CONGESTION_LAYER_URL = "https://services.arcgis.com/3wFbqsFPLeKqOlIK/ArcGIS/rest/services/Road_Closures/FeatureServer/5"
@@ -107,6 +108,16 @@ CSP_HEADER = (
 )
 CAMERA_STREAM_BOUNDARY = "orion-camera-frame"
 CLIENT_DISCONNECT_ERRORS = (BrokenPipeError, ConnectionAbortedError, ConnectionResetError)
+UPSTREAM_FETCH_ERRORS = (
+    HTTPError,
+    URLError,
+    TimeoutError,
+    http.client.IncompleteRead,
+    http.client.RemoteDisconnected,
+    ConnectionError,
+    OSError,
+)
+UPSTREAM_PAYLOAD_ERRORS = UPSTREAM_FETCH_ERRORS + (json.JSONDecodeError,)
 AIRCRAFT_CACHE = {"timestamp": 0, "payload": None}
 FEED_CACHE = {}
 CAMERA_CACHE = {"timestamp": 0, "payload": None, "providers": []}
@@ -233,7 +244,7 @@ STATIC_INTEL_LAYERS = {
         ],
     },
     "powerGrid": {
-        "source": "Global high-voltage corridor fallback",
+        "source": "Global high-voltage corridor reference",
         "features": [
             {"id": "grid-us-east", "name": "Eastern interconnect", "kind": "line", "points": [[-87.6, 41.8, 1200], [-83.0, 39.9, 1200], [-77.0, 38.9, 1200], [-74.0, 40.7, 1200]]},
             {"id": "grid-us-west", "name": "Western transmission", "kind": "line", "points": [[-122.4, 37.8, 1200], [-118.2, 34.0, 1200], [-112.0, 33.4, 1200]]},
@@ -1337,6 +1348,15 @@ def power_grid_payload(bbox_value=None, force=False):
         if len(features) >= 500:
             break
 
+    if not features:
+        fallback = static_intel_payload("powerGrid", mode="regional-reference", error=None)
+        if fallback is not None:
+            fallback["source"] = "Global high-voltage corridor reference; OpenStreetMap/Overpass returned no regional power lines"
+            fallback["bbox"] = bbox_key
+            fallback["provider_health"] = "fallback"
+            fallback["notice"] = "NoOverpassPowerLines"
+            return fallback
+
     payload = {
         "source": "OpenStreetMap / Overpass",
         "mode": "public_no_token",
@@ -1914,6 +1934,23 @@ def fallback_wildfire_features():
     ]
 
 
+def wildfire_fallback_payload(error=None, mode="fallback-reference"):
+    features = fallback_wildfire_features()
+    payload = {
+        "source": "NASA EONET fallback thermal reference",
+        "generated": int(time.time()),
+        "count": len(features),
+        "mode": mode,
+        "provider_health": "fallback",
+        "fallback": True,
+        "notice": "NASA EONET is temporarily unavailable; showing deterministic thermal-watch reference coverage.",
+        "features": features,
+    }
+    if error:
+        payload["error"] = error
+    return payload
+
+
 class OrionHandler(SimpleHTTPRequestHandler):
     def translate_path(self, path):
         requested = super().translate_path(path)
@@ -2426,7 +2463,7 @@ class OrionHandler(SimpleHTTPRequestHandler):
             AIRCRAFT_CACHE["payload"] = payload
             self.send_json(payload)
             return
-        except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as error:
+        except UPSTREAM_PAYLOAD_ERRORS as error:
             adsb_error = type(error).__name__
 
         try:
@@ -2446,7 +2483,7 @@ class OrionHandler(SimpleHTTPRequestHandler):
                 AIRCRAFT_CACHE["payload"] = payload
                 self.send_json(payload)
                 return
-        except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as error:
+        except UPSTREAM_PAYLOAD_ERRORS as error:
             opensky_error = type(error).__name__
         else:
             opensky_error = "EmptyOpenSkyStateVector"
@@ -2564,7 +2601,7 @@ class OrionHandler(SimpleHTTPRequestHandler):
             }
             self.store_cached_feed(cache_key, payload)
             self.send_json(payload, cache_seconds=30)
-        except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as error:
+        except UPSTREAM_PAYLOAD_ERRORS as error:
             payload = {
                 "source": "USGS",
                 "feed": feed_type,
@@ -2632,7 +2669,10 @@ class OrionHandler(SimpleHTTPRequestHandler):
             return
 
         try:
-            request = Request(NASA_EONET_WILDFIRES_URL, headers={"User-Agent": "Project-Orion/1.0"})
+            request = Request(NASA_EONET_WILDFIRES_URL, headers={
+                "User-Agent": "Project-Orion/1.0",
+                "Accept": "application/json",
+            })
 
             with urlopen(request, timeout=12) as response:
                 upstream = json.loads(response.read().decode("utf-8"))
@@ -2666,23 +2706,14 @@ class OrionHandler(SimpleHTTPRequestHandler):
             }
             self.store_cached_feed("wildfires:eonet", payload)
             self.send_json(payload, cache_seconds=120)
-        except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as error:
+        except UPSTREAM_PAYLOAD_ERRORS as error:
             stale = self.cached_feed_stale("wildfires:eonet", 24 * 60 * 60)
             if stale is not None:
                 stale["error"] = type(error).__name__
                 self.send_json(stale, cache_seconds=45)
                 return
 
-            self.send_json({
-                "source": "NASA EONET",
-                "error": type(error).__name__,
-                "generated": int(time.time()),
-                "count": 0,
-                "mode": "degraded-empty",
-                "provider_health": "offline",
-                "fallback": False,
-                "features": [],
-            }, cache_seconds=30)
+            self.send_json(wildfire_fallback_payload(type(error).__name__), cache_seconds=45)
 
     def proxy_intel_layer(self):
         parsed = urlparse(self.path)
@@ -3583,7 +3614,7 @@ class OrionHandler(SimpleHTTPRequestHandler):
                     })
                     with urlopen(request, timeout=4) as response:
                         upstream = json.loads(response.read().decode("utf-8", errors="replace"))
-                except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as error:
+                except UPSTREAM_PAYLOAD_ERRORS as error:
                     last_error = error
                     continue
 
@@ -3710,12 +3741,15 @@ class OrionHandler(SimpleHTTPRequestHandler):
 
     def send_json(self, payload, cache_seconds=15, status=200):
         encoded = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Cache-Control", f"private, max-age={cache_seconds}")
-        self.send_header("Content-Length", str(len(encoded)))
-        self.end_headers()
-        self.write_payload(encoded)
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Cache-Control", f"private, max-age={cache_seconds}")
+            self.send_header("Content-Length", str(len(encoded)))
+            self.end_headers()
+            self.write_payload(encoded)
+        except CLIENT_DISCONNECT_ERRORS:
+            pass
 
     def log_message(self, fmt, *args):
         if self.path.startswith("/gibs/") or self.path.startswith("/live/") or self.path.startswith("/osm/") or self.path.startswith("/esri/") or self.path.startswith("/camera/"):

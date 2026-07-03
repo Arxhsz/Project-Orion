@@ -177,15 +177,7 @@ def build_wildfires():
             "features": features[:40],
         }
     except Exception as error:
-        payload = {
-            "source": "NASA EONET",
-            "error": type(error).__name__,
-            "generated": int(time.time()),
-            "count": 0,
-            "mode": "pages-error",
-            "fallback": False,
-            "features": [],
-        }
+        payload = orion_server.wildfire_fallback_payload(type(error).__name__, mode="pages-fallback-reference")
     write_json(OUT / "wildfires.json", payload)
 
 

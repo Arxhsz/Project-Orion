@@ -185,6 +185,10 @@
   var lastPlatformMotionFrame = 0;
   var lastCameraRegionKey = "";
   var lastCameraRegionFetchTime = 0;
+  var lastViewportRegionKeys = {};
+  var lastViewportRegionFetchTimes = {};
+  var pendingViewportRegionRefreshes = {};
+  var viewportBoundPlatformLayers = ["cameras", "powerGrid"];
   var intelCalloutPosScratch = null;
   var intelGlyphCache = {};
 
@@ -1821,6 +1825,10 @@ void main() {
 
   function platformEntityKey(layerId, id) {
     return layerId + "::" + String(id || "").replace(/[^a-zA-Z0-9:_-]/g, "-");
+  }
+
+  function primitiveFeedRowKey(layerId, item, index) {
+    return platformEntityKey(layerId, (item && (item.id || item.name)) ? String(item.id || item.name) + "-" + index : index);
   }
 
   function platformLayerFromEntityKey(id) {
@@ -4775,6 +4783,9 @@ void main() {
       }).filter(Boolean);
     } else if (definition.type === "camera") {
       items = clusterCameraItems((payload.cameras || []).slice(0, definition.maxItems));
+      if (layerStateManager.isLayerEnabled("powerGrid") || state.platformLayers.powerGrid) {
+        queueViewportBoundLayerRefresh("powerGrid", 0);
+      }
       
       if (items.length > 0 && viewer && viewer.camera) {
         var center = viewer.camera.positionCartographic;
@@ -5090,9 +5101,9 @@ void main() {
     if (layerId === "earthquakes") {
       endpoint += "?feed=" + encodeURIComponent(state.earthquakeFeed);
     } else if (layerId === "cameras") {
-      endpoint += cameraRegionQuery();
+      endpoint += cameraRegionQuery("cameras");
     } else if (layerId === "powerGrid") {
-      endpoint += cameraRegionQuery();
+      endpoint += cameraRegionQuery("powerGrid");
     }
 
     if (hardeningManager.simulationActive && Math.random() > 0.6) {
@@ -5106,6 +5117,7 @@ void main() {
     var controller = createProviderRequestController(layerId);
     var signal = controller ? controller.signal : undefined;
 
+    debugLog('[RefreshPlatform]', layerId, 'endpoint', endpoint);
     fetchJsonEndpoint(endpoint, { signal: signal })
       .then(function (payload) {
         if (!layerStateManager.isLayerEnabled(layerId)) {
@@ -5235,7 +5247,7 @@ void main() {
         return;
       }
 
-      var id = platformEntityKey(layerId, item.id || item.name || index);
+      var id = primitiveFeedRowKey(layerId, item, index);
       active[id] = true;
 
       var position = Cesium.Cartesian3.fromDegrees(sample.lon, sample.lat, sample.height || 0);
@@ -5379,7 +5391,7 @@ void main() {
     return definition && definition.type !== "weatherRadar" && definition.type !== "tileset";
   }
 
-  function cameraRegionQuery() {
+  function cameraRegionQuery(layerId) {
     if (!viewer || !viewer.scene) {
       return "";
     }
@@ -5399,9 +5411,103 @@ void main() {
     south = Math.max(-90, Math.min(90, south));
     north = Math.max(-90, Math.min(90, north));
 
+    if (layerId === "powerGrid") {
+      var lonSpan = Math.abs(east - west);
+      var latSpan = Math.abs(north - south);
+      var hasRegionalView = lonSpan < 60 && latSpan < 40;
+
+      if (hasRegionalView && (lonSpan > 0.6 || latSpan > 0.45)) {
+        var centerLon = typeof state.target.lon === "number" ? state.target.lon : (west + east) / 2;
+        var centerLat = typeof state.target.lat === "number" ? state.target.lat : (south + north) / 2;
+
+        west = Math.max(-180, centerLon - 0.3);
+        east = Math.min(180, centerLon + 0.3);
+        south = Math.max(-90, centerLat - 0.225);
+        north = Math.min(90, centerLat + 0.225);
+      }
+    }
+
     var bboxStr = [west.toFixed(4), south.toFixed(4), east.toFixed(4), north.toFixed(4)].join(",");
+    if (layerId) {
+      lastViewportRegionKeys[layerId] = bboxStr;
+    }
+    lastCameraRegionKey = bboxStr;
     
     return "&bbox=" + encodeURIComponent(bboxStr);
+  }
+
+  function refreshViewportBoundPlatformLayers(force) {
+    if (!viewer || !viewer.camera) {
+      return;
+    }
+
+    var now = performance.now();
+    viewportBoundPlatformLayers.forEach(function (layerId) {
+      var runtimeEnabled = layerStateManager.isLayerEnabled(layerId);
+      if (!state.platformLayers[layerId] && !runtimeEnabled) {
+        return;
+      }
+      if (runtimeEnabled && !state.platformLayers[layerId]) {
+        state.platformLayers[layerId] = true;
+      }
+
+      var previousKey = lastViewportRegionKeys[layerId] || "";
+      cameraRegionQuery(layerId);
+      var currentKey = lastViewportRegionKeys[layerId] || "";
+      var lastFetch = lastViewportRegionFetchTimes[layerId] || 0;
+      var refreshDelay = layerId === "powerGrid" ? 4500 : 3500;
+      var regionChanged = previousKey && currentKey && previousKey !== currentKey;
+      var forceRefreshDue = force && (!lastFetch || now - lastFetch > refreshDelay || regionChanged);
+      var regionRefreshDue = regionChanged && now - lastFetch > refreshDelay;
+
+      if (forceRefreshDue || regionRefreshDue) {
+        queueViewportBoundLayerRefresh(layerId, 0);
+      }
+    });
+  }
+
+  function queueViewportBoundLayerRefresh(layerId, attempt) {
+    attempt = attempt || 0;
+
+    if (attempt === 0 && pendingViewportRegionRefreshes[layerId]) {
+      debugLog("[ViewportRefresh]", layerId, "already pending");
+      return;
+    }
+
+    var now = performance.now();
+    var minimumInterval = layerId === "powerGrid" ? 2000 : 1500;
+    if (attempt === 0 && lastViewportRegionFetchTimes[layerId] && now - lastViewportRegionFetchTimes[layerId] < minimumInterval) {
+      debugLog("[ViewportRefresh]", layerId, "throttled");
+      return;
+    }
+
+    pendingViewportRegionRefreshes[layerId] = true;
+
+    if (!state.platformLayers[layerId] && !layerStateManager.isLayerEnabled(layerId)) {
+      debugLog("[ViewportRefresh]", layerId, "not enabled");
+      delete pendingViewportRegionRefreshes[layerId];
+      return;
+    }
+
+    if (providerRequestControllers[layerId]) {
+      debugLog("[ViewportRefresh]", layerId, "waiting for active request", attempt);
+      if (attempt < 8) {
+        window.setTimeout(function () {
+          queueViewportBoundLayerRefresh(layerId, attempt + 1);
+        }, 700);
+      } else {
+        delete pendingViewportRegionRefreshes[layerId];
+      }
+      return;
+    }
+
+    delete pendingViewportRegionRefreshes[layerId];
+    debugLog("[ViewportRefresh]", layerId, "refreshing");
+    lastViewportRegionFetchTimes[layerId] = performance.now();
+    if (layerId === "cameras") {
+      lastCameraRegionFetchTime = lastViewportRegionFetchTimes[layerId];
+    }
+    refreshPlatformLayer(layerId, true);
   }
 
   function clusterCameraItems(cameras) {
@@ -7537,7 +7643,7 @@ void main() {
 
     for (var index = 0; index < items.length; index += 1) {
       var item = items[index];
-      var id = platformEntityKey(layerId, item.id || item.name || index);
+      var id = primitiveFeedRowKey(layerId, item, index);
 
       if (id !== platformEntityId) {
         continue;
@@ -8146,7 +8252,7 @@ void main() {
       var category = platformLayerCategoryLabel(layerId, definition);
 
       items.slice(0, limit).forEach(function (item, index) {
-        var id = platformEntityKey(layerId, item.id || item.name || index);
+        var id = primitiveFeedRowKey(layerId, item, index);
 
         if (platformEntities[id]) {
           return;
@@ -8245,7 +8351,37 @@ void main() {
       });
     });
 
-    return rows;
+    return rows.sort(function (a, b) {
+      var priority = {
+        "Infrastructure": 0,
+        "Ground Cameras": 1,
+        "Aircraft": 2,
+        "Satellites": 3
+      };
+      var ap = Object.prototype.hasOwnProperty.call(priority, a.category) ? priority[a.category] : 4;
+      var bp = Object.prototype.hasOwnProperty.call(priority, b.category) ? priority[b.category] : 4;
+
+      if (a.selected !== b.selected) {
+        return a.selected ? -1 : 1;
+      }
+      if (ap !== bp) {
+        return ap - bp;
+      }
+      if (a.category === "Infrastructure" && b.category === "Infrastructure") {
+        var layerPriority = {
+          powerGrid: 0,
+          underseaCables: 1
+        };
+        var aLayer = String(a.id || "").split("::")[0];
+        var bLayer = String(b.id || "").split("::")[0];
+        var alp = Object.prototype.hasOwnProperty.call(layerPriority, aLayer) ? layerPriority[aLayer] : 2;
+        var blp = Object.prototype.hasOwnProperty.call(layerPriority, bLayer) ? layerPriority[bLayer] : 2;
+        if (alp !== blp) {
+          return alp - blp;
+        }
+      }
+      return String(a.name || "").localeCompare(String(b.name || ""));
+    });
   }
 
   function entityDetail(type, item, sample) {
@@ -9161,6 +9297,8 @@ void main() {
       if (lodManager) {
         lodManager.update();
       }
+      refreshViewportBoundPlatformLayers(true);
+      queueViewportBoundLayerRefresh("powerGrid", 0);
     });
     
     viewer.scene.preRender.addEventListener(function(scene, time) {
@@ -10541,15 +10679,7 @@ void main() {
         raiseOperationalLayers();
       }
 
-      if (state.platformLayers.cameras && viewer && viewer.camera) {
-        var previousKey = lastCameraRegionKey;
-        cameraRegionQuery();
-
-        if (previousKey && lastCameraRegionKey && previousKey !== lastCameraRegionKey && now - lastCameraRegionFetchTime > 3500) {
-          lastCameraRegionFetchTime = now;
-          refreshPlatformLayer("cameras", true);
-        }
-      }
+      refreshViewportBoundPlatformLayers(false);
     });
   }
 
@@ -10662,6 +10792,10 @@ void main() {
         heading: Cesium.Math.toRadians(0),
         pitch: Cesium.Math.toRadians(-58),
         roll: 0
+      },
+      complete: function () {
+        refreshViewportBoundPlatformLayers(true);
+        queueViewportBoundLayerRefresh("powerGrid", 0);
       }
     });
   }
@@ -10678,7 +10812,11 @@ void main() {
     viewer.camera.flyTo({
       destination: homeRectangle(),
       duration: 2.4,
-      easingFunction: Cesium.EasingFunction.CUBIC_IN_OUT
+      easingFunction: Cesium.EasingFunction.CUBIC_IN_OUT,
+      complete: function () {
+        refreshViewportBoundPlatformLayers(true);
+        queueViewportBoundLayerRefresh("powerGrid", 0);
+      }
     });
   }
 
