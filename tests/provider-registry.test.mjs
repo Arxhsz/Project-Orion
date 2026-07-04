@@ -78,9 +78,30 @@ test("provider registry exposes prompt-required provider state metadata", () => 
   assert.equal(state.supportsStaticMode, true);
   assert.equal(state.supportsLive, true);
   assert.equal(state.supportsHistorical, false);
+  assert.equal(state.timeCapability, "live-only");
   assert.equal(state.requiresApiKey, false);
   assert.match(state.attribution, /NOAA/);
   assert.equal(Orion.Telemetry.ProviderHealth.getTimeUntilRetry("weatherRadar"), 0);
+});
+
+test("tracking provider capabilities distinguish propagated from live-only data", () => {
+  const Orion = loadBrowserModules([
+    "orion-config.js",
+    "orion-provider-registry.js",
+    "orion-telemetry-health.js"
+  ]);
+  Orion.Telemetry.ProviderHealth.init();
+
+  const aircraft = Orion.Telemetry.ProviderHealth.getProviderState("liveAircraft");
+  const vessels = Orion.Telemetry.ProviderHealth.getProviderState("liveShips");
+  const satellites = Orion.Telemetry.ProviderHealth.getProviderState("realtimeSatellites");
+
+  assert.equal(aircraft.supportsHistorical, false);
+  assert.equal(aircraft.timeCapability, "live-only");
+  assert.equal(vessels.supportsHistorical, false);
+  assert.equal(vessels.timeCapability, "live-only");
+  assert.equal(satellites.supportsHistorical, true);
+  assert.equal(satellites.timeCapability, "propagated");
 });
 
 test("infrastructure providers are active selectable layers", () => {
@@ -153,6 +174,49 @@ test("power grid refreshes when the viewport region changes", () => {
   assert.match(source, /cameraRegionQuery\("powerGrid"\)/);
   assert.match(source, /viewportBoundPlatformLayers\.forEach/);
   assert.match(source, /refreshPlatformLayer\(layerId, true\)/);
+});
+
+test("transient basemap tile retries do not warn-spam the console", () => {
+  const source = fs.readFileSync(path.join(root, "app.js"), "utf8");
+
+  assert.match(source, /debugLog\("ESRI tile retry:"/);
+  assert.equal(source.includes("console.warn(\"ESRI tile error"), false);
+});
+
+test("historical timeline labels live-only aircraft as latest snapshot", () => {
+  const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  const primitiveRenderer = fs.readFileSync(path.join(root, "orion-renderer-primitive.js"), "utf8");
+
+  assert.match(app, /function historicalAvailabilityLabel/);
+  assert.match(app, /latest snapshot/);
+  assert.match(app, /propagated/);
+  assert.match(app, /Aircraft history is not available/);
+  assert.match(primitiveRenderer, /var liveMode = simulationMode === "live"/);
+  assert.match(primitiveRenderer, /liveMode \? self\.interpolateRecord\(record\) : Orion\.Telemetry\.Samplers\.intel\(item, time\)/);
+});
+
+test("platform renderers are rebound and guarded after boot recovery", () => {
+  const source = fs.readFileSync(path.join(root, "app.js"), "utf8");
+
+  assert.match(source, /function ensureRuntimeBootDependencies/);
+  assert.match(source, /Orion\.Runtime\.RenderScheduler =/);
+  assert.match(source, /Orion\.Telemetry\.ProviderHealth =/);
+  assert.match(source, /Orion\.Renderer\.TextureManager =/);
+  assert.match(source, /function bindPlatformRendererModules/);
+  assert.match(source, /function renderWithPlatformRenderer/);
+  assert.equal(source.includes("AviationRenderer.render("), false);
+  assert.equal(source.includes("MaritimeRenderer.render("), false);
+  assert.equal(source.includes("OrbitalRenderer.render("), false);
+  assert.match(source, /renderer unavailable/);
+});
+
+test("html asset version is bumped for updated runtime modules", () => {
+  const source = fs.readFileSync(path.join(root, "index.html"), "utf8");
+
+  assert.match(source, /app\.js\?v=20260704-audit1/);
+  assert.match(source, /orion-renderer-primitive\.js\?v=20260704-audit1/);
+  assert.match(source, /orion-telemetry-health\.js\?v=20260704-audit1/);
+  assert.equal(source.includes("20260701-hardening3"), false);
 });
 
 test("wildfire provider falls back to usable reference features", () => {

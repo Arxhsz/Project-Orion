@@ -266,6 +266,290 @@
     return fallback;
   }
 
+  function transparentPixel() {
+    return "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+  }
+
+  function ensureRuntimeBootDependencies() {
+    Orion.Runtime = Orion.Runtime || {};
+    Orion.Renderer = Orion.Renderer || {};
+    Orion.Telemetry = Orion.Telemetry || {};
+    Orion.Diagnostics = Orion.Diagnostics || {};
+    Orion.Intelligence = Orion.Intelligence || {};
+
+    if (!Orion.Runtime.EventBus) {
+      Orion.Runtime.EventBus = {
+        listeners: {},
+        on: function (event, callback) {
+          if (!this.listeners[event]) {
+            this.listeners[event] = [];
+          }
+          this.listeners[event].push(callback);
+        },
+        emit: function (event, data) {
+          (this.listeners[event] || []).forEach(function (callback) {
+            try { callback(data); } catch (error) {}
+          });
+        }
+      };
+    }
+
+    if (!Orion.Runtime.RenderScheduler) {
+      Orion.Runtime.RenderScheduler = {
+        tasks: [],
+        init: function () {},
+        schedule: function (task) {
+          if (typeof task === "function") {
+            this.tasks.push(task);
+          }
+        },
+        execute: function () {
+          var tasks = this.tasks.splice(0);
+          tasks.forEach(function (task) {
+            try { task(); } catch (error) {}
+          });
+        }
+      };
+    }
+
+    if (!Orion.Runtime.PerformanceBudget) {
+      Orion.Runtime.PerformanceBudget = {
+        getCurrentMetrics: function () {
+          return { billboards: 0, points: 0, polylines: 0, entities: 0 };
+        },
+        enforce: function () {
+          return 0;
+        }
+      };
+    }
+
+    if (!Orion.Telemetry.ProviderHealth) {
+      Orion.Telemetry.ProviderHealth = {
+        providers: {},
+        init: function () {
+          var self = this;
+          Object.keys(platformLayerDefinitions).forEach(function (layerId) {
+            if (!self.providers[layerId]) {
+              self.providers[layerId] = {
+                id: layerId,
+                layerId: layerId,
+                label: platformLayerDefinitions[layerId].label || layerId,
+                health: "unknown",
+                status: "unknown",
+                consecutiveFailures: 0,
+                lastSuccess: null,
+                lastFailure: null,
+                lastValidPayload: null,
+                lastError: null,
+                nextRetryAt: null
+              };
+            }
+          });
+        },
+        recordSuccess: function (layerId, payload) {
+          if (!this.providers[layerId]) {
+            this.init();
+          }
+          var provider = this.providers[layerId];
+          if (!provider) {
+            return;
+          }
+          provider.health = "online";
+          provider.status = "online";
+          provider.consecutiveFailures = 0;
+          provider.lastSuccess = Date.now();
+          provider.lastValidPayload = payload || null;
+          provider.lastError = null;
+          provider.nextRetryAt = null;
+        },
+        recordFailure: function (layerId, error) {
+          if (!this.providers[layerId]) {
+            this.init();
+          }
+          var provider = this.providers[layerId];
+          if (!provider) {
+            return;
+          }
+          provider.consecutiveFailures += 1;
+          provider.health = provider.lastValidPayload ? "degraded" : "offline";
+          provider.status = provider.health;
+          provider.lastFailure = Date.now();
+          provider.lastError = error && error.message ? error.message : String(error || "Unknown provider failure");
+          provider.nextRetryAt = Date.now() + Math.min(60000, 5000 * provider.consecutiveFailures);
+        },
+        getProviderInfo: function (layerId) {
+          return this.providers[layerId] || null;
+        },
+        getHealth: function (layerId) {
+          var provider = this.getProviderInfo(layerId);
+          return provider ? provider.health : "unknown";
+        },
+        getAllStats: function () {
+          var self = this;
+          return Object.keys(this.providers).map(function (layerId) {
+            return self.providers[layerId];
+          });
+        },
+        shouldRetryNow: function (layerId) {
+          var provider = this.getProviderInfo(layerId);
+          return !provider || !provider.nextRetryAt || Date.now() >= provider.nextRetryAt;
+        },
+        getTimeUntilRetry: function (layerId) {
+          var provider = this.getProviderInfo(layerId);
+          return provider && provider.nextRetryAt ? Math.max(0, provider.nextRetryAt - Date.now()) : 0;
+        },
+        shouldUseCachedData: function (layerId) {
+          var provider = this.getProviderInfo(layerId);
+          return !!(provider && provider.lastValidPayload);
+        },
+        getCachedPayload: function (layerId) {
+          var provider = this.getProviderInfo(layerId);
+          return provider ? provider.lastValidPayload : null;
+        }
+      };
+    }
+
+    if (!Orion.Diagnostics.SystemMonitor) {
+      Orion.Diagnostics.SystemMonitor = {
+        active: false,
+        fps: 0,
+        init: function () {},
+        updateFPS: function () {}
+      };
+    }
+
+    if (!Orion.Diagnostics.Hardening) {
+      Orion.Diagnostics.Hardening = {
+        simulationActive: false,
+        init: function () {},
+        runStressTest: function () {},
+        stopTest: function () {},
+        simulateNetworkChaos: function () {
+          this.simulationActive = !this.simulationActive;
+        }
+      };
+    }
+
+    if (!Orion.Diagnostics.Stability) {
+      Orion.Diagnostics.Stability = {
+        history: [],
+        init: function () {},
+        update: function () {},
+        sample: function () {
+          return { t: 0, mem: 0, primitives: 0, billboards: 0, points: 0, entities: 0, ts: Date.now() };
+        },
+        getSummary: function () {
+          return { runtimeH: "0.00", samples: 0, memGrowthMB: "0.0", primGrowth: 0, health: "UNKNOWN" };
+        }
+      };
+    }
+
+    if (!Orion.Intelligence.AdaptiveIntelligence) {
+      Orion.Intelligence.AdaptiveIntelligence = {
+        escalations: {},
+        activeContexts: [],
+        init: function () {},
+        update: function () {},
+        getGlobalDimming: function () { return 1.0; },
+        getModeIntensity: function () { return 1.0; },
+        isContextActive: function () { return false; }
+      };
+    }
+
+    if (!Orion.Intelligence.OperationalNarrative) {
+      Orion.Intelligence.OperationalNarrative = {
+        narratives: [],
+        missionContext: "standard",
+        attentionMemory: [],
+        planetaryRhythm: 0,
+        init: function () {},
+        update: function () {},
+        recordAttention: function (id) {
+          if (this.attentionMemory.indexOf(id) === -1) {
+            this.attentionMemory.unshift(id);
+            if (this.attentionMemory.length > 5) {
+              this.attentionMemory.pop();
+            }
+          }
+        },
+        setMissionContext: function (context) {
+          this.missionContext = context || "standard";
+        }
+      };
+    }
+
+    if (!Orion.Intelligence.CognitiveOperations) {
+      Orion.Intelligence.CognitiveOperations = {
+        memory: { focusPatterns: {}, anomalyZones: {}, lastSession: null },
+        tension: 0,
+        suggestions: [],
+        init: function () {},
+        update: function () {},
+        loadMemory: function () {},
+        saveMemory: function () {}
+      };
+    }
+
+    if (!Orion.Intelligence.CognitiveGovernance) {
+      Orion.Intelligence.CognitiveGovernance = {
+        cognitiveLoad: { score: 0, lastSwitch: 0, switchBurst: 0 },
+        init: function () {},
+        update: function () {},
+        recordInteraction: function () {},
+        isSignificant: function (priority) {
+          return Number(priority) >= 0.4;
+        },
+        getTrustReasoning: function () {
+          return "Baseline confidence";
+        }
+      };
+    }
+
+    if (!Orion.Intelligence.VisualCohesion) {
+      Orion.Intelligence.VisualCohesion = {
+        getAdaptiveAlpha: function (baseAlpha) {
+          return baseAlpha;
+        },
+        getInterpolationFactor: function () {
+          return 0.18;
+        },
+        getConfidenceScore: function () {
+          return 1.0;
+        },
+        getPredictiveFactor: function () {
+          return 0;
+        },
+        applyCinematicFocus: function () {}
+      };
+    }
+
+    if (!Orion.Renderer.TextureManager) {
+      Orion.Renderer.TextureManager = {
+        init: function () {},
+        getIcon: function () {
+          return typeof markerIcon === "function" ? markerIcon("soft-dot") : transparentPixel();
+        },
+        createSafeCanvas: function (width, height) {
+          var canvas = document.createElement("canvas");
+          canvas.width = width || 1;
+          canvas.height = height || 1;
+          return canvas;
+        },
+        canvasToDataURL: function (canvas) {
+          return canvas && typeof canvas.toDataURL === "function" ? canvas.toDataURL("image/png") : transparentPixel();
+        },
+        assignBillboardImage: function (billboard, image) {
+          if (billboard && image) {
+            billboard.image = image;
+          }
+        },
+        preloadImage: function () {}
+      };
+      window.OrionTextureManager = window.OrionTextureManager || Orion.Renderer.TextureManager;
+    }
+  }
+
+  ensureRuntimeBootDependencies();
   var layerStateManager = ensureRuntimeStateManager();
   var currentLODLevel = layerStateManager.lodLevel || "close";
   
@@ -1928,6 +2212,47 @@ void main() {
     return layerId === "liveAircraft" || layerId === "liveShips" || orbitalLayerIds.indexOf(layerId) !== -1;
   }
 
+  function providerTimeCapability(layerId) {
+    var provider = (Orion.Providers && Orion.Providers.Registry) ? Orion.Providers.Registry.get(layerId) : {};
+    return provider.timeCapability || (provider.supportsHistorical ? "historical-query" : "live-only");
+  }
+
+  function providerSupportsHistorical(layerId) {
+    var provider = (Orion.Providers && Orion.Providers.Registry) ? Orion.Providers.Registry.get(layerId) : {};
+    return !!provider.supportsHistorical || providerTimeCapability(layerId) === "propagated" || providerTimeCapability(layerId) === "static";
+  }
+
+  function historicalAvailabilityLabel(layerId, feed) {
+    if (state.tracking.live || !isTrackingDomainLayer(layerId)) {
+      return "";
+    }
+
+    if (orbitalLayerIds.indexOf(layerId) !== -1) {
+      return "propagated";
+    }
+
+    if (providerSupportsHistorical(layerId)) {
+      return "";
+    }
+
+    var itemCount = feed && Array.isArray(feed.items) ? feed.items.length : 0;
+    if (feed && feed.status === "unavailable") {
+      return "history unavailable";
+    }
+    return itemCount ? "latest snapshot" : "history unavailable";
+  }
+
+  function platformDisplayStatus(layerId, item, sample, feed) {
+    if (feed && feed.renderError) {
+      return "renderer unavailable";
+    }
+    var historicalStatus = historicalAvailabilityLabel(layerId, feed);
+    if (historicalStatus) {
+      return historicalStatus;
+    }
+    return (item && item.status) || (sample && sample.status) || (feed && feed.status) || "online";
+  }
+
   function platformTime() {
     if (state.tracking.live) {
       SimulationClock.mode = "live";
@@ -2353,7 +2678,7 @@ void main() {
     if (layerId === "underseaCables" || layerId === "powerGrid") {
       var rowsInfra = infrastructureDetailRows(record);
       rowsInfra.push(
-        ["Status", item.status || (platformFeeds[layerId] && platformFeeds[layerId].status) || "online"],
+        ["Status", platformDisplayStatus(layerId, item, record.sample, platformFeeds[layerId] || {})],
         ["Location", record.sample ? record.sample.lat.toFixed(4) + ", " + record.sample.lon.toFixed(4) : "-"],
         ["Source", item.source || item.provider || (record.definition && record.definition.source) || "-"]
       );
@@ -4858,7 +5183,7 @@ void main() {
 
     if (layerId === "liveShips") {
       if (layerStateManager.isLayerEnabled(layerId)) {
-        MaritimeRenderer.render(trackingFilterMatchesPlatformLayer(layerId) ? items : [], renderTime);
+        renderWithPlatformRenderer("Maritime", [trackingFilterMatchesPlatformLayer(layerId) ? items : [], renderTime], layerId);
       } else {
         destroyLayerCompletely(layerId);
       }
@@ -4868,7 +5193,7 @@ void main() {
 
     if (layerId === "liveAircraft") {
       if (layerStateManager.isLayerEnabled(layerId)) {
-        AviationRenderer.render(trackingFilterMatchesPlatformLayer(layerId) ? items : [], renderTime);
+        renderWithPlatformRenderer("Aviation", [trackingFilterMatchesPlatformLayer(layerId) ? items : [], renderTime], layerId);
       } else {
         destroyLayerCompletely(layerId);
       }
@@ -4878,7 +5203,7 @@ void main() {
 
     if (orbitalLayerIds.indexOf(layerId) !== -1) {
       if (layerStateManager.isLayerEnabled(layerId)) {
-        OrbitalRenderer.render(trackingFilterMatchesPlatformLayer(layerId) ? items : [], layerId, renderTime);
+        renderWithPlatformRenderer("Orbital", [trackingFilterMatchesPlatformLayer(layerId) ? items : [], layerId, renderTime], layerId);
       } else {
         destroyLayerCompletely(layerId);
       }
@@ -4927,11 +5252,11 @@ void main() {
         var time = platformTime();
 
         if (layerId === 'liveShips') {
-          MaritimeRenderer.render(trackingFilterMatchesPlatformLayer(layerId) ? items : [], time);
+          renderWithPlatformRenderer("Maritime", [trackingFilterMatchesPlatformLayer(layerId) ? items : [], time], layerId);
         } else if (layerId === 'liveAircraft') {
-          AviationRenderer.render(trackingFilterMatchesPlatformLayer(layerId) ? items : [], time);
+          renderWithPlatformRenderer("Aviation", [trackingFilterMatchesPlatformLayer(layerId) ? items : [], time], layerId);
         } else if (orbitalLayerIds.indexOf(layerId) !== -1) {
-          OrbitalRenderer.render(trackingFilterMatchesPlatformLayer(layerId) ? items : [], layerId, time);
+          renderWithPlatformRenderer("Orbital", [trackingFilterMatchesPlatformLayer(layerId) ? items : [], layerId, time], layerId);
         } else if (layerId === 'cameras') {
           if (currentLODLevel === 'distant') {
             renderCamerasAsPrimitives(items);
@@ -4957,17 +5282,63 @@ void main() {
   var EnvironmentRenderer = Orion.Renderer.Environment;
   var MaritimeRenderer = Orion.Renderer.Maritime;
   var AviationRenderer = Orion.Renderer.Aviation;
+  var missingRendererWarnings = {};
+
+  function bindPlatformRendererModules() {
+    OrbitalRenderer = Orion.Renderer && Orion.Renderer.Orbital;
+    InfrastructureRenderer = Orion.Renderer && Orion.Renderer.Infrastructure;
+    EnvironmentRenderer = Orion.Renderer && Orion.Renderer.Environment;
+    MaritimeRenderer = Orion.Renderer && Orion.Renderer.Maritime;
+    AviationRenderer = Orion.Renderer && Orion.Renderer.Aviation;
+  }
+
+  function platformRendererByName(name) {
+    bindPlatformRendererModules();
+    return Orion.Renderer && Orion.Renderer[name];
+  }
+
+  function renderWithPlatformRenderer(name, args, layerId) {
+    var renderer = platformRendererByName(name);
+    if (!renderer || typeof renderer.render !== "function") {
+      if (!missingRendererWarnings[name]) {
+        missingRendererWarnings[name] = true;
+        console.warn("[Orion] " + name + " renderer unavailable; skipping " + (layerId || "platform") + " render.");
+      }
+      if (layerId && platformFeeds[layerId]) {
+        platformFeeds[layerId].renderError = name + " renderer unavailable";
+      }
+      return false;
+    }
+    renderer.render.apply(renderer, args);
+    if (layerId && platformFeeds[layerId]) {
+      delete platformFeeds[layerId].renderError;
+    }
+    return true;
+  }
+
+  function initPlatformRenderer(name) {
+    var renderer = platformRendererByName(name);
+    if (renderer && typeof renderer.init === "function") {
+      renderer.init(viewer);
+      return true;
+    }
+    if (!missingRendererWarnings[name + ":init"]) {
+      missingRendererWarnings[name + ":init"] = true;
+      console.warn("[Orion] " + name + " renderer init unavailable.");
+    }
+    return false;
+  }
 
   function renderOrbitalAsPrimitives(layerId, items) {
-    OrbitalRenderer.render(items);
+    renderWithPlatformRenderer("Orbital", [items, layerId, platformTime()], layerId);
   }
 
   function renderVesselsAsPrimitives(items) {
-    MaritimeRenderer.render(items);
+    renderWithPlatformRenderer("Maritime", [items, platformTime()], "liveShips");
   }
 
   function renderAircraftAsPrimitives(items) {
-    AviationRenderer.render(items);
+    renderWithPlatformRenderer("Aviation", [items, platformTime()], "liveAircraft");
   }
 
   function renderCamerasAsPrimitives(items) {
@@ -5203,15 +5574,15 @@ void main() {
     var time = platformTime();
 
     if (layerId === 'liveAircraft') {
-      AviationRenderer.render(trackingFilterMatchesPlatformLayer(layerId) ? items : [], time);
+      renderWithPlatformRenderer("Aviation", [trackingFilterMatchesPlatformLayer(layerId) ? items : [], time], layerId);
       return;
     }
     if (layerId === 'liveShips') {
-      MaritimeRenderer.render(trackingFilterMatchesPlatformLayer(layerId) ? items : [], time);
+      renderWithPlatformRenderer("Maritime", [trackingFilterMatchesPlatformLayer(layerId) ? items : [], time], layerId);
       return;
     }
     if (orbitalLayerIds.indexOf(layerId) !== -1) {
-      OrbitalRenderer.render(trackingFilterMatchesPlatformLayer(layerId) ? items : [], layerId, time);
+      renderWithPlatformRenderer("Orbital", [trackingFilterMatchesPlatformLayer(layerId) ? items : [], layerId, time], layerId);
       return;
     }
 
@@ -7350,10 +7721,10 @@ void main() {
       }
     });
 
-    if (layerId === 'liveShips') MaritimeRenderer.render([]);
-    if (layerId === 'liveAircraft') AviationRenderer.render([]);
+    if (layerId === 'liveShips') renderWithPlatformRenderer("Maritime", [[], platformTime()], layerId);
+    if (layerId === 'liveAircraft') renderWithPlatformRenderer("Aviation", [[], platformTime()], layerId);
     if (orbitalLayerIds.indexOf(layerId) !== -1) {
-      OrbitalRenderer.render([], layerId);
+      renderWithPlatformRenderer("Orbital", [[], layerId, platformTime()], layerId);
     }
 
     if (layerId === 'cyberNetwork' || layerId === 'underseaCables' || layerId === 'powerGrid') {
@@ -7526,6 +7897,14 @@ void main() {
       return "Camera metadata is loaded regionally. Live video or a refreshed snapshot is opened only when selected.";
     }
 
+    if (record.layerId === "liveAircraft" && historicalAvailabilityLabel(record.layerId, platformFeeds[record.layerId] || {}) === "latest snapshot") {
+      return "Aircraft history is not available from the current public provider. Project Orion is showing the latest known aircraft snapshot while the timeline remains historical.";
+    }
+
+    if (record.layerId === "liveShips" && historicalAvailabilityLabel(record.layerId, platformFeeds[record.layerId] || {})) {
+      return "Vessel history requires a configured local AIS provider. Project Orion does not display synthetic vessel history in production mode.";
+    }
+
     if (record.layerId === "underseaCables") {
       return "Submarine cable route loaded from a public GeoJSON source and rendered as selectable Cesium linework.";
     }
@@ -7547,7 +7926,8 @@ void main() {
     var severity = item.severity || item.priority || item.intensity || item.magnitude || record.sample.magnitude || "nominal";
     var mediaUrl = item.image_url || item.imageUrl || item.media_url || item.mediaUrl || item.snapshot_url || item.proxy_snapshot_url;
     var type = item.type || item.category || record.definition.label;
-    var status = item.status || (platformFeeds[record.layerId] && platformFeeds[record.layerId].status) || "online";
+    var recordFeed = platformFeeds[record.layerId] || {};
+    var status = platformDisplayStatus(record.layerId, item, record.sample, recordFeed);
     var confidence = visualCohesionManager.getConfidenceScore(record.layerId);
     var ageMin = platformFeeds[record.layerId] ? Math.round((Date.now() - platformFeeds[record.layerId].loadedAt) / 60000) : 0;
 
@@ -8045,43 +8425,55 @@ void main() {
         return platformEntities[id] && platformEntities[id].layerId === layerId;
       }).length;
     }, 0);
-    var loading = enabled.filter(function (layerId) {
-      return platformFeeds[layerId] && platformFeeds[layerId].status === "loading";
-    }).length;
-    var online = enabled.filter(function (layerId) {
-      return platformFeeds[layerId] && platformFeeds[layerId].status === "online";
-    }).length;
-    var fallback = enabled.filter(function (layerId) {
-      return platformFeeds[layerId] && platformFeeds[layerId].status === "fallback";
-    }).length;
-    var degraded = enabled.filter(function (layerId) {
-      return platformFeeds[layerId] && platformFeeds[layerId].status === "degraded";
-    }).length;
-    var empty = enabled.filter(function (layerId) {
-      return platformFeeds[layerId] && platformFeeds[layerId].status === "empty";
-    }).length;
-    var unavailable = enabled.filter(function (layerId) {
-      return platformFeeds[layerId] && platformFeeds[layerId].status === "unavailable";
-    }).length;
-    var error = enabled.filter(function (layerId) {
-      var status = platformFeeds[layerId] && platformFeeds[layerId].status;
-      return status && ["online", "loading", "fallback", "degraded", "empty", "unavailable", "standby"].indexOf(status) === -1;
-    }).length;
+    var statusCounts = {
+      loading: 0,
+      online: 0,
+      propagated: 0,
+      latestSnapshot: 0,
+      fallback: 0,
+      degraded: 0,
+      empty: 0,
+      historyUnavailable: 0,
+      unavailable: 0,
+      rendererUnavailable: 0,
+      error: 0
+    };
+    enabled.forEach(function (layerId) {
+      var feed = platformFeeds[layerId] || {};
+      var historicalStatus = feed.renderError ? "renderer unavailable" : historicalAvailabilityLabel(layerId, feed);
+      var status = historicalStatus || feed.status || "loading";
+
+      if (status === "loading") statusCounts.loading += 1;
+      else if (status === "online") statusCounts.online += 1;
+      else if (status === "propagated") statusCounts.propagated += 1;
+      else if (status === "latest snapshot") statusCounts.latestSnapshot += 1;
+      else if (status === "fallback") statusCounts.fallback += 1;
+      else if (status === "degraded") statusCounts.degraded += 1;
+      else if (status === "empty") statusCounts.empty += 1;
+      else if (status === "history unavailable") statusCounts.historyUnavailable += 1;
+      else if (status === "unavailable") statusCounts.unavailable += 1;
+      else if (status === "renderer unavailable") statusCounts.rendererUnavailable += 1;
+      else if (status !== "standby") statusCounts.error += 1;
+    });
 
     elements.platformLayerCount.textContent = enabled.length + " layers / " + objectCount + " objects";
 
     if (!enabled.length) {
       elements.platformFeedStatus.textContent = "Standby";
-    } else if (loading) {
-      elements.platformFeedStatus.textContent = "Loading " + loading + " feed" + (loading === 1 ? "" : "s");
+    } else if (statusCounts.loading) {
+      elements.platformFeedStatus.textContent = "Loading " + statusCounts.loading + " feed" + (statusCounts.loading === 1 ? "" : "s");
     } else {
       var parts = [];
-      if (online) parts.push(online + " online");
-      if (degraded) parts.push(degraded + " degraded");
-      if (fallback) parts.push(fallback + " fallback");
-      if (empty) parts.push(empty + " empty");
-      if (unavailable) parts.push(unavailable + " unavailable");
-      if (error) parts.push(error + " error");
+      if (statusCounts.online) parts.push(statusCounts.online + " online");
+      if (statusCounts.propagated) parts.push(statusCounts.propagated + " propagated");
+      if (statusCounts.latestSnapshot) parts.push(statusCounts.latestSnapshot + " latest snapshot");
+      if (statusCounts.degraded) parts.push(statusCounts.degraded + " degraded");
+      if (statusCounts.fallback) parts.push(statusCounts.fallback + " fallback");
+      if (statusCounts.empty) parts.push(statusCounts.empty + " empty");
+      if (statusCounts.historyUnavailable) parts.push(statusCounts.historyUnavailable + " history unavailable");
+      if (statusCounts.unavailable) parts.push(statusCounts.unavailable + " unavailable");
+      if (statusCounts.rendererUnavailable) parts.push(statusCounts.rendererUnavailable + " renderer unavailable");
+      if (statusCounts.error) parts.push(statusCounts.error + " error");
       elements.platformFeedStatus.textContent = (parts.length ? parts.join(" / ") : "0 active") + " / " + enabled.length + " enabled";
     }
     updatePlatformLayerBadges();
@@ -8162,7 +8554,7 @@ void main() {
       var count = label && label.querySelector(".layer-count-badge");
       var feed = platformFeeds[layerId] || {};
       var itemCount = Array.isArray(feed.items) ? feed.items.length : 0;
-      var statusText = state.platformLayers[layerId] ? (feed.status || "loading") : "standby";
+      var statusText = state.platformLayers[layerId] ? (feed.renderError ? "renderer unavailable" : historicalAvailabilityLabel(layerId, feed) || feed.status || "loading") : "standby";
 
       if (count) {
         count.textContent = String(itemCount);
@@ -8183,10 +8575,10 @@ void main() {
     if (text.indexOf("loading") !== -1) {
       return "loading";
     }
-    if (text.indexOf("fallback") !== -1 || text.indexOf("token") !== -1 || text.indexOf("adapter") !== -1) {
+    if (text.indexOf("fallback") !== -1 || text.indexOf("token") !== -1 || text.indexOf("adapter") !== -1 || text.indexOf("snapshot") !== -1 || text === "propagated") {
       return "fallback";
     }
-    if (text.indexOf("error") !== -1 || text.indexOf("offline") !== -1 || text.indexOf("fail") !== -1) {
+    if (text.indexOf("error") !== -1 || text.indexOf("offline") !== -1 || text.indexOf("fail") !== -1 || text.indexOf("unavailable") !== -1) {
       return "error";
     }
     if (text.indexOf("empty") !== -1 || text.indexOf("standby") !== -1) {
@@ -8269,7 +8661,7 @@ void main() {
           kind: "platformPrimitive",
           name: platformItemDisplayName(layerId, item, definition, index),
           category: category,
-          status: item.status || sample.status || feed.status || "online",
+          status: platformDisplayStatus(layerId, item, sample, feed),
           source: item.source || item.provider || definition.source,
           lat: sample.lat,
           lon: sample.lon,
@@ -8295,7 +8687,7 @@ void main() {
         kind: "platform",
         name: item.name || record.definition.label,
         category: record.definition.category || "Intel",
-        status: item.status || (platformFeeds[record.layerId] && platformFeeds[record.layerId].status) || "online",
+        status: platformDisplayStatus(record.layerId, item, record.sample, platformFeeds[record.layerId] || {}),
         source: record.definition.source,
         lat: record.sample.lat,
         lon: record.sample.lon,
@@ -9518,7 +9910,7 @@ void main() {
         tileProviderError.retry = tileProviderError.timesRetried < 1;
         
         if (tileProviderError.timesRetried === 0) {
-          console.warn("ESRI tile error (will retry once):", tileProviderError.message);
+          debugLog("ESRI tile retry:", tileProviderError.message);
         }
       });
     }
@@ -12042,15 +12434,15 @@ void main() {
     hardeningManager.init();
     Orion.Runtime.RenderScheduler.init();
     initViewer();
-    Orion.Renderer.Orbital.init(viewer);
+    initPlatformRenderer("Orbital");
     Orion.Renderer.Infrastructure.CyberNetwork.init(viewer);
     Orion.Renderer.Infrastructure.UnderseaCables.init(viewer);
     Orion.Renderer.Infrastructure.PowerGrid.init(viewer);
     Orion.Renderer.Environment.SmokeSystem.init(viewer);
     Orion.Renderer.Environment.LightningSystem.init(viewer);
     Orion.Renderer.Imagery.init(viewer);
-    Orion.Renderer.Maritime.init(viewer);
-    Orion.Renderer.Aviation.init(viewer);
+    initPlatformRenderer("Maritime");
+    initPlatformRenderer("Aviation");
     Orion.Renderer.Cameras.init();
     
     

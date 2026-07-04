@@ -32,6 +32,7 @@
           supportsStaticMode: false,
           supportsHistorical: false,
           supportsLive: false,
+          timeCapability: "live-only",
           attribution: platformLayerDefinitions[layerId].source || "Unspecified",
           licensingNotes: ""
         };
@@ -58,6 +59,7 @@
           supportsStaticMode: !!providerState.supportsStaticMode,
           supportsHistorical: !!providerState.supportsHistorical,
           supportsLive: !!providerState.supportsLive,
+          timeCapability: providerState.timeCapability || (providerState.supportsHistorical ? "historical-query" : "live-only"),
           minimumRefreshMs: providerState.minimumRefreshMs || platformLayerDefinitions[layerId].refreshMs || 60000,
           maximumRecommendedRequestFrequencyMs: providerState.maximumRecommendedRequestFrequencyMs || platformLayerDefinitions[layerId].refreshMs || 60000,
           requiresBackendProxy: !!providerState.requiresBackendProxy,
@@ -207,6 +209,7 @@
           supportsStaticMode: p.supportsStaticMode,
           supportsHistorical: p.supportsHistorical,
           supportsLive: p.supportsLive,
+          timeCapability: p.timeCapability,
           attribution: p.attribution,
           successRate: p.totalAttempts > 0 ? (p.totalSuccesses / p.totalAttempts * 100).toFixed(1) + '%' : 'N/A'
         };
@@ -229,6 +232,7 @@
         supportsStaticMode: p.supportsStaticMode,
         supportsHistorical: p.supportsHistorical,
         supportsLive: p.supportsLive,
+        timeCapability: p.timeCapability,
         minimumRefreshMs: p.minimumRefreshMs,
         maximumRecommendedRequestFrequencyMs: p.maximumRecommendedRequestFrequencyMs,
         requiresBackendProxy: p.requiresBackendProxy,

@@ -180,6 +180,8 @@
       var height = this.viewer.camera.positionCartographic.height;
       var active = {};
       var now = Date.now();
+      var simulationMode = (Orion.SimulationClock && Orion.SimulationClock.mode) || "live";
+      var liveMode = simulationMode === "live";
 
       if (height > 12000000) {
         this.collection.removeAll();
@@ -193,7 +195,7 @@
         if (!record) return;
         active[record.id] = true;
 
-        var sample = self.interpolateRecord(record);
+        var sample = liveMode ? self.interpolateRecord(record) : Orion.Telemetry.Samplers.intel(item, time);
         if (!sample || !Number.isFinite(sample.lon) || !Number.isFinite(sample.lat)) return;
 
         var isStale = now - record.sourceTimestamp > self.staleMs;
