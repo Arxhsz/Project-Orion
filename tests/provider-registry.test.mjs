@@ -226,6 +226,15 @@ test("GOES imagery uses one global WMS composite instead of sparse WMTS tiles", 
   assert.equal(source.includes('addLayer("goesWest"'), false);
 });
 
+test("static hosting uses WMS snapshots for sparse timed GIBS products", () => {
+  const source = fs.readFileSync(path.join(root, "app.js"), "utf8");
+
+  assert.match(source, /GIBS_WMS_ROOT = "https:\/\/gibs\.earthdata\.nasa\.gov\/wms\/epsg4326\/best\/wms\.cgi"/);
+  assert.match(source, /isStaticHostMode\(\) && definition\.timed/);
+  assert.match(source, /definition\.layers \|\| \[definition\.layer\]/);
+  assert.match(source, /: formatDate\(effectiveGibsDate\(date\)\)/);
+});
+
 test("historical timeline labels live-only aircraft as latest snapshot", () => {
   const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
   const primitiveRenderer = fs.readFileSync(path.join(root, "orion-renderer-primitive.js"), "utf8");
@@ -256,7 +265,7 @@ test("platform renderers are rebound and guarded after boot recovery", () => {
 test("html asset version is bumped for updated runtime modules", () => {
   const source = fs.readFileSync(path.join(root, "index.html"), "utf8");
 
-  assert.match(source, /app\.js\?v=20260810-grid-timeline17/);
+  assert.match(source, /app\.js\?v=20260810-grid-timeline18/);
   assert.match(source, /orion-config\.js\?v=20260810-grid-timeline9/);
   assert.match(source, /orion-onboarding\.js\?v=20260809-grid-timeline8/);
   assert.match(source, /cameranet_frontend\.js\?v=20260809-grid-timeline9/);

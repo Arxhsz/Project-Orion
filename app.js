@@ -15,6 +15,7 @@
   var APP_VERSION = Orion.Config.Constants.APP_VERSION || "1.1.2";
   var USER_STATE_KEY = "orion:userState:v2";
   var NOAA_RADAR_MAPSERVER_URL = "https://mapservices.weather.noaa.gov/eventdriven/rest/services/radar/radar_base_reflectivity/MapServer";
+  var GIBS_WMS_ROOT = "https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi";
   var DEFAULT_UPDATE_INTERVAL_MS = 10 * 60 * 1000;
   var UPDATE_CADENCE_BY_MODE = {
     satellite: 20 * 60 * 1000,
@@ -10315,15 +10316,19 @@ void main() {
   }
 
   function createGibsProvider(definition, date) {
-    if (definition.providerType === "wmsSnapshot") {
+    var useWmsSnapshot = definition.providerType === "wmsSnapshot" || (isStaticHostMode() && definition.timed);
+
+    if (useWmsSnapshot) {
+      var snapshotRectangle = definition.rectangle || [-180, -85, 180, 85];
+      var snapshotLayers = definition.layers || [definition.layer];
       var snapshotParams = [
         "service=WMS",
         "request=GetMap",
         "version=1.1.1",
-        "layers=" + encodeURIComponent(definition.layers.join(",")),
+        "layers=" + encodeURIComponent(snapshotLayers.join(",")),
         "styles=",
         "srs=EPSG%3A4326",
-        "bbox=" + encodeURIComponent(definition.rectangle.join(",")),
+        "bbox=" + encodeURIComponent(snapshotRectangle.join(",")),
         "width=2048",
         "height=1024",
         "format=image%2Fpng",
@@ -10331,16 +10336,19 @@ void main() {
       ];
 
       if (definition.timed) {
-        var snapshotTime = effectiveGoesFrameTime(date, definition.cadenceHours);
-        snapshotParams.push("time=" + encodeURIComponent(snapshotTime.toISOString().replace(/\.000Z$/, "Z")));
+        var snapshotTime = definition.providerType === "wmsSnapshot"
+          ? effectiveGoesFrameTime(date, definition.cadenceHours).toISOString().replace(/\.000Z$/, "Z")
+          : formatDate(effectiveGibsDate(date));
+        snapshotParams.push("time=" + encodeURIComponent(snapshotTime));
       }
 
-      var snapshotUrl = definition.root + "?" + snapshotParams.join("&");
+      var snapshotRoot = definition.providerType === "wmsSnapshot" ? definition.root : GIBS_WMS_ROOT;
+      var snapshotUrl = snapshotRoot + "?" + snapshotParams.join("&");
 
       return new Cesium.SingleTileImageryProvider({
         url: snapshotUrl,
-        rectangle: Cesium.Rectangle.fromDegrees.apply(Cesium.Rectangle, definition.rectangle),
-        credit: "NASA GIBS / NOAA GOES"
+        rectangle: Cesium.Rectangle.fromDegrees.apply(Cesium.Rectangle, snapshotRectangle),
+        credit: definition.providerType === "wmsSnapshot" ? "NASA GIBS / NOAA GOES" : "NASA GIBS"
       });
     }
 
