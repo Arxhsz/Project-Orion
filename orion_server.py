@@ -11,6 +11,7 @@ import os
 import io
 import copy
 from datetime import datetime, timedelta, UTC
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError, as_completed
 import re
 import struct
 import sys
@@ -67,6 +68,7 @@ CELESTRAK_GROUPS = {
     "iot": ["swarm", "orbcomm", "globalstar"],
 }
 CELESTRAK_TLE_URL = "https://celestrak.org/NORAD/elements/gp.php?GROUP={group}&FORMAT=tle"
+CELESTRAK_OMM_URL = "https://celestrak.org/NORAD/elements/gp.php?GROUP={group}&FORMAT=JSON"
 CELESTRAK_SUPPLEMENTAL_URL = "https://celestrak.org/NORAD/elements/supplemental/sup-gp.php?FILE={file}&FORMAT=tle"
 USGS_EARTHQUAKE_FEEDS = {
     "1.0_day": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/1.0_day.geojson",
@@ -90,7 +92,11 @@ NYC_CAMERAS_URL = "https://data.cityofnewyork.us/resource/qcdj-rwhu.json"
 COUNTRIES_GEOJSON_URL = "https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson"
 US_STATES_GEOJSON_URL = "https://raw.githubusercontent.com/PublicaMundi/MappingAPI/master/data/geojson/us-states.json"
 SUBMARINE_CABLE_GEOJSON_URL = "https://www.submarinecablemap.com/api/v3/cable/cable-geo.json"
-OVERPASS_INTERPRETER_URL = "https://overpass-api.de/api/interpreter"
+OVERPASS_INTERPRETER_URLS = (
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
+)
 CSP_HEADER = (
     "default-src 'self'; "
     "script-src 'self' blob: https://cdn.jsdelivr.net 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'; "
@@ -102,6 +108,7 @@ CSP_HEADER = (
     "connect-src 'self' data: https://cdn.jsdelivr.net https://gibs.earthdata.nasa.gov https://server.arcgisonline.com https://tile.openstreetmap.org https://mapservices.weather.noaa.gov https://api.open-meteo.com https://raw.githubusercontent.com https://nominatim.openstreetmap.org https://fl511.com https://divas.cloud https://*.divas.cloud https://*.divas.cloud:8200 https://data.seattle.gov https://data.cityofnewyork.us; "
     "worker-src 'self' blob: data: https://cdn.jsdelivr.net; "
     "child-src blob:; "
+    "frame-src 'self' https://g1.ipcamlive.com https://www.youtube-nocookie.com; "
     "font-src 'self' data: https://cdn.jsdelivr.net; "
     "object-src 'none'; "
     "base-uri 'self'"
@@ -1284,6 +1291,7 @@ def power_grid_payload(bbox_value=None, force=False):
         payload = dict(cached["payload"])
         payload["cached"] = True
         return payload
+    stale_payload = dict(cached["payload"]) if cached else None
 
     south = bbox["south"]
     west = bbox["west"]
@@ -1297,14 +1305,41 @@ def power_grid_payload(bbox_value=None, force=False):
     out tags geom 240;
     """
     data = urlencode({"data": query}).encode("utf-8")
-    request = Request(OVERPASS_INTERPRETER_URL, data=data, headers={
-        "User-Agent": "Project-Orion/1.0 (local power-grid visualization)",
-        "Accept": "application/json",
-        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-    })
+    def fetch_overpass(endpoint):
+        request = Request(endpoint, data=data, headers={
+            "User-Agent": "Project-Orion/1.0 (local power-grid visualization)",
+            "Accept": "application/json",
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        })
+        with urlopen(request, timeout=16) as response:
+            return json.loads(response.read().decode("utf-8", errors="replace"))
 
-    with urlopen(request, timeout=18) as response:
-        upstream = json.loads(response.read().decode("utf-8", errors="replace"))
+    upstream = None
+    last_error = None
+    executor = ThreadPoolExecutor(max_workers=len(OVERPASS_INTERPRETER_URLS))
+    futures = [executor.submit(fetch_overpass, endpoint) for endpoint in OVERPASS_INTERPRETER_URLS]
+    try:
+        for future in as_completed(futures, timeout=18):
+            try:
+                upstream = future.result()
+                break
+            except UPSTREAM_PAYLOAD_ERRORS as error:
+                last_error = error
+    except FutureTimeoutError as error:
+        last_error = last_error or error
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+
+    if upstream is None:
+        if stale_payload:
+            stale_payload.update({
+                "cached": True,
+                "stale": True,
+                "provider_health": "degraded",
+                "notice": type(last_error).__name__ if last_error else "OverpassUnavailable",
+            })
+            return stale_payload
+        raise last_error or RuntimeError("No Overpass endpoint returned power infrastructure")
 
     features = []
     for element in upstream.get("elements") or []:
@@ -2514,7 +2549,7 @@ class OrionHandler(SimpleHTTPRequestHandler):
         requested_group = (params.get("group") or ["stations"])[0].strip().lower()
         group = CELESTRAK_GROUPS.get(requested_group, "stations")
         group_label = ",".join(group) if isinstance(group, list) else str(group)
-        cache_key = f"tle:{requested_group}:{group_label}"
+        cache_key = f"omm-v1:{requested_group}:{group_label}"
 
         cached = self.cached_feed(cache_key, 6 * 60 * 60)
         if cached is not None:
@@ -2522,7 +2557,7 @@ class OrionHandler(SimpleHTTPRequestHandler):
             return
 
         try:
-            raw = self.fetch_tle_group(group)
+            records = self.fetch_omm_group(group)
 
             payload = {
                 "source": "CelesTrak",
@@ -2530,13 +2565,14 @@ class OrionHandler(SimpleHTTPRequestHandler):
                 "groups": group if isinstance(group, list) else [group],
                 "generated": int(time.time()),
                 "mode": "live",
-                "count": max(0, len([line for line in raw.splitlines() if line.startswith("1 ") ])),
+                "count": len(records),
                 "fetched": int(time.time()),
-                "tle": raw,
+                "omm": records,
+                "tle": "",
             }
             self.store_cached_feed(cache_key, payload)
             self.send_json(payload, cache_seconds=300)
-        except (HTTPError, URLError, TimeoutError) as error:
+        except UPSTREAM_PAYLOAD_ERRORS as error:
             if requested_group == "starlink":
                 try:
                     raw = self.filter_tle_by_name(self.fetch_tle_group("active"), "STARLINK", 300)
@@ -2553,7 +2589,21 @@ class OrionHandler(SimpleHTTPRequestHandler):
                     self.store_cached_feed(cache_key, payload)
                     self.send_json(payload, cache_seconds=300)
                     return
-                except (HTTPError, URLError, TimeoutError):
+                except UPSTREAM_PAYLOAD_ERRORS:
+                    pass
+
+            snapshot_path = ROOT / "pages-data" / "live" / "satellites" / f"{requested_group}.json"
+            if snapshot_path.exists():
+                try:
+                    payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
+                    if payload.get("count", 0) > 0:
+                        payload["mode"] = "cached-pages-snapshot"
+                        payload["provider_health"] = "degraded"
+                        payload["error"] = type(error).__name__
+                        self.store_cached_feed(cache_key, payload)
+                        self.send_json(payload, cache_seconds=300)
+                        return
+                except (OSError, json.JSONDecodeError):
                     pass
 
             payload = {
@@ -3018,6 +3068,43 @@ class OrionHandler(SimpleHTTPRequestHandler):
         with urlopen(request, timeout=20) as response:
             return response.read().decode("utf-8", errors="replace")
 
+    def fetch_omm_group(self, group):
+        if isinstance(group, list):
+            records = []
+            seen_catalog_ids = set()
+            last_error = None
+
+            for child_group in group:
+                try:
+                    child_records = self.fetch_omm_group(child_group)
+                except UPSTREAM_PAYLOAD_ERRORS as error:
+                    last_error = error
+                    continue
+
+                for record in child_records:
+                    catalog_id = str(record.get("NORAD_CAT_ID") or record.get("OBJECT_ID") or "")
+                    if not catalog_id or catalog_id in seen_catalog_ids:
+                        continue
+                    seen_catalog_ids.add(catalog_id)
+                    records.append(record)
+
+            if records:
+                return records
+            if last_error is not None:
+                raise last_error
+            raise URLError("No CelesTrak aggregate groups loaded")
+
+        request = Request(
+            CELESTRAK_OMM_URL.format(group=quote(str(group).upper(), safe="")),
+            headers={"User-Agent": "Project-Orion/1.0"},
+        )
+        with urlopen(request, timeout=24) as response:
+            payload = json.loads(response.read().decode("utf-8", errors="replace"))
+
+        if not isinstance(payload, list):
+            raise URLError("CelesTrak OMM response was not a JSON array")
+        return payload
+
     def filter_tle_by_name(self, raw, needle, max_records):
         lines = [line.rstrip() for line in raw.splitlines() if line.strip()]
         filtered = []
@@ -3163,6 +3250,20 @@ class OrionHandler(SimpleHTTPRequestHandler):
         try:
             cameras, providers_used = get_all_cameras(bbox, provider_filter, state_filter)
             total_matches = len(cameras)
+            if bbox:
+                west, south, east, north = bbox
+                center_lon = (west + east) / 2
+                center_lat = (south + north) / 2
+                lon_scale = max(0.2, math.cos(math.radians(center_lat)))
+
+                def camera_priority(camera):
+                    media_priority = 0 if camera.get("embed_url") else 1
+                    lat = float(camera.get("lat") or 0)
+                    lon = float(camera.get("lon") or 0)
+                    distance = (lat - center_lat) ** 2 + ((lon - center_lon) * lon_scale) ** 2
+                    return media_priority, distance, str(camera.get("id") or "")
+
+                cameras.sort(key=camera_priority)
             cameras = cameras[:limit]
             CAMERA_BY_ID.update({str(camera.get("id")): camera for camera in cameras})
 
@@ -3276,7 +3377,7 @@ class OrionHandler(SimpleHTTPRequestHandler):
             upstream = f"https://fl511.com/map/Cctv/{quote(raw_id, safe='')}"
 
         if not upstream:
-            self.send_response(200)
+            self.send_response(404)
             self.send_header("Content-Type", "image/svg+xml")
             payload = camera_frame_svg({"id": camera_id, "name": "Camera feed", "lat": 0, "lon": 0, "provider": "FL511", "category": "snapshot", "status": "unavailable"}, 0)
             self.send_header("Cache-Control", "private, max-age=10")
@@ -3286,9 +3387,14 @@ class OrionHandler(SimpleHTTPRequestHandler):
             return
 
         try:
+            source_url = (camera or {}).get("source_url") or upstream
+            parsed_source = urlparse(source_url)
+            referer = f"{parsed_source.scheme}://{parsed_source.netloc}/" if parsed_source.scheme and parsed_source.netloc else upstream
+            if str(camera_id).startswith("fl511-"):
+                referer = "https://fl511.com/"
             request = Request(upstream, headers={
                 "User-Agent": "Mozilla/5.0 (Project Orion CameraNet)",
-                "Referer": "https://fl511.com/",
+                "Referer": referer,
                 "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
             })
             with urlopen(request, timeout=12) as response:
@@ -3301,9 +3407,9 @@ class OrionHandler(SimpleHTTPRequestHandler):
             self.send_header("Content-Length", str(len(payload)))
             self.end_headers()
             self.write_payload(payload)
-        except Exception:
+        except UPSTREAM_FETCH_ERRORS:
             payload = camera_frame_svg(camera or {"id": camera_id, "name": "Camera feed", "lat": 0, "lon": 0, "provider": "FL511", "category": "snapshot", "status": "unavailable"}, 0)
-            self.send_response(200)
+            self.send_response(502)
             self.send_header("Content-Type", "image/svg+xml")
             self.send_header("Cache-Control", "private, max-age=10")
             self.send_header("Content-Length", str(len(payload)))

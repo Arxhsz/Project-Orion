@@ -18,6 +18,7 @@
     snapshotRefreshTimer: null,
     removeMoveEndListener: null,
     currentHls: null,
+    currentResolverController: null,
     providerStatus: "standby",
     providerCount: 0,
     lastError: "",
@@ -26,18 +27,15 @@
     cacheLimit: 40,
     activeFetchKey: "",
     activeFetchPromise: null,
-    renderSignature: "",
-    usPrefetchStarted: false,
-    cameraChangedTimer: null,
-    removeCameraChangedListener: null
+    renderSignature: ""
   };
 
   var CAMERA_CONFIG = {
     provider: "all",
     fetchDebounceMs: 200,
     minFetchInterval: 220,
-    maxCamerasToRender: 3000,
-    maxMetadata: 32000,
+    maxCamerasToRender: 1600,
+    maxMetadata: 12000,
     closeHeight: 900000,
     midHeight: 2600000,
     farHeight: 8200000,
@@ -70,6 +68,11 @@
   }
 
   function disposePlayback() {
+    if (cameraNetState.currentResolverController) {
+      cameraNetState.currentResolverController.abort();
+      cameraNetState.currentResolverController = null;
+    }
+
     if (cameraNetState.currentHls) {
       try {
         cameraNetState.currentHls.destroy();
@@ -121,6 +124,31 @@
     };
   }
 
+  function includeTargetInBbox(bbox) {
+    var target = window.appState && window.appState.target;
+    if (!bbox || !target || !Number.isFinite(target.lat) || !Number.isFinite(target.lon)) {
+      return bbox;
+    }
+
+    var lonSpan = Math.max(0.1, bbox.east - bbox.west);
+    var latSpan = Math.max(0.1, bbox.north - bbox.south);
+    var nearView = target.lon >= bbox.west - Math.max(2, lonSpan * 0.5) &&
+      target.lon <= bbox.east + Math.max(2, lonSpan * 0.5) &&
+      target.lat >= bbox.south - Math.max(2, latSpan * 0.5) &&
+      target.lat <= bbox.north + Math.max(2, latSpan * 0.5);
+
+    if (!nearView) {
+      return bbox;
+    }
+
+    return {
+      west: clamp(Math.min(bbox.west, target.lon - 0.3), -180, 180),
+      south: clamp(Math.min(bbox.south, target.lat - 0.3), -85, 85),
+      east: clamp(Math.max(bbox.east, target.lon + 0.3), -180, 180),
+      north: clamp(Math.max(bbox.north, target.lat + 0.3), -85, 85)
+    };
+  }
+
   function getVisibleBbox(viewer) {
     if (!viewer || !viewer.camera || !viewer.scene) {
       return USA_BBOX;
@@ -130,7 +158,7 @@
     var bbox = normalizeBbox(bboxFromRectangle(rectangle));
 
     if (bbox) {
-      return bbox;
+      return includeTargetInBbox(bbox);
     }
 
     var canvas = viewer.scene.canvas;
@@ -152,12 +180,12 @@
     var lons = cartos.map(function (carto) { return Cesium.Math.toDegrees(carto.longitude); });
     var lats = cartos.map(function (carto) { return Cesium.Math.toDegrees(carto.latitude); });
 
-    return normalizeBbox({
+    return includeTargetInBbox(normalizeBbox({
       west: Math.min.apply(null, lons),
       south: Math.min.apply(null, lats),
       east: Math.max.apply(null, lons),
       north: Math.max.apply(null, lats)
-    }) || USA_BBOX;
+    })) || USA_BBOX;
   }
 
   function bboxKey(bbox, height) {
@@ -238,9 +266,9 @@
       return CAMERA_CONFIG.maxMetadata;
     }
     if (height > CAMERA_CONFIG.midHeight) {
-      return 18000;
+      return 6000;
     }
-    return 4200;
+    return 3000;
   }
 
   function fetchCamerasForBbox(viewer, bbox, key) {
@@ -275,16 +303,26 @@
       })
       .then(function (data) {
         var cameras = Array.isArray(data.cameras) ? data.cameras : [];
+        if (isStaticHostMode()) {
+          cameras = cameras.filter(function (camera) {
+            var lat = Number(camera.lat);
+            var lon = Number(camera.lon);
+            return Number.isFinite(lat) && Number.isFinite(lon) &&
+              lon >= bbox.west && lon <= bbox.east && lat >= bbox.south && lat <= bbox.north;
+          }).slice(0, metadataLimit(height));
+        }
         cameraNetState.providerStatus = cameras.length ? "active" : (data.error ? "error" : "empty");
         cameraNetState.providerCount = data.total || data.count || cameras.length;
         cameraNetState.lastError = data.error || "";
         rememberCameraCache(key || bboxStr, bbox, cameras, cameraNetState.providerCount);
+        syncPlatformFeedState(cameras.length ? "online" : (data.error ? "offline" : "empty"), cameras, data.error);
         refreshIntelList();
         return cameras;
       })
       .catch(function (error) {
         cameraNetState.providerStatus = "error";
         cameraNetState.lastError = error.message || String(error);
+        syncPlatformFeedState("offline", null, cameraNetState.lastError);
         refreshIntelList();
         return [];
       })
@@ -296,22 +334,6 @@
       });
 
     return cameraNetState.activeFetchPromise;
-  }
-
-  function prefetchContinentalUS(viewer) {
-    if (cameraNetState.usPrefetchStarted || !viewer || !cameraNetState.enabled) {
-      return;
-    }
-    cameraNetState.usPrefetchStarted = true;
-    var bbox = normalizeBbox(USA_BBOX);
-    var height = viewer.camera.positionCartographic.height;
-    var key = "us-continental-" + fetchBboxKey(bbox, height);
-    fetchCamerasForBbox(viewer, bbox, key).then(function () {
-      if (cameraNetState.enabled) {
-        cameraNetState.renderSignature = "";
-        requestVisibleCameras(viewer, true);
-      }
-    });
   }
 
   function primeClusterViewport(viewer, cluster) {
@@ -341,6 +363,19 @@
     if (typeof window.refreshOrionIntelList === "function") {
       window.refreshOrionIntelList();
     }
+  }
+
+  function syncPlatformFeedState(status, cameras, error) {
+    if (!window.platformFeeds) {
+      return;
+    }
+    var current = window.platformFeeds.cameras || {};
+    window.platformFeeds.cameras = Object.assign({}, current, {
+      status: status,
+      items: Array.isArray(cameras) ? cameras : (current.items || []),
+      error: error || "",
+      loadedAt: Date.now()
+    });
   }
 
   function clusterStep(height) {
@@ -379,7 +414,7 @@
       if (!grid[key]) {
         grid[key] = {
           type: "cluster",
-          cameras: [],
+          camera: camera,
           latSum: 0,
           lonSum: 0,
           lat: lat,
@@ -388,7 +423,6 @@
         };
       }
 
-      grid[key].cameras.push(camera);
       grid[key].latSum += lat;
       grid[key].lonSum += lon;
       grid[key].count += 1;
@@ -399,8 +433,9 @@
     return Object.keys(grid).map(function (key) {
       var item = grid[key];
       if (item.count === 1) {
-        return { type: "camera", camera: item.cameras[0], lat: item.lat, lon: item.lon, count: 1 };
+        return { type: "camera", camera: item.camera, lat: item.lat, lon: item.lon, count: 1 };
       }
+      item.camera = null;
       return item;
     });
   }
@@ -631,15 +666,15 @@
     }
 
     var cameraHeight = viewer.camera.positionCartographic.height;
-    var prioritized = prioritizeCamerasForView(viewer, cameraNetState.cameras, CAMERA_CONFIG.maxCamerasToRender);
-    var clustered = clusterCameras(prioritized, cameraHeight);
+    var clustered = clusterCameras(cameraNetState.cameras, cameraHeight);
+    var prioritized = prioritizeCamerasForView(viewer, clustered, CAMERA_CONFIG.maxCamerasToRender);
     var signature = [
       cameraNetState.cameras.length,
       prioritized.length,
       Math.round(cameraHeight / 45000),
       viewSignature(viewer),
       cameraNetState.selectedCamera ? cameraNetState.selectedCamera.id : "",
-      clustered.length
+      prioritized.length
     ].join(":");
 
     if (signature === cameraNetState.renderSignature) {
@@ -648,9 +683,9 @@
     }
 
     cameraNetState.renderSignature = signature;
-    cameraNetState.clusters = clustered;
+    cameraNetState.clusters = prioritized;
 
-    var renderItems = clustered.slice(0, CAMERA_CONFIG.maxCamerasToRender);
+    var renderItems = prioritized;
     if (cameraHeight > CAMERA_CONFIG.farHeight) {
       renderItems = renderItems.filter(function (item) {
         return item.type === "cluster" && item.count > 1;
@@ -670,7 +705,7 @@
         return;
       }
 
-      var camera = item.camera || (item.cameras && item.cameras[0]);
+      var camera = item.camera;
       if (camera) {
         var cameraEnt = createCameraEntity(viewer, camera);
         nextCameraIds[cameraEnt.id] = true;
@@ -756,13 +791,31 @@
     }, force ? 0 : CAMERA_CONFIG.fetchDebounceMs);
   }
 
+  function renderEmbeddedFeed(camera) {
+    var frame = document.getElementById("cameraFrame");
+    if (!frame || !camera.embed_url) {
+      return false;
+    }
+
+    frame.innerHTML = [
+      "<div class='camera-live-shell camera-embed-shell'>",
+      "<iframe title='", escapeHtml(camera.name || "Public live camera"), "' src='", escapeHtml(camera.embed_url), "' allow='autoplay; fullscreen; picture-in-picture' allowfullscreen loading='eager' referrerpolicy='no-referrer-when-downgrade'></iframe>",
+      "<span class='camera-live-badge'>LIVE</span>",
+      "<span class='camera-live-clock'>PUBLIC EMBED</span>",
+      "</div>"
+    ].join("");
+    return true;
+  }
+
   function renderSnapshot(camera, label) {
     var frame = document.getElementById("cameraFrame");
     if (!frame) {
       return;
     }
 
-    var snapshotUrl = camera.snapshot_url || (!isStaticHostMode() && camera.id ? "/camera/snapshot?id=" + encodeURIComponent(camera.id) : "");
+    var snapshotUrl = isStaticHostMode()
+      ? (camera.upstream_snapshot_url || camera.snapshot_source_url || "")
+      : (camera.snapshot_url || (camera.id ? "/camera/snapshot?id=" + encodeURIComponent(camera.id) : ""));
     if (!snapshotUrl) {
       frame.innerHTML = "<div class='camera-feed-message'>Snapshot unavailable</div>";
       return;
@@ -775,10 +828,20 @@
     frame.innerHTML = [
       "<div class='camera-live-shell generated'>",
       "<img id='cameraNetSnapshot' alt='", escapeHtml(camera.name || "CameraNet camera"), "' src='", escapeHtml(cacheBust(snapshotUrl)), "'>",
-      "<span class='camera-live-badge'>LIVE</span>",
+      "<span class='camera-live-badge camera-snapshot-badge'>SNAPSHOT</span>",
       "<span class='camera-live-clock'>", escapeHtml(label || "SNAPSHOT"), "</span>",
       "</div>"
     ].join("");
+
+    var initialImage = document.getElementById("cameraNetSnapshot");
+    if (initialImage) {
+      initialImage.addEventListener("error", function () {
+        disposePlayback();
+        if (frame.contains(initialImage)) {
+          frame.innerHTML = "<div class='camera-feed-message'><strong>Camera media unavailable</strong><span>The provider did not return a usable image.</span></div>";
+        }
+      }, { once: true });
+    }
 
     cameraNetState.snapshotRefreshTimer = window.setInterval(function () {
       var image = document.getElementById("cameraNetSnapshot");
@@ -811,7 +874,12 @@
       return;
     }
 
+    var fallbackStarted = false;
     var fallback = function () {
+      if (fallbackStarted) {
+        return;
+      }
+      fallbackStarted = true;
       disposePlayback();
       renderSnapshot(camera, "LIVE SNAPSHOT");
     };
@@ -833,6 +901,8 @@
     }, { once: true });
 
     if (window.Hls && Hls.isSupported()) {
+      var networkRecoveries = 0;
+      var mediaRecoveries = 0;
       var hls = new Hls({
         enableWorker: true,
         lowLatencyMode: false,
@@ -862,12 +932,18 @@
       hls.on(Hls.Events.ERROR, function (_event, data) {
         if (data && data.fatal) {
           if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-            hls.startLoad();
-            return;
+            networkRecoveries += 1;
+            if (networkRecoveries <= 2) {
+              hls.startLoad();
+              return;
+            }
           }
           if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-            hls.recoverMediaError();
-            return;
+            mediaRecoveries += 1;
+            if (mediaRecoveries <= 1) {
+              hls.recoverMediaError();
+              return;
+            }
           }
           fallback();
         }
@@ -923,8 +999,18 @@
     ].join("");
     panel.classList.remove("hidden");
 
+    if (String(camera.stream_type || "").toLowerCase() === "embed" && camera.embed_url) {
+      renderEmbeddedFeed(camera);
+      return;
+    }
+
     if (camera.stream_type && String(camera.stream_type).toLowerCase() === "hls" && camera.stream_url) {
-      fetch(camera.stream_url, { headers: { Accept: "application/json" } })
+      var controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+      cameraNetState.currentResolverController = controller;
+      fetch(camera.stream_url, {
+        headers: { Accept: "application/json" },
+        signal: controller ? controller.signal : undefined
+      })
         .then(function (response) {
           return response.json().then(function (data) {
             data.httpStatus = response.status;
@@ -936,13 +1022,18 @@
           });
         })
         .then(function (streamData) {
+          cameraNetState.currentResolverController = null;
           if (!streamData.ok || streamData.error || !streamData.stream_url) {
             renderSnapshot(Object.assign({}, camera, { snapshot_url: streamData.snapshot_url || camera.snapshot_url }), "SNAPSHOT FALLBACK");
             return;
           }
           playHls(camera, streamData);
         })
-        .catch(function () {
+        .catch(function (error) {
+          cameraNetState.currentResolverController = null;
+          if (error && error.name === "AbortError") {
+            return;
+          }
           renderSnapshot(camera, "SNAPSHOT FALLBACK");
         });
       return;
@@ -1033,39 +1124,16 @@
       });
     }
 
-    if (!cameraNetState.removeCameraChangedListener) {
-      cameraNetState.removeCameraChangedListener = viewer.camera.changed.addEventListener(function () {
-        if (!cameraNetState.enabled) {
-          return;
-        }
-        window.clearTimeout(cameraNetState.cameraChangedTimer);
-        cameraNetState.cameraChangedTimer = window.setTimeout(function () {
-          queueVisibleCameraRequest(viewer, false);
-        }, 100);
-      });
-    }
-
     queueVisibleCameraRequest(viewer, true);
-    window.setTimeout(function () {
-      prefetchContinentalUS(viewer);
-    }, 1400);
   }
 
   function disableCameraNet(viewer) {
     cameraNetState.enabled = false;
     disposePlayback();
 
-    window.clearTimeout(cameraNetState.cameraChangedTimer);
-    cameraNetState.cameraChangedTimer = null;
-
     if (cameraNetState.removeMoveEndListener) {
       cameraNetState.removeMoveEndListener();
       cameraNetState.removeMoveEndListener = null;
-    }
-
-    if (cameraNetState.removeCameraChangedListener) {
-      cameraNetState.removeCameraChangedListener();
-      cameraNetState.removeCameraChangedListener = null;
     }
 
     if (viewer) {
@@ -1078,6 +1146,7 @@
     cameraNetState.selectedCamera = null;
     cameraNetState.providerStatus = "standby";
     cameraNetState.renderSignature = "";
+    syncPlatformFeedState("standby", [], "");
   }
 
   if (Orion) {

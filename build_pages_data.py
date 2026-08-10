@@ -17,6 +17,7 @@ OUT = ROOT / "pages-data" / "live"
 
 class TleClient:
     fetch_tle_group = orion_server.OrionHandler.fetch_tle_group
+    fetch_omm_group = orion_server.OrionHandler.fetch_omm_group
     filter_tle_by_name = orion_server.OrionHandler.filter_tle_by_name
 
 
@@ -43,31 +44,42 @@ def build_satellites():
     log("building satellite snapshots")
     client = TleClient()
     for requested_group, group in orion_server.CELESTRAK_GROUPS.items():
+        output_path = OUT / "satellites" / f"{requested_group}.json"
         try:
-            raw = client.fetch_tle_group(group)
+            records = client.fetch_omm_group(group)
             payload = {
                 "source": "CelesTrak",
                 "group": requested_group,
                 "groups": group if isinstance(group, list) else [group],
                 "generated": int(time.time()),
                 "mode": "pages-snapshot",
-                "count": max(0, len([line for line in raw.splitlines() if line.startswith("1 ")])),
+                "count": len(records),
                 "fetched": int(time.time()),
-                "tle": raw,
-            }
-        except Exception as error:
-            payload = {
-                "source": "CelesTrak",
-                "group": requested_group,
-                "groups": group if isinstance(group, list) else [group],
-                "error": type(error).__name__,
-                "generated": int(time.time()),
-                "mode": "pages-error",
-                "count": 0,
-                "fetched": None,
+                "omm": records,
                 "tle": "",
             }
-        write_json(OUT / "satellites" / f"{requested_group}.json", payload)
+        except Exception as error:
+            try:
+                payload = json.loads(output_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                payload = None
+            if payload and payload.get("count", 0) > 0:
+                payload["mode"] = "pages-stale-if-error"
+                payload["error"] = type(error).__name__
+            else:
+                payload = {
+                    "source": "CelesTrak",
+                    "group": requested_group,
+                    "groups": group if isinstance(group, list) else [group],
+                    "error": type(error).__name__,
+                    "generated": int(time.time()),
+                    "mode": "pages-error",
+                    "count": 0,
+                    "fetched": None,
+                    "omm": [],
+                    "tle": "",
+                }
+        write_json(output_path, payload)
 
 
 def build_earthquakes():
@@ -230,6 +242,8 @@ def build_cameras():
                 value = item.get(key)
                 if isinstance(value, str) and value.startswith("/"):
                     item.pop(key, None)
+            if not (item.get("embed_url") or item.get("upstream_snapshot_url") or item.get("snapshot_source_url")):
+                continue
             clean.append(item)
         payload = {
             "source": "CameraNet pages snapshot",

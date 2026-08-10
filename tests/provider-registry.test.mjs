@@ -169,11 +169,16 @@ test("live provider fetches tolerate incomplete upstream reads", () => {
 
 test("power grid refreshes when the viewport region changes", () => {
   const source = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  const server = fs.readFileSync(path.join(root, "orion_server.py"), "utf8");
 
   assert.match(source, /lastViewportRegionKeys/);
   assert.match(source, /cameraRegionQuery\("powerGrid"\)/);
+  assert.match(source, /var hasTarget = typeof state\.target\.lon === "number"/);
+  assert.match(source, /if \(hasTarget \|\| \(hasRegionalView/);
   assert.match(source, /viewportBoundPlatformLayers\.forEach/);
   assert.match(source, /refreshPlatformLayer\(layerId, true\)/);
+  assert.match(server, /ThreadPoolExecutor\(max_workers=len\(OVERPASS_INTERPRETER_URLS\)\)/);
+  assert.match(server, /"stale": True/);
 });
 
 test("transient basemap tile retries do not warn-spam the console", () => {
@@ -192,7 +197,7 @@ test("historical timeline labels live-only aircraft as latest snapshot", () => {
   assert.match(app, /propagated/);
   assert.match(app, /Aircraft history is not available/);
   assert.match(primitiveRenderer, /var liveMode = simulationMode === "live"/);
-  assert.match(primitiveRenderer, /liveMode \? self\.interpolateRecord\(record\) : Orion\.Telemetry\.Samplers\.intel\(item, time\)/);
+  assert.match(primitiveRenderer, /Orion\.Telemetry\.Samplers\.intel\(item, time\) \|\| record\.current \|\| item/);
 });
 
 test("platform renderers are rebound and guarded after boot recovery", () => {
@@ -213,10 +218,75 @@ test("platform renderers are rebound and guarded after boot recovery", () => {
 test("html asset version is bumped for updated runtime modules", () => {
   const source = fs.readFileSync(path.join(root, "index.html"), "utf8");
 
-  assert.match(source, /app\.js\?v=20260704-audit1/);
-  assert.match(source, /orion-renderer-primitive\.js\?v=20260704-audit1/);
-  assert.match(source, /orion-telemetry-health\.js\?v=20260704-audit1/);
+  assert.match(source, /app\.js\?v=20260809-camera-orbit2/);
+  assert.match(source, /orion-renderer-primitive\.js\?v=20260809-camera-orbit2/);
+  assert.match(source, /orion-telemetry-health\.js\?v=20260809-camera-orbit2/);
   assert.equal(source.includes("20260701-hardening3"), false);
+});
+
+test("camera and orbital layers have a single viewport and control owner", () => {
+  const appSource = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  const configSource = fs.readFileSync(path.join(root, "orion-config.js"), "utf8");
+  const cameraSource = fs.readFileSync(path.join(root, "cameranet_frontend.js"), "utf8");
+
+  assert.match(appSource, /viewportBoundPlatformLayers = \["powerGrid"\]/);
+  assert.match(appSource, /state\.orbitalDataset === "all" \? \["realtimeSatellites"\]/);
+  assert.match(appSource, /if \(!viewer \|\| imageryTransitionActive\)/);
+  assert.equal(cameraSource.includes("prefetchContinentalUS"), false);
+  assert.equal(cameraSource.includes("camera.changed.addEventListener"), false);
+  assert.match(configSource, /satInternet:[\s\S]*?controlId: null/);
+  assert.match(appSource, /var lastIntelListSignature = ""/);
+  assert.match(appSource, /if \(listSignature === lastIntelListSignature\)/);
+});
+
+test("operational feeds are session-scoped and do not restore at boot", () => {
+  const appSource = fs.readFileSync(path.join(root, "app.js"), "utf8");
+
+  assert.doesNotMatch(appSource, /applyKnownBooleanMap\(target\.platformLayers, saved\.platformLayers/);
+  assert.doesNotMatch(appSource, /applyKnownBooleanMap\(target\.tracking, saved\.tracking/);
+  assert.doesNotMatch(appSource, /platformLayers: state\.platformLayers/);
+  assert.match(appSource, /target\.platformLayers\[layerId\] = false/);
+});
+
+test("provider health takes precedence over fallback diagnostics", () => {
+  const appSource = fs.readFileSync(path.join(root, "app.js"), "utf8");
+
+  assert.match(appSource, /var providerStatus = String\(payload\.provider_health \|\| ""\)\.toLowerCase\(\)/);
+  assert.match(appSource, /"online", "degraded", "fallback", "unavailable", "empty"/);
+  assert.doesNotMatch(appSource, /payload\.provider_health === "degraded"/);
+});
+
+test("satellite primitives use stable pick ids and globe depth testing", () => {
+  const appSource = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  const primitiveSource = fs.readFileSync(path.join(root, "orion-renderer-primitive.js"), "utf8");
+
+  assert.match(appSource, /platformEntityKey\(layerId, item && \(item\.id \|\| item\.name\) \|\| index\)/);
+  assert.match(primitiveSource, /disableDepthTestDistance: 0/);
+  assert.match(primitiveSource, /this\.renderTime = time instanceof Date/);
+  assert.equal((primitiveSource.match(/height > 26000000/g) || []).length, 2);
+  assert.equal(primitiveSource.includes("height > 12000000"), false);
+});
+
+test("orbital dataset switches preserve satellite tracking atomically", () => {
+  const appSource = fs.readFileSync(path.join(root, "app.js"), "utf8");
+
+  assert.match(appSource, /var satellitesEnabled = state\.tracking\.sat/);
+  assert.match(appSource, /if \(satellitesEnabled\) \{\s*trackingDomainSyncPaused = true/);
+  assert.match(appSource, /trackingDomainSyncPaused = false;\s*state\.tracking\.sat = true/);
+});
+
+test("CameraNet contains no fabricated state coverage and supports verified embeds", () => {
+  const providersSource = fs.readFileSync(path.join(root, "camera_providers.py"), "utf8");
+  const cameraSource = fs.readFileSync(path.join(root, "cameranet_frontend.js"), "utf8");
+  const serverSource = fs.readFileSync(path.join(root, "orion_server.py"), "utf8");
+
+  assert.equal(providersSource.includes("USCoverageFillProvider"), false);
+  assert.match(providersSource, /publicwebcam-wptv-pbi/);
+  assert.match(cameraSource, /function includeTargetInBbox/);
+  assert.match(cameraSource, /function renderEmbeddedFeed/);
+  assert.match(cameraSource, /camera-snapshot-badge/);
+  assert.match(serverSource, /def camera_priority\(camera\)/);
+  assert.match(serverSource, /media_priority = 0 if camera\.get\("embed_url"\) else 1/);
 });
 
 test("wildfire provider falls back to usable reference features", () => {

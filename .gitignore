@@ -23,6 +23,7 @@ orion-*-verify.png
 orion-verify.png
 TEXTURE_AND_TILE_FIXES.js
 test_*.py
+!tests/test_*.py
 *.tmp
 *.bak
 node_modules/

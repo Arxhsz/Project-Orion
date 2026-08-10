@@ -40,19 +40,7 @@
           return null;
         }
         
-        console.log('[Orion.Session] Restoring operational context...');
-        
-        if (session.layers) {
-          session.layers.forEach(function(layerId) {
-            Orion.Runtime.StateManager.setLayerEnabled(layerId, true);
-          });
-        }
-        
-        if (session.preferences) {
-          if (session.preferences.profile) {
-            Orion.Runtime.DeploymentProfiles.apply(session.preferences.profile);
-          }
-        }
+        console.log('[Orion.Session] Continuity metadata loaded; persisted app state remains authoritative');
         
         return session;
       } catch (e) {

@@ -103,10 +103,10 @@ Supported:
 
 - Static NASA GIBS imagery.
 - Local and static NOAA/NWS current radar map service.
-- CelesTrak satellite TLE snapshots.
+- CelesTrak satellite OMM snapshots with legacy TLE fallback.
 - USGS earthquakes.
 - NASA EONET wildfire event metadata.
-- CameraNet discovery and stream/snapshot handling where providers allow it.
+- CameraNet discovery, verified public embeds, HLS playback, and refreshed snapshots where providers allow it.
 - Local backend mode for richer same-origin provider access.
 
 Known limits:
@@ -115,6 +115,7 @@ Known limits:
 - Timelapse exports WebM plus metadata in-browser; MP4 requires a future backend ffmpeg pipeline.
 - Licensed AIS and higher-volume aircraft feeds require server-side provider credentials.
 - Some CameraNet streams are provider-limited, blocked, expired, or snapshot-only.
+- No free official source provides normalized live camera media for all 50 states. Orion reports actual provider coverage and omits metadata-only/fabricated camera markers.
 - NOAA radar current service is not historical/time-enabled in this implementation.
 
 ## Performance

@@ -181,6 +181,7 @@
   var timelapseRecorder = null;
   var timelapseChunks = [];
   var lastIntelListRender = 0;
+  var lastIntelListSignature = "";
   var cameraFeedTimer = null;
   var lastPlatformMotionFrame = 0;
   var lastCameraRegionKey = "";
@@ -188,7 +189,7 @@
   var lastViewportRegionKeys = {};
   var lastViewportRegionFetchTimes = {};
   var pendingViewportRegionRefreshes = {};
-  var viewportBoundPlatformLayers = ["cameras", "powerGrid"];
+  var viewportBoundPlatformLayers = ["powerGrid"];
   var intelCalloutPosScratch = null;
   var intelGlyphCache = {};
 
@@ -750,13 +751,6 @@
       return;
     }
     applyKnownBooleanMap(target.layers, saved.layers, target.layers);
-    applyKnownBooleanMap(target.platformLayers, saved.platformLayers, target.platformLayers);
-    applyKnownBooleanMap(target.tracking, saved.tracking, {
-      air: true,
-      sat: true,
-      sea: true,
-      live: true
-    });
 
     if (typeof saved.weatherMapMode === "string") {
       target.weatherMapMode = saved.weatherMapMode;
@@ -773,6 +767,15 @@
     if (typeof saved.radarAnimating === "boolean") {
       target.radarAnimating = saved.radarAnimating;
     }
+
+    if (target.orbitalDataset !== "all" && orbitalLayerIds.indexOf(target.orbitalDataset) === -1) {
+      target.orbitalDataset = "all";
+    }
+    // Operational feeds are session-scoped. Restoring several live layers at
+    // boot starts competing requests before the user makes a selection.
+    orbitalLayerIds.forEach(function (layerId) {
+      target.platformLayers[layerId] = false;
+    });
   }
 
   function persistUserState() {
@@ -780,13 +783,6 @@
       window.localStorage.setItem(USER_STATE_KEY, JSON.stringify({
         savedAt: Date.now(),
         layers: state.layers,
-        platformLayers: state.platformLayers,
-        tracking: {
-          air: state.tracking.air,
-          sat: state.tracking.sat,
-          sea: state.tracking.sea,
-          live: state.tracking.live
-        },
         weatherMapMode: state.weatherMapMode,
         satelliteSource: state.satelliteSource,
         orbitalDataset: state.orbitalDataset,
@@ -2112,7 +2108,7 @@ void main() {
   }
 
   function primitiveFeedRowKey(layerId, item, index) {
-    return platformEntityKey(layerId, (item && (item.id || item.name)) ? String(item.id || item.name) + "-" + index : index);
+    return platformEntityKey(layerId, item && (item.id || item.name) || index);
   }
 
   function platformLayerFromEntityKey(id) {
@@ -2780,12 +2776,63 @@ void main() {
           name: name.replace(/^0\s+/, "").slice(0, 28),
           line1: line1,
           line2: line2,
+          objectId: formatTleObjectId(line1.slice(9, 17).trim()),
+          tleEpoch: formatTleEpoch(line1.slice(18, 32).trim()),
           satrec: window.satellite ? window.satellite.twoline2satrec(line1, line2) : null
         });
       } catch (error) {
       }
     }
 
+    return items;
+  }
+
+  function formatTleObjectId(value) {
+    var match = String(value || "").match(/^(\d{2})(\d{3})([A-Z0-9]{0,3})$/);
+    if (!match) {
+      return value || "";
+    }
+    var shortYear = Number(match[1]);
+    var year = (shortYear >= 57 ? 1900 : 2000) + shortYear;
+    return year + "-" + match[2] + match[3];
+  }
+
+  function formatTleEpoch(value) {
+    var match = String(value || "").match(/^(\d{2})(\d{3}(?:\.\d+)?)$/);
+    if (!match) {
+      return value || "";
+    }
+    var shortYear = Number(match[1]);
+    var year = (shortYear >= 57 ? 1900 : 2000) + shortYear;
+    var day = Number(match[2]);
+    var date = new Date(Date.UTC(year, 0, 1) + (day - 1) * 86400000);
+    return Number.isFinite(date.getTime()) ? date.toISOString() : value;
+  }
+
+  function parseOmmRecords(records, limit) {
+    if (!Array.isArray(records) || !window.satellite || typeof window.satellite.json2satrec !== "function") {
+      return [];
+    }
+
+    var items = [];
+    for (var index = 0; index < records.length && items.length < limit; index += 1) {
+      var record = records[index];
+      if (!record || !record.NORAD_CAT_ID) {
+        continue;
+      }
+      try {
+        items.push({
+          id: String(record.NORAD_CAT_ID),
+          name: String(record.OBJECT_NAME || "Satellite " + record.NORAD_CAT_ID).slice(0, 28),
+          objectId: record.OBJECT_ID || "",
+          tleEpoch: record.EPOCH || "",
+          classification: record.CLASSIFICATION_TYPE || "",
+          omm: record,
+          satrec: window.satellite.json2satrec(record)
+        });
+      } catch (error) {
+      }
+    }
     return items;
   }
 
@@ -4368,7 +4415,7 @@ void main() {
             verticalOrigin: Cesium.VerticalOrigin.CENTER,
             horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
             distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 36000000),
-            disableDepthTestDistance: Number.POSITIVE_INFINITY
+            disableDepthTestDistance: definition.type === "satellite" ? 0 : Number.POSITIVE_INFINITY
           }
         }));
       } else {
@@ -4455,7 +4502,7 @@ void main() {
         horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
         distanceDisplayCondition: commonDistance,
         heightReference: profile.heightReference,
-        disableDepthTestDistance: Number.POSITIVE_INFINITY
+        disableDepthTestDistance: definition.type === "satellite" ? 0 : Number.POSITIVE_INFINITY
       };
     } else if (definition.type === "moving") {
       var movingTrackType = platformTrackType(layerId, item);
@@ -4613,7 +4660,7 @@ void main() {
         horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
         distanceDisplayCondition: commonDistance,
         heightReference: profile.heightReference,
-        disableDepthTestDistance: Number.POSITIVE_INFINITY
+        disableDepthTestDistance: definition.type === "satellite" ? 0 : Number.POSITIVE_INFINITY
       };
       tintBillboard = true;
     }
@@ -4629,7 +4676,7 @@ void main() {
       show: false,
       distanceDisplayCondition: commonDistance,
       heightReference: profile.heightReference,
-      disableDepthTestDistance: Number.POSITIVE_INFINITY
+      disableDepthTestDistance: definition.type === "satellite" ? 0 : Number.POSITIVE_INFINITY
     };
 
     var entity = viewer.entities.add(entityOptions);
@@ -5085,7 +5132,9 @@ void main() {
     }
 
     if (definition.type === "satellite") {
-      items = parseTleText(payload.tle || "", definition.maxItems).map(function (item) {
+      items = (Array.isArray(payload.omm) && payload.omm.length
+        ? parseOmmRecords(payload.omm, definition.maxItems)
+        : parseTleText(payload.tle || "", definition.maxItems)).map(function (item) {
         item.color = definition.color;
         item.category = definition.label;
         item.source = payload.source || definition.source;
@@ -5160,10 +5209,9 @@ void main() {
     feed.payload = payload;
     feed.items = items;
     feed.loadedAt = Date.now();
-    if (payload.provider_health === "unavailable") {
-      feed.status = "unavailable";
-    } else if (payload.provider_health === "degraded") {
-      feed.status = "degraded";
+    var providerStatus = String(payload.provider_health || "").toLowerCase();
+    if (["online", "degraded", "fallback", "unavailable", "empty"].indexOf(providerStatus) !== -1) {
+      feed.status = providerStatus;
     } else {
       feed.status = payload.error ? payload.error : (payload.fallback ? "fallback" : (items.length ? "online" : "empty"));
     }
@@ -5786,10 +5834,11 @@ void main() {
       var lonSpan = Math.abs(east - west);
       var latSpan = Math.abs(north - south);
       var hasRegionalView = lonSpan < 60 && latSpan < 40;
+      var hasTarget = typeof state.target.lon === "number" && typeof state.target.lat === "number";
 
-      if (hasRegionalView && (lonSpan > 0.6 || latSpan > 0.45)) {
-        var centerLon = typeof state.target.lon === "number" ? state.target.lon : (west + east) / 2;
-        var centerLat = typeof state.target.lat === "number" ? state.target.lat : (south + north) / 2;
+      if (hasTarget || (hasRegionalView && (lonSpan > 0.6 || latSpan > 0.45))) {
+        var centerLon = hasTarget ? state.target.lon : (west + east) / 2;
+        var centerLat = hasTarget ? state.target.lat : (south + north) / 2;
 
         west = Math.max(-180, centerLon - 0.3);
         east = Math.min(180, centerLon + 0.3);
@@ -7448,7 +7497,7 @@ void main() {
   }
 
   function selectedOrbitalLayerIds() {
-    return state.orbitalDataset === "all" ? orbitalLayerIds.slice() : orbitalLayerIds.filter(function (layerId) {
+    return state.orbitalDataset === "all" ? ["realtimeSatellites"] : orbitalLayerIds.filter(function (layerId) {
       return layerId === state.orbitalDataset;
     });
   }
@@ -7459,10 +7508,17 @@ void main() {
       elements.orbitalDatasetSelect.value = state.orbitalDataset;
     }
 
-    if (state.tracking.sat || orbitalLayerIds.some(function (layerId) { return state.platformLayers[layerId]; })) {
+    var satellitesEnabled = state.tracking.sat || orbitalLayerIds.some(function (layerId) {
+      return state.platformLayers[layerId];
+    });
+    if (satellitesEnabled) {
+      trackingDomainSyncPaused = true;
       orbitalLayerIds.forEach(function (layerId) {
-        setPlatformLayer(layerId, state.tracking.sat && selectedOrbitalLayerIds().indexOf(layerId) !== -1);
+        setPlatformLayer(layerId, selectedOrbitalLayerIds().indexOf(layerId) !== -1);
       });
+      trackingDomainSyncPaused = false;
+      state.tracking.sat = true;
+      syncTrackingControls();
     }
     state.tracking.dirty = true;
     updateTrackingLayer(true);
@@ -7960,7 +8016,9 @@ void main() {
     if (record.definition.type === "satellite") {
       rows.splice(1, 0,
         ["NORAD", item.id || "-"],
+        ["COSPAR", item.objectId || "-"],
         ["Catalog", item.group || record.definition.label],
+        ["Element epoch", item.tleEpoch || "-"],
         ["Orbit", item.satrec && Number.isFinite(item.satrec.no) ? (1440 / Math.max(0.0001, item.satrec.no)).toFixed(1) + " min" : "TLE propagated"]
       );
     }
@@ -8575,10 +8633,13 @@ void main() {
     if (text.indexOf("loading") !== -1) {
       return "loading";
     }
-    if (text.indexOf("fallback") !== -1 || text.indexOf("token") !== -1 || text.indexOf("adapter") !== -1 || text.indexOf("snapshot") !== -1 || text === "propagated") {
+    if (text.indexOf("fallback") !== -1 || text.indexOf("degraded") !== -1 || text.indexOf("token") !== -1 || text.indexOf("adapter") !== -1 || text.indexOf("snapshot") !== -1 || text === "propagated") {
       return "fallback";
     }
-    if (text.indexOf("error") !== -1 || text.indexOf("offline") !== -1 || text.indexOf("fail") !== -1 || text.indexOf("unavailable") !== -1) {
+    if (text.indexOf("unavailable") !== -1) {
+      return "unavailable";
+    }
+    if (text.indexOf("error") !== -1 || text.indexOf("offline") !== -1 || text.indexOf("fail") !== -1) {
       return "error";
     }
     if (text.indexOf("empty") !== -1 || text.indexOf("standby") !== -1) {
@@ -8839,6 +8900,7 @@ void main() {
         elements.intelEntityCount.textContent = "0 objects";
       }
       elements.intelEntityList.innerHTML = "";
+      lastIntelListSignature = "";
       if (elements.intelCategoryChips) {
         elements.intelCategoryChips.innerHTML = "<button type=\"button\" class=\"intel-chip active\" data-category=\"all\">All</button>";
       }
@@ -8852,7 +8914,6 @@ void main() {
     lastIntelListRender = now;
 
     var rows = collectIntelEntityRows();
-    renderIntelCategoryChips(rows);
 
     var filtered = rows.filter(function (row) {
       var matchesCategory = state.intelCategory === "all" || row.category === state.intelCategory;
@@ -8860,6 +8921,16 @@ void main() {
       return matchesCategory && (!state.intelSearch || haystack.indexOf(state.intelSearch) !== -1);
     });
     var rendered = filtered.slice(0, 1000);
+    var categorySignature = Array.from(new Set(rows.map(function (row) { return row.category; }))).sort().join(",");
+    var listSignature = [state.intelCategory, state.intelSearch, filtered.length, categorySignature].concat(rendered.map(function (row) {
+      return [row.kind, row.id, row.status, row.detail, row.selected ? 1 : 0].join(":");
+    })).join("|");
+
+    if (listSignature === lastIntelListSignature) {
+      return;
+    }
+    lastIntelListSignature = listSignature;
+    renderIntelCategoryChips(rows);
 
     if (elements.intelEntityCount) {
       elements.intelEntityCount.textContent = filtered.length + " object" + (filtered.length === 1 ? "" : "s");
@@ -10225,7 +10296,7 @@ void main() {
   }
 
   function repairImageryHealth() {
-    if (!viewer) {
+    if (!viewer || imageryTransitionActive) {
       return;
     }
 
@@ -10867,27 +10938,7 @@ void main() {
         setTrackingDomain(pair[1], event.target.checked);
       }
       elements[pair[0]].addEventListener("change", syncDomainFromToggle);
-      elements[pair[0]].addEventListener("input", syncDomainFromToggle);
-      elements[pair[0]].addEventListener("click", syncDomainFromToggle);
     });
-
-    var trackingToggleGrid = document.querySelector(".tracking-toggle-grid");
-    if (trackingToggleGrid) {
-      trackingToggleGrid.addEventListener("click", function () {
-        window.setTimeout(function () {
-          [
-            ["trackAircraft", "air"],
-            ["trackSatellites", "sat"],
-            ["trackVessels", "sea"]
-          ].forEach(function (pair) {
-            var control = elements[pair[0]];
-            if (control) {
-              setTrackingDomain(pair[1], control.checked);
-            }
-          });
-        }, 0);
-      });
-    }
 
     if (elements.orbitalDatasetSelect) {
       elements.orbitalDatasetSelect.addEventListener("change", function (event) {
@@ -12440,7 +12491,6 @@ void main() {
     Orion.Renderer.Infrastructure.PowerGrid.init(viewer);
     Orion.Renderer.Environment.SmokeSystem.init(viewer);
     Orion.Renderer.Environment.LightningSystem.init(viewer);
-    Orion.Renderer.Imagery.init(viewer);
     initPlatformRenderer("Maritime");
     initPlatformRenderer("Aviation");
     Orion.Renderer.Cameras.init();

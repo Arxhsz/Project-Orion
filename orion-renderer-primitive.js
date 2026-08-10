@@ -44,7 +44,7 @@
       
       var lodVisible = 0;
       items.slice(0, this.maxPoints).forEach(function(item, index) {
-        if (height > 12000000) return;
+        if (height > 26000000) return;
         
         var sample = (item.positions) ? Orion.Telemetry.Samplers.intel(item, time) : item;
         if (!sample || !Number.isFinite(sample.lon) || !Number.isFinite(sample.lat)) return;
@@ -56,7 +56,7 @@
           image: window.trackIcon ? window.trackIcon("sea", "#a6b7ff") : (window.markerIcon ? window.markerIcon("soft-dot") : 'loading_images/earth1.jpg'),
           scale: 0.22 * (height > 1000000 ? 1.18 : 1.0),
           color: Cesium.Color.WHITE.withAlpha(0.92),
-          disableDepthTestDistance: Number.POSITIVE_INFINITY
+          disableDepthTestDistance: 0
         });
       });
       
@@ -113,7 +113,7 @@
     },
 
     ingestAircraft: function(item, index, time) {
-      var sample = Orion.Telemetry.Samplers.intel(item, time);
+      var sample = Orion.Telemetry.Samplers.intel(item, time) || item;
       if (!sample || !Number.isFinite(sample.lon) || !Number.isFinite(sample.lat)) {
         return null;
       }
@@ -183,7 +183,7 @@
       var simulationMode = (Orion.SimulationClock && Orion.SimulationClock.mode) || "live";
       var liveMode = simulationMode === "live";
 
-      if (height > 12000000) {
+      if (height > 26000000) {
         this.collection.removeAll();
         this.billboardsById = {};
         return;
@@ -195,7 +195,9 @@
         if (!record) return;
         active[record.id] = true;
 
-        var sample = liveMode ? self.interpolateRecord(record) : Orion.Telemetry.Samplers.intel(item, time);
+        var sample = liveMode
+          ? self.interpolateRecord(record)
+          : (Orion.Telemetry.Samplers.intel(item, time) || record.current || item);
         if (!sample || !Number.isFinite(sample.lon) || !Number.isFinite(sample.lat)) return;
 
         var isStale = now - record.sourceTimestamp > self.staleMs;
@@ -212,7 +214,7 @@
             scale: height > 1500000 ? 0.2 : 0.26,
             rotation: Cesium.Math.toRadians(sample.heading || item.heading || 0),
             color: Cesium.Color.WHITE.withAlpha(isStale ? 0.42 : 0.95),
-            disableDepthTestDistance: Number.POSITIVE_INFINITY
+            disableDepthTestDistance: 0
           });
           self.billboardsById[record.id] = billboard;
         } else {
@@ -282,6 +284,7 @@
       var self = this;
       var height = this.viewer.camera.positionCartographic.height;
       var selectedId = window.selectedPlatformEntityId;
+      this.renderTime = time instanceof Date ? time : new Date(time || Date.now());
       
       var lodVisible = 0;
       Object.keys(this.itemsBySource).forEach(function(src) {
@@ -303,7 +306,7 @@
             color: Cesium.Color.fromCssColorString(item.color || "#ffffff").withAlpha(0.7),
             outlineColor: Cesium.Color.TRANSPARENT,
             outlineWidth: 0,
-            disableDepthTestDistance: Number.POSITIVE_INFINITY
+            disableDepthTestDistance: 0
           });
 
           if (selectedId && selectedId === platformEntityKey(src, item.id || item.name || index)) {
@@ -323,7 +326,7 @@
       }
 
       var positions = [];
-      var now = new Date();
+      var now = this.renderTime || new Date();
       var stepMinutes = 4;
       var totalMinutes = 108;
 

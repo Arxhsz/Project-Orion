@@ -125,9 +125,15 @@ class CameraProvider:
         else:
             try:
                 raw_cameras = self.fetch_cameras(bbox)
-                cameras = [self.normalize_camera(cam) for cam in raw_cameras if cam]
+                cameras = []
+                for raw_camera in raw_cameras:
+                    if not raw_camera:
+                        continue
+                    normalized = self.normalize_camera(raw_camera)
+                    if normalized:
+                        cameras.append(normalized)
                 self.cache = {"timestamp": now, "data": cameras}
-                self.health = "online"
+                self.health = "online" if cameras else "empty"
                 self.last_error = None
                 self.last_success = now
                 self.consecutive_failures = 0
@@ -1274,80 +1280,123 @@ class SeattleDOTProvider(CameraProvider):
             return None
 
 
-_US_SEED_OFFSETS = [(0.0, 0.0), (0.11, 0.07), (-0.09, -0.11), (0.06, -0.14)]
-
-_US_STATE_ANCHORS = {
-    "AL": (32.3617, -86.2791), "AK": (58.3019, -134.4197), "AZ": (33.4484, -112.0740),
-    "AR": (34.7465, -92.2896), "CA": (38.5816, -121.4944), "CO": (39.7392, -104.9903),
-    "CT": (41.7658, -72.6734), "DE": (39.1582, -75.5244), "DC": (38.9072, -77.0369),
-    "FL": (30.4383, -84.2807), "GA": (33.7490, -84.3880), "HI": (21.3069, -157.8583),
-    "ID": (43.6150, -116.2023), "IL": (39.7817, -89.6501), "IN": (39.7684, -86.1581),
-    "IA": (41.5868, -93.6250), "KS": (39.0473, -95.6752), "KY": (38.2009, -84.8733),
-    "LA": (30.4515, -91.1871), "ME": (44.3235, -69.7653), "MD": (38.9784, -76.4922),
-    "MA": (42.3601, -71.0589), "MI": (42.7325, -84.5555), "MN": (44.9537, -93.0900),
-    "MS": (32.2988, -90.1848), "MO": (38.5767, -92.1735), "MT": (46.5884, -112.0245),
-    "NE": (40.8136, -96.7026), "NV": (39.1638, -119.7674), "NH": (43.2081, -71.5376),
-    "NJ": (40.2206, -74.7699), "NM": (35.6870, -105.9378), "NY": (42.6526, -73.7562),
-    "NC": (35.7796, -78.6382), "ND": (46.8083, -100.7837), "OH": (39.9612, -82.9988),
-    "OK": (35.4676, -97.5164), "OR": (44.9429, -123.0351), "PA": (40.2732, -76.8867),
-    "RI": (41.8240, -71.4128), "SC": (34.0007, -81.0348), "SD": (44.3683, -100.3510),
-    "TN": (36.1627, -86.7816), "TX": (30.2672, -97.7431), "UT": (40.7608, -111.8910),
-    "VT": (44.2601, -72.5754), "VA": (37.5407, -77.4360), "WA": (47.0379, -122.9007),
-    "WV": (38.3498, -81.6326), "WI": (43.0748, -89.3844), "WY": (41.1400, -104.8202),
-}
-
-
-def _build_us_fill_cameras():
-    cameras = []
-    ts = int(time.time())
-    for state, (clat, clon) in _US_STATE_ANCHORS.items():
-        code = "DC" if state == "DC" else state
-        for i, (dla, dlo) in enumerate(_US_SEED_OFFSETS):
-            lat = clat + dla
-            lon = clon + dlo
-            cameras.append({
-                "id": f"usfill-{state}-{i}",
-                "name": f"{code} traffic - corridor {i + 1}",
-                "provider": "US coverage",
-                "state": code,
-                "country": "US",
-                "district": "",
-                "county": "",
-                "lat": lat,
-                "lon": lon,
-                "category": "highway",
-                "road": "State / US corridor (seed)",
-                "direction": "",
-                "status": "snapshot_only",
-                "snapshot_url": "",
-                "stream_url": "",
-                "stream_type": "snapshot",
-                "last_updated": ts,
-                "source_url": "",
-                "metadata": {"seed_coverage": True},
-            })
-    return cameras
-
-
-class USCoverageFillProvider(CameraProvider):
+class CuratedPublicWebcamProvider(CameraProvider):
 
     def __init__(self):
         super().__init__()
-        self.name = "US statewide coverage"
-        self.id = "us_fill"
-        self.supports_bbox = True
-        self.state_bbox = (-125.5, 23.8, -66.5, 49.8)
-        self.cache_ttl = 86400
-        self._static = _build_us_fill_cameras()
+        self.name = "Verified public webcams"
+        self.id = "publicwebcam"
+        self.supports_bbox = False
+        self.state_bbox = (-80.20, 26.50, -80.00, 27.10)
+        self.cache_ttl = 24 * 60 * 60
+        self._static = [
+            {
+                "id": "publicwebcam-wptv-pbi",
+                "name": "PBI Airport / Downtown Camera",
+                "provider": "WPTV First Alert Weather",
+                "state": "FL",
+                "country": "US",
+                "district": "Palm Beach County",
+                "county": "Palm Beach",
+                "lat": 26.6832,
+                "lon": -80.0956,
+                "category": "airport",
+                "road": "Palm Beach International Airport area",
+                "direction": "",
+                "status": "embed_available",
+                "snapshot_url": "",
+                "upstream_snapshot_url": "",
+                "stream_url": "",
+                "embed_url": "https://g1.ipcamlive.com/player/player.php?alias=wptv3&autoplay=1",
+                "stream_available": True,
+                "stream_type": "embed",
+                "last_updated": "publisher managed",
+                "source_url": "https://www.wptv.com/weather/weather-cams",
+                "location_accuracy": "publisher-area",
+                "metadata": {"publisher_label": "PBI Airport / Downtown Camera"},
+            },
+            {
+                "id": "publicwebcam-wptv-intracoastal",
+                "name": "Intracoastal / Downtown West Palm Beach",
+                "provider": "WPTV First Alert Weather",
+                "state": "FL",
+                "country": "US",
+                "district": "West Palm Beach",
+                "county": "Palm Beach",
+                "lat": 26.7153,
+                "lon": -80.0534,
+                "category": "scenic",
+                "road": "Intracoastal Waterway",
+                "direction": "",
+                "status": "embed_available",
+                "snapshot_url": "",
+                "upstream_snapshot_url": "",
+                "stream_url": "",
+                "embed_url": "https://g1.ipcamlive.com/player/player.php?alias=wptv6&autoplay=1",
+                "stream_available": True,
+                "stream_type": "embed",
+                "last_updated": "publisher managed",
+                "source_url": "https://www.wptv.com/weather/weather-cams",
+                "location_accuracy": "publisher-area",
+                "metadata": {"publisher_label": "Intracoastal / Downtown WPB"},
+            },
+            {
+                "id": "publicwebcam-wptv-peanut-island",
+                "name": "Peanut Island Camera",
+                "provider": "WPTV First Alert Weather",
+                "state": "FL",
+                "country": "US",
+                "district": "Riviera Beach",
+                "county": "Palm Beach",
+                "lat": 26.7735,
+                "lon": -80.0462,
+                "category": "marina",
+                "road": "Lake Worth Lagoon",
+                "direction": "",
+                "status": "embed_available",
+                "snapshot_url": "",
+                "upstream_snapshot_url": "",
+                "stream_url": "",
+                "embed_url": "https://g1.ipcamlive.com/player/player.php?alias=wptv5&autoplay=1",
+                "stream_available": True,
+                "stream_type": "embed",
+                "last_updated": "publisher managed",
+                "source_url": "https://www.wptv.com/weather/weather-cams",
+                "location_accuracy": "publisher-area",
+                "metadata": {"publisher_label": "Peanut Island"},
+            },
+            {
+                "id": "publicwebcam-wptv-jupiter",
+                "name": "Jupiter Inlet Camera",
+                "provider": "WPTV First Alert Weather",
+                "state": "FL",
+                "country": "US",
+                "district": "Jupiter",
+                "county": "Palm Beach",
+                "lat": 26.9431,
+                "lon": -80.0725,
+                "category": "inlet",
+                "road": "Jupiter Inlet",
+                "direction": "",
+                "status": "embed_available",
+                "snapshot_url": "",
+                "upstream_snapshot_url": "",
+                "stream_url": "",
+                "embed_url": "https://g1.ipcamlive.com/player/player.php?alias=wptv4&autoplay=1",
+                "stream_available": True,
+                "stream_type": "embed",
+                "last_updated": "publisher managed",
+                "source_url": "https://www.wptv.com/weather/weather-cams",
+                "location_accuracy": "publisher-area",
+                "metadata": {"publisher_label": "Jupiter"},
+            },
+        ]
 
     def fetch_cameras(self, bbox=None):
-        if not bbox:
-            return list(self._static)
-        west, south, east, north = bbox
-        return [c for c in self._static if west <= c["lon"] <= east and south <= c["lat"] <= north]
+        return list(self._static)
 
     def normalize_camera(self, raw):
-        return raw if raw and raw.get("id") else None
+        return dict(raw) if raw and raw.get("id") else None
 
 
 CAMERA_PROVIDERS = {
@@ -1361,6 +1410,7 @@ CAMERA_PROVIDERS = {
     "ildot": IllinoisDOTProvider(),
     "or511": Oregon511Provider(),
     "sdot": SeattleDOTProvider(),
+    "publicwebcam": CuratedPublicWebcamProvider(),
 
     "gdot": Iteris511Provider("gdot", "Georgia NaviGAtor", "GA", "https://511ga.org", (-85.7, 30.2, -80.7, 35.1), use_map_icons=True),
     "pa511": Iteris511Provider("pa511", "Pennsylvania 511", "PA", "https://www.511pa.com", (-80.6, 39.6, -74.5, 42.6)),
@@ -1373,7 +1423,6 @@ CAMERA_PROVIDERS = {
     "id511": Iteris511Provider("id511", "Idaho 511", "ID", "https://511.idaho.gov", (-117.3, 42.0, -111.0, 49.1)),
     "la511": Iteris511Provider("la511", "Louisiana 511", "LA", "https://www.511la.org", (-94.1, 28.8, -88.7, 33.1)),
     "newengland": Iteris511Provider("newengland", "New England 511", "NE-US", "https://newengland511.org", (-73.8, 41.0, -66.8, 47.6)),
-    "us_fill": USCoverageFillProvider(),
 }
 
 
@@ -1393,6 +1442,19 @@ def is_valid_coordinate(lat, lon):
         return True
     except (TypeError, ValueError):
         return False
+
+
+def camera_has_media(camera):
+    if not camera:
+        return False
+    return any(camera.get(key) for key in (
+        "embed_url",
+        "stream_url",
+        "upstream_stream_url",
+        "snapshot_url",
+        "upstream_snapshot_url",
+        "snapshot_source_url",
+    ))
 
 
 def get_all_cameras(bbox=None, provider_filter=None, state_filter=None):
@@ -1421,9 +1483,9 @@ def get_all_cameras(bbox=None, provider_filter=None, state_filter=None):
             for camera in cameras:
                 lat = camera.get("lat")
                 lon = camera.get("lon")
-                if is_valid_coordinate(lat, lon):
+                if is_valid_coordinate(lat, lon) and camera_has_media(camera):
                     valid_cameras.append(camera)
-                else:
+                elif not is_valid_coordinate(lat, lon):
                     print(f"Filtered invalid coordinates for camera {camera.get('id')}: lat={lat}, lon={lon}")
             
             return provider.id, valid_cameras
@@ -1432,9 +1494,9 @@ def get_all_cameras(bbox=None, provider_filter=None, state_filter=None):
             return provider.id, []
 
     if len(providers) > 1:
-        executor = ThreadPoolExecutor(max_workers=min(12, len(providers)))
+        executor = ThreadPoolExecutor(max_workers=min(24, len(providers)))
         futures = [executor.submit(load_provider, provider) for provider in providers]
-        wait_seconds = 5 if bbox else 12
+        wait_seconds = 10 if bbox else 20
         try:
             for future in as_completed(futures, timeout=wait_seconds):
                 provider_id, cameras = future.result()
@@ -1442,9 +1504,20 @@ def get_all_cameras(bbox=None, provider_filter=None, state_filter=None):
                 if cameras:
                     providers_used.append(provider_id)
         except FutureTimeoutError:
-            for future in futures:
+            for provider, future in zip(providers, futures):
                 if not future.done():
                     future.cancel()
+                    provider.health = "degraded" if provider.cache.get("data") else "offline"
+                    provider.last_error = f"Camera provider exceeded {wait_seconds}s aggregation deadline"
+                    cached = list(provider.cache.get("data") or [])
+                    if bbox and cached:
+                        west, south, east, north = bbox
+                        cached = [camera for camera in cached if west <= camera["lon"] <= east and south <= camera["lat"] <= north]
+                    if state_filter:
+                        cached = [camera for camera in cached if camera.get("state") == state_filter]
+                    if cached:
+                        all_cameras.extend(cached)
+                        providers_used.append(provider.id)
         finally:
             executor.shutdown(wait=False, cancel_futures=True)
     else:
@@ -1460,6 +1533,7 @@ def get_all_cameras(bbox=None, provider_filter=None, state_filter=None):
 def get_provider_status():
     status = []
     for provider_id, provider in CAMERA_PROVIDERS.items():
+        cached_cameras = provider.cache.get("data", [])
         status.append({
             "id": provider_id,
             "name": provider.name,
@@ -1474,7 +1548,9 @@ def get_provider_status():
             "cached": provider.cache["timestamp"] > 0,
             "stale": provider.cache["timestamp"] > 0 and time.time() - provider.cache["timestamp"] >= provider.cache_ttl,
             "cache_age": int(time.time() - provider.cache["timestamp"]) if provider.cache["timestamp"] > 0 else None,
-            "camera_count": len(provider.cache.get("data", []))
+            "camera_count": len(cached_cameras),
+            "media_count": sum(1 for camera in cached_cameras if camera_has_media(camera)),
+            "states": sorted({str(camera.get("state")) for camera in cached_cameras if camera.get("state")}),
         })
     return status
 
