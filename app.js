@@ -12533,7 +12533,9 @@ void main() {
         if (!stored) return;
         var session = JSON.parse(stored);
         if (session.missionContext) Orion.Intelligence.OperationalNarrative.setMissionContext(session.missionContext);
-        if (session.scanMode) setScanMode(session.scanMode);
+        if (session.scanMode && !(persistedUserState && persistedUserState.scanMode)) {
+          state.scanMode = session.scanMode === "cyber" || session.scanMode === "signal" ? "standard" : session.scanMode;
+        }
       } catch (e) { console.warn('[Orion.Session] Restore failed'); }
     }
   };

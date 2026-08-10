@@ -265,7 +265,7 @@ test("platform renderers are rebound and guarded after boot recovery", () => {
 test("html asset version is bumped for updated runtime modules", () => {
   const source = fs.readFileSync(path.join(root, "index.html"), "utf8");
 
-  assert.match(source, /app\.js\?v=20260810-grid-timeline18/);
+  assert.match(source, /app\.js\?v=20260810-grid-timeline19/);
   assert.match(source, /orion-config\.js\?v=20260810-grid-timeline9/);
   assert.match(source, /orion-onboarding\.js\?v=20260809-grid-timeline8/);
   assert.match(source, /cameranet_frontend\.js\?v=20260809-grid-timeline9/);
@@ -297,11 +297,15 @@ test("camera and orbital layers have a single viewport and control owner", () =>
 
 test("operational feeds are session-scoped and do not restore at boot", () => {
   const appSource = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  const sessionRestore = appSource.match(/restore: function\(\) \{[\s\S]*?\n    \}\n  \};/);
 
   assert.doesNotMatch(appSource, /applyKnownBooleanMap\(target\.platformLayers, saved\.platformLayers/);
   assert.doesNotMatch(appSource, /applyKnownBooleanMap\(target\.tracking, saved\.tracking/);
   assert.doesNotMatch(appSource, /platformLayers: state\.platformLayers/);
   assert.match(appSource, /target\.platformLayers\[layerId\] = false/);
+  assert.ok(sessionRestore, "session restore implementation should exist");
+  assert.equal(sessionRestore[0].includes("setScanMode(session.scanMode)"), false);
+  assert.match(sessionRestore[0], /state\.scanMode =/);
 });
 
 test("provider health takes precedence over fallback diagnostics", () => {
