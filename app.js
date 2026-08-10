@@ -11222,6 +11222,41 @@ void main() {
       }
     }());
 
+    (function normalizeCompactHudStartup() {
+      if (!window.matchMedia("(max-width: 760px)").matches) return;
+
+      var surfaces = [
+        { id: "commandPanel", buttonId: "commandPanelToggle", icon: ">", label: "command panel", storage: "panel" },
+        { id: "telemetryPanel", buttonId: "telemetryPanelToggle", icon: "<", label: "telemetry panel", storage: "panel" },
+        { id: "timelineHud", buttonId: "timelineHudToggle", icon: "^", label: "timeline", storage: "timeline" }
+      ];
+      var expanded = surfaces.filter(function (surface) {
+        var node = document.getElementById(surface.id);
+        return node && !node.classList.contains("collapsed");
+      });
+      if (expanded.length <= 1) return;
+
+      var panelState;
+      try { panelState = JSON.parse(window.localStorage.getItem("orion:panelCollapsed") || "{}"); } catch (e) { panelState = {}; }
+
+      expanded.slice(1).forEach(function (surface) {
+        var node = document.getElementById(surface.id);
+        var button = document.getElementById(surface.buttonId);
+        node.classList.add("collapsed");
+        if (button) {
+          button.textContent = surface.icon;
+          button.setAttribute("aria-label", "Expand " + surface.label);
+        }
+        if (surface.storage === "timeline") {
+          try { window.localStorage.setItem("orion:timelineCollapsed", "1"); } catch (e) {}
+        } else {
+          panelState[surface.id] = true;
+        }
+      });
+
+      try { window.localStorage.setItem("orion:panelCollapsed", JSON.stringify(panelState)); } catch (e) {}
+    }());
+
     (function () {
       var HUD_HIDDEN_KEY = "orion:hudHidden";
       var hideBtn = document.getElementById("hudHideToggle");

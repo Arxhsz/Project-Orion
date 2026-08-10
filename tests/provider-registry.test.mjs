@@ -229,7 +229,8 @@ test("platform renderers are rebound and guarded after boot recovery", () => {
 test("html asset version is bumped for updated runtime modules", () => {
   const source = fs.readFileSync(path.join(root, "index.html"), "utf8");
 
-  assert.match(source, /app\.js\?v=20260809-grid-timeline13/);
+  assert.match(source, /app\.js\?v=20260809-grid-timeline14/);
+  assert.match(source, /orion-onboarding\.js\?v=20260809-grid-timeline8/);
   assert.match(source, /cameranet_frontend\.js\?v=20260809-grid-timeline9/);
   assert.match(source, /orion-renderer-primitive\.js\?v=20260809-grid-timeline7/);
   assert.match(source, /orion-telemetry-health\.js\?v=20260809-grid-timeline7/);
@@ -348,4 +349,5 @@ test("compact HUD panels collapse peers before expanding", () => {
   assert.match(app, /window\.matchMedia\("\(max-width: 760px\)"\)\.matches/);
   assert.match(app, /collapseCompactPanel\("telemetryPanel"/);
   assert.match(app, /collapseCompactTimeline\(\)/);
+  assert.match(app, /function normalizeCompactHudStartup\(\)/);
 });

@@ -4,7 +4,7 @@ const OrionOnboarding = (function() {
     const STORAGE_KEYS = {
         ONBOARDING_COMPLETE: 'orion_onboarding_complete',
         CHANGELOG_VERSION: 'orion_changelog_dismissed',
-        CURRENT_VERSION: '1.1.2-infrastructure'
+        CURRENT_VERSION: '1.1.2-map-reliability'
     };
 
     const TUTORIAL_STEPS = [
@@ -58,7 +58,7 @@ const OrionOnboarding = (function() {
         {
             id: 'live-tracking-toggles',
             title: 'Live Tracking Toggles',
-            description: 'Enable or disable tracking for Aircraft, Satellites, and Vessels. These toggles control which synthetic mission objects appear on the globe with trails.',
+            description: 'Enable or disable current aircraft, propagated satellite, and configured vessel feeds. Vessel tracking stays unavailable until a licensed AIS provider is configured.',
             target: '.tracking-toggle-grid',
             position: 'right',
             cameraFly: null,
@@ -101,7 +101,7 @@ const OrionOnboarding = (function() {
         {
             id: 'cameranet',
             title: 'CameraNet',
-            description: 'Access over 2,200 live traffic cameras and infrastructure feeds from Seattle, NYC, and Florida. Enable this layer to see camera markers on the globe.',
+            description: 'Access verified public snapshots, HLS feeds, and publisher embeds across regional camera adapters. Enable this layer to see clustered camera markers on the globe.',
             target: 'label:has(#platformCameras)',
             position: 'right',
             cameraFly: { lat: 28.5, lon: -81.5, height: 500000 },
@@ -122,7 +122,7 @@ const OrionOnboarding = (function() {
         {
             id: 'tracking',
             title: 'Orbital Tracking',
-            description: 'Track real-time satellites including the ISS, Starlink constellation, and orbital debris. Enable these layers to watch satellites orbit Earth with visible trails.',
+            description: 'Track public orbital elements including active satellites, Starlink, and debris groups. Select a satellite to inspect its propagated path and ground footprint.',
             target: 'label:has(#platformSatellites)',
             position: 'right',
             cameraFly: { lat: 0, lon: 0, height: 15000000 },
@@ -153,7 +153,6 @@ const OrionOnboarding = (function() {
             scrollTarget: '#intelListPanel',
             scrollIntoView: true,
             showIntelList: true,
-            enableAisVesselsDemo: true
         },
         {
             id: 'timeline-modes',
@@ -185,7 +184,7 @@ const OrionOnboarding = (function() {
         {
             id: 'timeline-speed',
             title: 'Playback Speed',
-            description: 'Control how fast time moves during playback. Choose from 0.1 h/s (slow) to 10 h/s (fast) to match your analysis speed.',
+            description: 'Control how fast time moves during playback. Choose from 0.1 h/s to 24 h/s to match your analysis speed.',
             target: '#speedSelect',
             position: 'top',
             cameraFly: null,
@@ -249,30 +248,30 @@ const OrionOnboarding = (function() {
 
     const CHANGELOG = {
         version: '1.1.2',
-        date: 'July 2026',
+        date: 'August 2026',
         sections: [
             {
-                title: 'Provider Hardening',
+                title: 'Map Reliability',
                 items: [
-                    'Replaced direct RainViewer radar tile use with documented NOAA/NWS radar metadata and map-service support',
-                    'Disabled undocumented weather tile providers until an approved raster renderer is available',
-                    'Added provider health metadata with retry timing, static/live support, and attribution'
+                    'Made timeline imagery swaps transactional so old frames cannot replace the selected date',
+                    'Added current Open-Meteo precipitation, wind, temperature, humidity, and pressure grids',
+                    'Reworked density heatmaps and compact HUD behavior to prevent blobs, lag, and overlapping controls'
                 ]
             },
             {
-                title: 'Safer Defaults',
+                title: 'Live Infrastructure',
                 items: [
-                    'Moved first-run layer defaults into one authoritative configuration',
-                    'Kept heavy live, radar, weather, camera, aircraft, vessel, satellite, and debris layers off by default',
-                    'Persisted explicit user choices without re-enabling heavy layers for first-time visitors'
+                    'Added a global OpenInfraMap high-voltage backbone plus detailed regional power assets',
+                    'Improved submarine-cable selection and retained one renderer owner per infrastructure layer',
+                    'Kept credential-gated feeds visibly unavailable instead of reporting a failed provider'
                 ]
             },
             {
-                title: 'Static And Local Modes',
+                title: 'CameraNet And Orbits',
                 items: [
-                    'Added request cancellation and provider gating for unsupported static-mode layers',
-                    'Updated GitHub Pages snapshot generation for NOAA/NWS radar and metadata-only weather fields',
-                    'Removed dead RainViewer and undocumented weather proxy routes from the Python backend'
+                    'Expanded verified camera snapshots and HLS handling, including Alaska and curated public embeds',
+                    'Added screen-space camera clustering with globe occlusion and stale-request cancellation',
+                    'Added selectable satellite paths, ground footprints, correct orbital periods, and element ages'
                 ]
             },
             {
