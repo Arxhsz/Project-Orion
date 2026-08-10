@@ -8,9 +8,7 @@
   var gibsRoot = staticHost
     ? "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best"
     : "/gibs/wmts/epsg3857/best";
-  var gibsNrtRoot = staticHost
-    ? "https://gibs.earthdata.nasa.gov/wmts/epsg3857/nrt"
-    : "/gibs/wmts/epsg3857/nrt";
+  var gibsNrtWmsRoot = "https://gibs.earthdata.nasa.gov/wms/epsg4326/nrt/wms.cgi";
 
   Orion.Config.LayerDefinitions = {
     trueColor: {
@@ -97,31 +95,21 @@
       saturation: 1.0,
       timed: false
     },
-    goesEast: {
-      name: "NOAA GOES-East GeoColor NRT",
-      root: gibsNrtRoot,
-      layer: "GOES-East_ABI_GeoColor_v0_NRT",
-      matrixSet: "GoogleMapsCompatible_Level7",
-      extension: "png",
-      maximumLevel: 7,
+    goesComposite: {
+      name: "NOAA GOES East/West GeoColor NRT",
+      providerType: "wmsSnapshot",
+      root: gibsNrtWmsRoot,
+      layers: [
+        "GOES-East_ABI_GeoColor_v0_NRT",
+        "GOES-West_ABI_GeoColor_v0_NRT"
+      ],
+      rectangle: [-180, -85, 180, 85],
       alpha: 0.9,
       brightness: 1.0,
       contrast: 1.08,
       saturation: 1.06,
-      timed: false
-    },
-    goesWest: {
-      name: "NOAA GOES-West GeoColor NRT",
-      root: gibsNrtRoot,
-      layer: "GOES-West_ABI_GeoColor_v0_NRT",
-      matrixSet: "GoogleMapsCompatible_Level7",
-      extension: "png",
-      maximumLevel: 7,
-      alpha: 0.9,
-      brightness: 1.0,
-      contrast: 1.08,
-      saturation: 1.06,
-      timed: false
+      timed: true,
+      cadenceHours: 3
     }
   };
 

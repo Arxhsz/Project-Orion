@@ -111,6 +111,9 @@
   var lastImageryRefreshAt = 0;
   var activeImageryLayers = [];
   var stagedImageryLayers = [];
+  var imageryReusePool = [];
+  var imageryReusedLayers = [];
+  var committedImagerySignature = "";
   var baseImageryLayer = null;
   var lastImageryHealthCheck = 0;
   var lastCameraCartesian = null;
@@ -1178,8 +1181,37 @@
     return state.weatherMapMode === "satellite" && state.satelliteSource === "public-geostat";
   }
 
+  function effectiveGoesFrameTime(requestedDate, cadenceHours) {
+    var frame = isValidDate(requestedDate) ? new Date(requestedDate.getTime()) : new Date(maxDate.getTime());
+    var cadence = Math.max(1, Number(cadenceHours) || 3);
+
+    if (frame.getTime() > maxDate.getTime()) {
+      frame = new Date(maxDate.getTime());
+    }
+
+    frame.setUTCMinutes(0, 0, 0);
+    frame.setUTCHours(Math.floor(frame.getUTCHours() / cadence) * cadence);
+    return frame;
+  }
+
   function timelineRefreshKey(date) {
+    if (isLiveSatelliteImageryMode()) {
+      var goesFrame = effectiveGoesFrameTime(date, layerDefinitions.goesComposite.cadenceHours);
+      return formatDate(goesFrame) + "T" + formatHour(goesFrame);
+    }
+
     return formatDate(effectiveGibsDate(date));
+  }
+
+  function imageryConfigurationSignature() {
+    return JSON.stringify({
+      frame: timelineRefreshKey(state.date),
+      compareFrame: state.compareMode ? formatDate(effectiveGibsDate(state.compareDate)) : null,
+      compareMode: state.compareMode,
+      cleanEarth: state.cleanEarth,
+      satelliteSource: state.satelliteSource,
+      layers: state.layers
+    });
   }
 
   function buildTrackingCatalog(seedDefinitions) {
@@ -10082,7 +10114,9 @@ void main() {
 
     if (Cesium.UrlTemplateImageryProvider) {
       fallbackBaseLayer = viewer.imageryLayers.addImageryProvider(new Cesium.UrlTemplateImageryProvider({
-        url: "/esri/tile/{z}/{y}/{x}",
+        url: isStaticHostMode()
+          ? "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+          : "/esri/tile/{z}/{y}/{x}",
         minimumLevel: 0,
         maximumLevel: 12,
         credit: "Esri World Imagery fallback",
@@ -10281,6 +10315,35 @@ void main() {
   }
 
   function createGibsProvider(definition, date) {
+    if (definition.providerType === "wmsSnapshot") {
+      var snapshotParams = [
+        "service=WMS",
+        "request=GetMap",
+        "version=1.1.1",
+        "layers=" + encodeURIComponent(definition.layers.join(",")),
+        "styles=",
+        "srs=EPSG%3A4326",
+        "bbox=" + encodeURIComponent(definition.rectangle.join(",")),
+        "width=2048",
+        "height=1024",
+        "format=image%2Fpng",
+        "transparent=true"
+      ];
+
+      if (definition.timed) {
+        var snapshotTime = effectiveGoesFrameTime(date, definition.cadenceHours);
+        snapshotParams.push("time=" + encodeURIComponent(snapshotTime.toISOString().replace(/\.000Z$/, "Z")));
+      }
+
+      var snapshotUrl = definition.root + "?" + snapshotParams.join("&");
+
+      return new Cesium.SingleTileImageryProvider({
+        url: snapshotUrl,
+        rectangle: Cesium.Rectangle.fromDegrees.apply(Cesium.Rectangle, definition.rectangle),
+        credit: "NASA GIBS / NOAA GOES"
+      });
+    }
+
     var tileDate = definition.timed ? effectiveGibsDate(date) : date;
     var timeSegment = definition.timed ? formatDate(tileDate) : "default";
     var root = definition.root || GIBS_ROOT;
@@ -10333,24 +10396,49 @@ void main() {
     viewer.scene.requestRender();
   }
 
+  function imageryProviderFrameKey(key, date) {
+    var definition = layerDefinitions[key];
+
+    if (definition.providerType === "wmsSnapshot") {
+      return effectiveGoesFrameTime(date, definition.cadenceHours).toISOString();
+    }
+    if (definition.timed) {
+      return formatDate(effectiveGibsDate(date));
+    }
+    return "static";
+  }
+
   function addLayer(key, date, splitDirection, fadeAlpha) {
     var definition = layerDefinitions[key];
-    var imageryLayer = viewer.imageryLayers.addImageryProvider(createGibsProvider(definition, date));
+    var providerFrameKey = imageryProviderFrameKey(key, date);
+    var normalizedSplit = splitDirection === Cesium.SplitDirection.LEFT
+      ? Cesium.SplitDirection.LEFT
+      : splitDirection === Cesium.SplitDirection.RIGHT
+        ? Cesium.SplitDirection.RIGHT
+        : Cesium.SplitDirection.NONE;
+    var imageryLayer = imageryReusePool.find(function (candidate) {
+      return imageryReusedLayers.indexOf(candidate) === -1 &&
+        candidate.orionKey === key &&
+        candidate.orionProviderFrameKey === providerFrameKey &&
+        candidate.splitDirection === normalizedSplit &&
+        imageryLayerExists(candidate);
+    });
+    var reused = !!imageryLayer;
+
+    if (reused) {
+      imageryReusedLayers.push(imageryLayer);
+    } else {
+      imageryLayer = viewer.imageryLayers.addImageryProvider(createGibsProvider(definition, date));
+    }
 
     imageryLayer.orionKey = key;
+    imageryLayer.orionProviderFrameKey = providerFrameKey;
     imageryLayer.orionTargetAlpha = definition.alpha;
-    imageryLayer.orionFadeAlpha = fadeAlpha === undefined ? 1 : fadeAlpha;
+    imageryLayer.orionFadeAlpha = reused ? 1 : (fadeAlpha === undefined ? 1 : fadeAlpha);
     imageryLayer.brightness = definition.brightness;
     imageryLayer.contrast = definition.contrast;
     imageryLayer.saturation = definition.saturation;
-
-    if (splitDirection === Cesium.SplitDirection.LEFT) {
-      imageryLayer.splitDirection = Cesium.SplitDirection.LEFT;
-    } else if (splitDirection === Cesium.SplitDirection.RIGHT) {
-      imageryLayer.splitDirection = Cesium.SplitDirection.RIGHT;
-    } else {
-      imageryLayer.splitDirection = Cesium.SplitDirection.NONE;
-    }
+    imageryLayer.splitDirection = normalizedSplit;
 
     setImageryLayerLinearSampling(imageryLayer);
     applyLayerDisplayAlpha(imageryLayer);
@@ -10374,8 +10462,7 @@ void main() {
   function isBaseImageryKey(key) {
     return key === "trueColor" ||
       key === "cleanEarth" ||
-      key === "goesEast" ||
-      key === "goesWest" ||
+      key === "goesComposite" ||
       key === "sentinel" ||
       key === "night" ||
       key === "infrared";
@@ -10384,8 +10471,7 @@ void main() {
   function isSolidBaseImageryKey(key) {
     return key === "trueColor" ||
       key === "cleanEarth" ||
-      key === "goesEast" ||
-      key === "goesWest";
+      key === "goesComposite";
   }
 
   function hasBaseImageryLayer(layers) {
@@ -10441,8 +10527,7 @@ void main() {
     }
 
     if (state.satelliteSource === "public-geostat") {
-      layers.push(addLayer("goesEast", state.date, rightSplit, fullAlpha));
-      layers.push(addLayer("goesWest", state.date, rightSplit, fullAlpha));
+      layers.push(addLayer("goesComposite", state.date, rightSplit, fullAlpha));
     }
 
     ["clouds", "infrared", "night"].forEach(function (key) {
@@ -10463,7 +10548,7 @@ void main() {
     return layers;
   }
 
-  function commitImageryLayers(newLayers) {
+  function commitImageryLayers(newLayers, signature) {
     newLayers.forEach(function (layer) {
       layer.orionFadeAlpha = 1;
       layer.orionAllowLowFade = false;
@@ -10476,7 +10561,14 @@ void main() {
 
     activeImageryLayers = newLayers.filter(imageryLayerExists);
     stagedImageryLayers = [];
+    committedImagerySignature = signature || imageryConfigurationSignature();
     baseImageryLayer = findBaseImageryLayer();
+  }
+
+  function orderOrionImageryLayers(layers) {
+    layers.forEach(function (layer) {
+      raiseLayerToTop(layer);
+    });
   }
 
   function removeOrionImageryLayers(exceptLayers) {
@@ -10515,7 +10607,8 @@ void main() {
     removeOrionImageryLayers([]);
 
     var layers = ensureBaseImageryFallback(buildImageryLayerList(), 1);
-    commitImageryLayers(layers);
+    orderOrionImageryLayers(layers);
+    commitImageryLayers(layers, imageryConfigurationSignature());
     syncImagerySplitMode();
     raiseOperationalLayers();
     viewer.scene.requestRender();
@@ -10588,6 +10681,12 @@ void main() {
       return;
     }
 
+    var requestedSignature = imageryConfigurationSignature();
+    if (activeImageryLayers.length && requestedSignature === committedImagerySignature) {
+      queuedImageryRefresh = false;
+      return;
+    }
+
     imageryTransitionToken++;
     imageryTransitionActive = true;
     queuedImageryRefresh = false;
@@ -10605,10 +10704,14 @@ void main() {
 
     var newLayers;
     var layerCountBeforeBuild = viewer.imageryLayers.length;
+    imageryReusePool = oldLayers.slice();
+    imageryReusedLayers = [];
 
     try {
       newLayers = ensureBaseImageryFallback(buildImageryLayerList(0.02), 0.02);
     } catch (error) {
+      imageryReusePool = [];
+      imageryReusedLayers = [];
       for (var failedIndex = viewer.imageryLayers.length - 1; failedIndex >= layerCountBeforeBuild; failedIndex--) {
         var failedLayer = viewer.imageryLayers.get(failedIndex);
         if (failedLayer && failedLayer.orionKey) {
@@ -10628,24 +10731,43 @@ void main() {
       return;
     }
 
+    var reusedLayers = imageryReusedLayers.slice();
+    var incomingLayers = newLayers.filter(function (layer) {
+      return reusedLayers.indexOf(layer) === -1;
+    });
+    var outgoingLayers = oldLayers.filter(function (layer) {
+      return reusedLayers.indexOf(layer) === -1;
+    });
+    imageryReusePool = [];
+    imageryReusedLayers = [];
+
     var requestedFrameKey = timelineRefreshKey(state.date);
 
     newLayers.forEach(function (layer) {
-      layer.orionAllowLowFade = true;
-      layer.orionFadeAlpha = 0.02;
+      var reused = reusedLayers.indexOf(layer) !== -1;
+      layer.orionAllowLowFade = !reused;
+      layer.orionFadeAlpha = reused ? 1 : 0.02;
       layer.orionFrameKey = requestedFrameKey;
       layer.show = true;
       applyLayerDisplayAlpha(layer);
     });
 
-    oldLayers.forEach(function (layer) {
+    outgoingLayers.forEach(function (layer) {
       layer.orionAllowLowFade = true;
     });
 
-    stagedImageryLayers = newLayers;
+    stagedImageryLayers = incomingLayers;
+    orderOrionImageryLayers(newLayers);
     syncImagerySplitMode();
     raiseOperationalLayers();
     viewer.scene.requestRender();
+
+    if (!incomingLayers.length && !outgoingLayers.length) {
+      commitImageryLayers(newLayers, requestedSignature);
+      updateTelemetry();
+      imageryTransitionActive = false;
+      return;
+    }
 
     var holdUntil = performance.now() + (state.playing ? 100 : (state.timelineMode === "updates" ? 220 : 160));
     var start = 0;
@@ -10665,14 +10787,14 @@ void main() {
         ? 4 * progress * progress * progress
         : 1 - Math.pow(-2 * progress + 2, 3) / 2;
 
-      newLayers.forEach(function (layer) {
+      incomingLayers.forEach(function (layer) {
         if (imageryLayerExists(layer)) {
           layer.orionFadeAlpha = Math.max(0.02, eased);
           applyLayerDisplayAlpha(layer);
         }
       });
 
-      oldLayers.forEach(function (layer) {
+      outgoingLayers.forEach(function (layer) {
         if (imageryLayerExists(layer)) {
           layer.orionFadeAlpha = clamp(1 - eased, 0, 1);
           applyLayerDisplayAlpha(layer);
@@ -10686,12 +10808,12 @@ void main() {
         return;
       }
 
-      oldLayers.forEach(function (layer) {
+      outgoingLayers.forEach(function (layer) {
         if (imageryLayerExists(layer)) {
           viewer.imageryLayers.remove(layer, true);
         }
       });
-      commitImageryLayers(newLayers);
+      commitImageryLayers(newLayers, requestedSignature);
       syncImagerySplitMode();
       raiseOperationalLayers();
       updateTelemetry();

@@ -188,6 +188,9 @@ test("timeline swaps imagery once per provider frame and owns the final layer se
 
   assert.match(source, /return formatDate\(effectiveGibsDate\(date\)\)/);
   assert.match(source, /layer\.orionFrameKey = requestedFrameKey/);
+  assert.match(source, /candidate\.orionProviderFrameKey === providerFrameKey/);
+  assert.match(source, /requestedSignature === committedImagerySignature/);
+  assert.match(source, /stagedImageryLayers = incomingLayers/);
   assert.match(source, /Imagery transaction rolled back/);
   assert.doesNotMatch(source, /formatDate\(date\) \+ "T" \+ formatHour\(date\)/);
 });
@@ -196,7 +199,31 @@ test("transient basemap tile retries do not warn-spam the console", () => {
   const source = fs.readFileSync(path.join(root, "app.js"), "utf8");
 
   assert.match(source, /debugLog\("ESRI tile retry:"/);
+  assert.match(source, /isStaticHostMode\(\)[\s\S]*?https:\/\/server\.arcgisonline\.com\/ArcGIS\/rest\/services\/World_Imagery\/MapServer\/tile/);
   assert.equal(source.includes("console.warn(\"ESRI tile error"), false);
+});
+
+test("GOES imagery uses one global WMS composite instead of sparse WMTS tiles", () => {
+  const Orion = loadBrowserModules(["orion-config.js"]);
+  const source = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  const definition = Orion.Config.LayerDefinitions.goesComposite;
+
+  assert.equal(definition.providerType, "wmsSnapshot");
+  assert.deepEqual(Array.from(definition.layers), [
+    "GOES-East_ABI_GeoColor_v0_NRT",
+    "GOES-West_ABI_GeoColor_v0_NRT"
+  ]);
+  assert.match(definition.root, /\/wms\/epsg4326\/nrt\/wms\.cgi$/);
+  assert.equal(definition.timed, true);
+  assert.equal(definition.cadenceHours, 3);
+  assert.equal(Orion.Config.LayerDefinitions.goesEast, undefined);
+  assert.equal(Orion.Config.LayerDefinitions.goesWest, undefined);
+  assert.match(source, /new Cesium\.SingleTileImageryProvider/);
+  assert.match(source, /function effectiveGoesFrameTime/);
+  assert.match(source, /snapshotParams\.push\("time="/);
+  assert.match(source, /layers\.push\(addLayer\("goesComposite"/);
+  assert.equal(source.includes('addLayer("goesEast"'), false);
+  assert.equal(source.includes('addLayer("goesWest"'), false);
 });
 
 test("historical timeline labels live-only aircraft as latest snapshot", () => {
@@ -229,7 +256,8 @@ test("platform renderers are rebound and guarded after boot recovery", () => {
 test("html asset version is bumped for updated runtime modules", () => {
   const source = fs.readFileSync(path.join(root, "index.html"), "utf8");
 
-  assert.match(source, /app\.js\?v=20260809-grid-timeline14/);
+  assert.match(source, /app\.js\?v=20260810-grid-timeline17/);
+  assert.match(source, /orion-config\.js\?v=20260810-grid-timeline9/);
   assert.match(source, /orion-onboarding\.js\?v=20260809-grid-timeline8/);
   assert.match(source, /cameranet_frontend\.js\?v=20260809-grid-timeline9/);
   assert.match(source, /orion-renderer-primitive\.js\?v=20260809-grid-timeline7/);
