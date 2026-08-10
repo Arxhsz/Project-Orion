@@ -173,12 +173,23 @@ test("power grid refreshes when the viewport region changes", () => {
 
   assert.match(source, /lastViewportRegionKeys/);
   assert.match(source, /cameraRegionQuery\("powerGrid"\)/);
-  assert.match(source, /var hasTarget = typeof state\.target\.lon === "number"/);
-  assert.match(source, /if \(hasTarget \|\| \(hasRegionalView/);
+  assert.match(source, /cameraHeight > 7500000/);
+  assert.match(source, /return "&detail=global"/);
+  assert.match(source, /"&detail=" \+ \(\(east - west <= 0\.24/);
   assert.match(source, /viewportBoundPlatformLayers\.forEach/);
   assert.match(source, /refreshPlatformLayer\(layerId, true\)/);
-  assert.match(server, /ThreadPoolExecutor\(max_workers=len\(OVERPASS_INTERPRETER_URLS\)\)/);
+  assert.match(server, /ThreadPoolExecutor\(max_workers=len\(line_endpoints\) \+ 1\)/);
+  assert.match(server, /if not any\(feature\.get\("kind"\) == "line" for feature in features\)/);
   assert.match(server, /"stale": True/);
+});
+
+test("timeline swaps imagery once per provider frame and owns the final layer set", () => {
+  const source = fs.readFileSync(path.join(root, "app.js"), "utf8");
+
+  assert.match(source, /return formatDate\(effectiveGibsDate\(date\)\)/);
+  assert.match(source, /layer\.orionFrameKey = requestedFrameKey/);
+  assert.match(source, /Imagery transaction rolled back/);
+  assert.doesNotMatch(source, /formatDate\(date\) \+ "T" \+ formatHour\(date\)/);
 });
 
 test("transient basemap tile retries do not warn-spam the console", () => {
@@ -218,9 +229,10 @@ test("platform renderers are rebound and guarded after boot recovery", () => {
 test("html asset version is bumped for updated runtime modules", () => {
   const source = fs.readFileSync(path.join(root, "index.html"), "utf8");
 
-  assert.match(source, /app\.js\?v=20260809-camera-orbit2/);
-  assert.match(source, /orion-renderer-primitive\.js\?v=20260809-camera-orbit2/);
-  assert.match(source, /orion-telemetry-health\.js\?v=20260809-camera-orbit2/);
+  assert.match(source, /app\.js\?v=20260809-grid-timeline13/);
+  assert.match(source, /cameranet_frontend\.js\?v=20260809-grid-timeline9/);
+  assert.match(source, /orion-renderer-primitive\.js\?v=20260809-grid-timeline7/);
+  assert.match(source, /orion-telemetry-health\.js\?v=20260809-grid-timeline7/);
   assert.equal(source.includes("20260701-hardening3"), false);
 });
 
@@ -234,6 +246,12 @@ test("camera and orbital layers have a single viewport and control owner", () =>
   assert.match(appSource, /if \(!viewer \|\| imageryTransitionActive\)/);
   assert.equal(cameraSource.includes("prefetchContinentalUS"), false);
   assert.equal(cameraSource.includes("camera.changed.addEventListener"), false);
+  assert.match(cameraSource, /requestVersion !== cameraNetState\.requestVersion/);
+  assert.match(cameraSource, /activeFetchController\.abort\(\)/);
+  assert.match(cameraSource, /function screenClusterCameras/);
+  assert.match(cameraSource, /new Cesium\.EllipsoidalOccluder/);
+  assert.match(appSource, /if \(layerId === "cameras"\) \{[\s\S]*?clearPlatformLayer\(layerId\);[\s\S]*?renderCamerasAsPrimitives\(items\)/);
+  assert.match(appSource, /if \(layerId === "cameras" && window\.CameraNet\) \{\s*return;/);
   assert.match(configSource, /satInternet:[\s\S]*?controlId: null/);
   assert.match(appSource, /var lastIntelListSignature = ""/);
   assert.match(appSource, /if \(listSignature === lastIntelListSignature\)/);
@@ -279,12 +297,16 @@ test("CameraNet contains no fabricated state coverage and supports verified embe
   const providersSource = fs.readFileSync(path.join(root, "camera_providers.py"), "utf8");
   const cameraSource = fs.readFileSync(path.join(root, "cameranet_frontend.js"), "utf8");
   const serverSource = fs.readFileSync(path.join(root, "orion_server.py"), "utf8");
+  const pagesSource = fs.readFileSync(path.join(root, "build_pages_data.py"), "utf8");
 
   assert.equal(providersSource.includes("USCoverageFillProvider"), false);
   assert.match(providersSource, /publicwebcam-wptv-pbi/);
   assert.match(cameraSource, /function includeTargetInBbox/);
   assert.match(cameraSource, /function renderEmbeddedFeed/);
   assert.match(cameraSource, /camera-snapshot-badge/);
+  assert.match(cameraSource, /isStaticHostMode\(\) && directStaticStream/);
+  assert.match(pagesSource, /item\.get\("upstream_stream_url"\)/);
+  assert.match(pagesSource, /get_all_cameras\(None, None, None\)/);
   assert.match(serverSource, /def camera_priority\(camera\)/);
   assert.match(serverSource, /media_priority = 0 if camera\.get\("embed_url"\) else 1/);
 });
@@ -297,4 +319,33 @@ test("wildfire provider falls back to usable reference features", () => {
   assert.match(server, /provider_health": "fallback"/);
   assert.match(server, /self\.send_json\(wildfire_fallback_payload/);
   assert.match(pages, /orion_server\.wildfire_fallback_payload/);
+});
+
+test("Open-Meteo field modes render a real global grid", () => {
+  const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  const server = fs.readFileSync(path.join(root, "orion_server.py"), "utf8");
+  const pages = fs.readFileSync(path.join(root, "build_pages_data.py"), "utf8");
+
+  assert.match(app, /function buildWeatherFieldTexture/);
+  assert.match(app, /new Cesium\.SingleTileImageryProvider/);
+  assert.match(server, /def fetch_open_meteo_weather_grid/);
+  assert.match(server, /"mode": "live-global-grid"/);
+  assert.match(pages, /orion_server\.open_meteo_weather_field_payload/);
+  assert.doesNotMatch(server, /"mode": "metadata-only"/);
+});
+
+test("satellite details convert radians per minute into orbital period", () => {
+  const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+
+  assert.match(app, /return \(Math\.PI \* 2\) \/ radiansPerMinute/);
+  assert.match(app, /\["Element age", item\.tleEpoch \? detailAgeValue/);
+  assert.doesNotMatch(app, /1440 \/ Math\.max\(0\.0001, item\.satrec\.no\)/);
+});
+
+test("compact HUD panels collapse peers before expanding", () => {
+  const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+
+  assert.match(app, /window\.matchMedia\("\(max-width: 760px\)"\)\.matches/);
+  assert.match(app, /collapseCompactPanel\("telemetryPanel"/);
+  assert.match(app, /collapseCompactTimeline\(\)/);
 });

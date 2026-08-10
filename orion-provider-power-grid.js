@@ -61,20 +61,28 @@
 
     return raw.map(function(item, index) {
       var path = normalizePath(item);
-      if (path.length < 2) {
-        return null;
-      }
+      var isPoint = Number.isFinite(Number(item.lat)) && Number.isFinite(Number(item.lon));
+      if (path.length < 2 && !isPoint) return null;
 
-      return Object.assign({}, item, {
+      var normalized = Object.assign({}, item, {
         id: item.id || item.name || "power-grid-" + index,
-        name: item.name || "Power transmission line",
-        kind: "line",
+        name: item.name || (isPoint ? "Power infrastructure" : "Power transmission line"),
+        kind: isPoint ? (item.kind || "point") : "line",
         category: item.category || "transmission",
         source: item.source || "OpenStreetMap / Overpass",
         provider: item.provider || "OpenStreetMap contributors",
-        points: path,
-        positions: path
+        voltage: Number(item.voltage) || 0
       });
+
+      if (path.length >= 2) {
+        normalized.points = path;
+        normalized.positions = path;
+      } else {
+        normalized.lat = Number(item.lat);
+        normalized.lon = Number(item.lon);
+        normalized.height = Number(item.height) || 72;
+      }
+      return normalized;
     }).filter(Boolean);
   }
 
@@ -139,7 +147,7 @@
     },
 
     getAttribution: function() {
-      return "OpenStreetMap contributors / Overpass API";
+      return "OpenInfraMap / OpenStreetMap contributors; ArcGIS Living Atlas / EIA-HIFLD";
     },
 
     getHealth: function() {

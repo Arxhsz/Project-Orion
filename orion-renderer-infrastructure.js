@@ -68,6 +68,7 @@
         this.UnderseaCables.collection && this.UnderseaCables.collection.removeAll();
       } else if (layerId === 'powerGrid') {
         this.PowerGrid.collection && this.PowerGrid.collection.removeAll();
+        this.PowerGrid.points && this.PowerGrid.points.removeAll();
       }
     }
   };
@@ -202,24 +203,86 @@
 
   Orion.Renderer.Infrastructure.PowerGrid = {
     collection: null,
+    points: null,
     init: function(viewer) {
       this.viewer = viewer;
       this.collection = viewer.scene.primitives.add(new Cesium.PolylineCollection());
       this.collection._orionManaged = true;
+      this.points = viewer.scene.primitives.add(new Cesium.PointPrimitiveCollection());
+      this.points._orionManaged = true;
     },
     render: function(items) {
-      if (!this.collection) return;
+      if (!this.collection || !this.points) return;
       var providerCount = items.length;
       this.collection.removeAll();
+      this.points.removeAll();
       
       var self = this;
       var height = this.viewer.camera.positionCartographic.height;
-      var color = Cesium.Color.fromCssColorString(Orion.Config.PlatformLayerDefinitions.powerGrid.color);
+      var linePalette = {
+        ultra: "#f26b5e",
+        extra: "#ffad66",
+        high: "#ffe066",
+        medium: "#55c9d8",
+        low: "#9fd38a",
+        cable: "#aa96ff",
+        busbar: "#e8f59b"
+      };
+      var facilityPalette = {
+        plant: "#ff6b63",
+        generator: "#8bd17c",
+        substation: "#65d8e6",
+        transformer: "#ffd166",
+        converter: "#c4a7ff",
+        switch: "#f4f7fb",
+        compensator: "#f0a6ca",
+        tower: "#aab4c2",
+        pole: "#8e99a8",
+        portal: "#b8c2cf"
+      };
+
+      function lineColor(item) {
+        var category = String(item.category || "line").toLowerCase();
+        var voltage = Number(item.voltage) || 0;
+        if (category === "cable") return linePalette.cable;
+        if (category === "busbar") return linePalette.busbar;
+        if (voltage >= 500000) return linePalette.ultra;
+        if (voltage >= 330000) return linePalette.extra;
+        if (voltage >= 220000) return linePalette.high;
+        if (voltage >= 110000) return linePalette.medium;
+        return linePalette.low;
+      }
+
+      function facilitySize(category) {
+        if (category === "plant") return 9;
+        if (category === "substation") return 8;
+        if (category === "generator") return 7;
+        if (category === "transformer" || category === "converter") return 6;
+        return 4.5;
+      }
       
       var lodVisible = 0;
       items.forEach(function(item, index) {
         var path = normalizedPath(item);
-        if (!path.length) return;
+        var category = String(item.category || "line").toLowerCase();
+
+        if (path.length < 2 && Number.isFinite(Number(item.lat)) && Number.isFinite(Number(item.lon))) {
+          var smallFacility = category === "tower" || category === "pole" || category === "portal" || category === "switch";
+          if (height > (smallFacility ? 650000 : 3500000)) return;
+          lodVisible++;
+          self.points.add({
+            id: primitivePickId("powerGrid", item, index),
+            position: Cesium.Cartesian3.fromDegrees(Number(item.lon), Number(item.lat), Number(item.height) || 72),
+            pixelSize: facilitySize(category),
+            color: Cesium.Color.fromCssColorString(facilityPalette[category] || "#d9e2ec").withAlpha(0.92),
+            outlineColor: Cesium.Color.fromCssColorString("#071019").withAlpha(0.96),
+            outlineWidth: 1.5,
+            disableDepthTestDistance: 2500000
+          });
+          return;
+        }
+
+        if (path.length < 2) return;
         
         if (height > 5000000 && item.voltage < 220000) return;
         if (height > 1000000 && item.voltage < 110000) return;
@@ -232,13 +295,13 @@
         self.collection.add({ 
           id: primitivePickId("powerGrid", item, index),
           positions: pts, 
-          width: height > 1000000 ? 1.2 : 1.8, 
+          width: height > 5000000 ? 1.0 : height > 1000000 ? 1.35 : 2.0,
           material: Cesium.Material.fromType('Color', { 
-            color: color.withAlpha(height > 2000000 ? 0.4 : 0.6) 
+            color: Cesium.Color.fromCssColorString(lineColor(item)).withAlpha(height > 5000000 ? 0.48 : height > 2000000 ? 0.62 : 0.82)
           }) 
         });
       });
-      console.log('[PowerGrid] Provider:', providerCount, 'LOD Visible:', lodVisible, 'Allocated:', this.collection.length);
+      console.log('[PowerGrid] Provider:', providerCount, 'LOD Visible:', lodVisible, 'Lines:', this.collection.length, 'Facilities:', this.points.length);
     }
   };
 

@@ -27,6 +27,8 @@
     cacheLimit: 40,
     activeFetchKey: "",
     activeFetchPromise: null,
+    activeFetchController: null,
+    requestVersion: 0,
     renderSignature: ""
   };
 
@@ -290,11 +292,22 @@
       return cameraNetState.activeFetchPromise;
     }
 
+    if (cameraNetState.activeFetchController) {
+      cameraNetState.activeFetchController.abort();
+    }
+
+    var requestVersion = ++cameraNetState.requestVersion;
+    var controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+
     cameraNetState.providerStatus = "loading";
     cameraNetState.lastError = "";
 
     cameraNetState.activeFetchKey = key || "";
-    cameraNetState.activeFetchPromise = fetch(url, { headers: { Accept: "application/json" } })
+    cameraNetState.activeFetchController = controller;
+    cameraNetState.activeFetchPromise = fetch(url, {
+      headers: { Accept: "application/json" },
+      signal: controller ? controller.signal : undefined
+    })
       .then(function (response) {
         if (!response.ok) {
           throw new Error("CameraNet HTTP " + response.status);
@@ -302,6 +315,9 @@
         return response.json();
       })
       .then(function (data) {
+        if (requestVersion !== cameraNetState.requestVersion) {
+          return null;
+        }
         var cameras = Array.isArray(data.cameras) ? data.cameras : [];
         if (isStaticHostMode()) {
           cameras = cameras.filter(function (camera) {
@@ -320,6 +336,9 @@
         return cameras;
       })
       .catch(function (error) {
+        if (requestVersion !== cameraNetState.requestVersion || (error && error.name === "AbortError")) {
+          return null;
+        }
         cameraNetState.providerStatus = "error";
         cameraNetState.lastError = error.message || String(error);
         syncPlatformFeedState("offline", null, cameraNetState.lastError);
@@ -327,9 +346,10 @@
         return [];
       })
       .finally(function () {
-        if (!key || cameraNetState.activeFetchKey === key) {
+        if (requestVersion === cameraNetState.requestVersion) {
           cameraNetState.activeFetchKey = "";
           cameraNetState.activeFetchPromise = null;
+          cameraNetState.activeFetchController = null;
         }
       });
 
@@ -350,7 +370,7 @@
     var height = viewer.camera.positionCartographic.height;
     var key = "cluster-prime-" + fetchBboxKey(bbox, height);
     fetchCamerasForBbox(viewer, bbox, key).then(function (cameras) {
-      if (!cameraNetState.enabled) {
+      if (!cameraNetState.enabled || !Array.isArray(cameras)) {
         return;
       }
       cameraNetState.cameras = cameras;
@@ -379,22 +399,85 @@
   }
 
   function clusterStep(height) {
+    if (height > 5200000) {
+      return 6.5;
+    }
     if (height > CAMERA_CONFIG.farHeight) {
-      return 2.1;
+      return 5.0;
     }
     if (height > CAMERA_CONFIG.midHeight) {
-      return 0.62;
+      return 2.8;
     }
     if (height > CAMERA_CONFIG.closeHeight) {
-      return 0.22;
+      return 0.62;
     }
     if (height > 340000) {
-      return 0.065;
+      return 0.16;
+    }
+    if (height > 120000) {
+      return 0.05;
     }
     return 0;
   }
 
-  function clusterCameras(cameras, cameraHeight) {
+  function screenClusterCameras(viewer, cameras, cameraHeight) {
+    var cellSize = cameraHeight > 5200000 ? 84 : 66;
+    var canvas = viewer.scene.canvas;
+    var ellipsoid = viewer.scene.globe.ellipsoid;
+    var occluder = new Cesium.EllipsoidalOccluder(ellipsoid, viewer.camera.positionWC);
+    var grid = {};
+
+    cameras.forEach(function (camera) {
+      var lat = Number(camera.lat);
+      var lon = Number(camera.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+        return;
+      }
+
+      var position = Cesium.Cartesian3.fromDegrees(lon, lat, CAMERA_CONFIG.billboardElevM);
+      if (!occluder.isPointVisible(position)) {
+        return;
+      }
+
+      var screen = Cesium.SceneTransforms.worldToWindowCoordinates(viewer.scene, position);
+      if (!screen || screen.x < -cellSize || screen.y < -cellSize ||
+          screen.x > canvas.clientWidth + cellSize || screen.y > canvas.clientHeight + cellSize) {
+        return;
+      }
+
+      var key = Math.round(screen.x / cellSize) + "," + Math.round(screen.y / cellSize);
+      var item = grid[key] || {
+        type: "cluster",
+        camera: camera,
+        latSum: 0,
+        lonSum: 0,
+        lat: lat,
+        lon: lon,
+        count: 0
+      };
+      item.latSum += lat;
+      item.lonSum += lon;
+      item.count += 1;
+      item.lat = item.latSum / item.count;
+      item.lon = item.lonSum / item.count;
+      grid[key] = item;
+    });
+
+    return Object.keys(grid).map(function (key) {
+      var item = grid[key];
+      if (item.count === 1) {
+        return { type: "camera", camera: item.camera, lat: item.lat, lon: item.lon, count: 1 };
+      }
+      item.camera = null;
+      return item;
+    });
+  }
+
+  function clusterCameras(cameras, cameraHeight, viewer) {
+    if (viewer && cameraHeight > CAMERA_CONFIG.closeHeight) {
+      return screenClusterCameras(viewer, cameras, cameraHeight);
+    }
+
     var step = clusterStep(cameraHeight);
     if (!step) {
       return cameras.map(function (camera) {
@@ -564,22 +647,22 @@
       position: Cesium.Cartesian3.fromDegrees(cluster.lon, cluster.lat, z),
       billboard: {
         image: safeGetIcon(iconKey),
-        width: clamp(42 + Math.log(cluster.count) * 5, 46, 74),
-        height: clamp(42 + Math.log(cluster.count) * 5, 46, 74),
+        width: clamp(30 + Math.log(cluster.count) * 3.2, 34, 54),
+        height: clamp(30 + Math.log(cluster.count) * 3.2, 34, 54),
         heightReference: Cesium.HeightReference.NONE,
-        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        disableDepthTestDistance: 0,
         distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 24000000),
         verticalOrigin: Cesium.VerticalOrigin.CENTER
       },
       label: {
         text: labelText,
-        font: "900 18px Inter, Arial, sans-serif",
+        font: "900 14px Inter, Arial, sans-serif",
         fillColor: Cesium.Color.WHITE,
         style: Cesium.LabelStyle.FILL,
         verticalOrigin: Cesium.VerticalOrigin.CENTER,
         horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
         heightReference: Cesium.HeightReference.NONE,
-        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        disableDepthTestDistance: 0,
         distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 24000000)
       },
       properties: {
@@ -599,8 +682,8 @@
     if (existing) {
       if (existing.billboard) {
         existing.billboard.image = safeGetIcon(iconKey);
-        existing.billboard.width = selected ? 40 : 34;
-        existing.billboard.height = selected ? 40 : 34;
+        existing.billboard.width = selected ? 36 : 28;
+        existing.billboard.height = selected ? 36 : 28;
       }
       if (existing.label) {
         existing.label.show = selected;
@@ -614,13 +697,13 @@
       position: Cesium.Cartesian3.fromDegrees(Number(camera.lon), Number(camera.lat), z),
       billboard: {
         image: safeGetIcon(iconKey),
-        width: selected ? 40 : 34,
-        height: selected ? 40 : 34,
+        width: selected ? 36 : 28,
+        height: selected ? 36 : 28,
         heightReference: Cesium.HeightReference.NONE,
-        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        disableDepthTestDistance: 0,
         distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 50000000),
         verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-        scaleByDistance: new Cesium.NearFarScalar(420, 1.85, 4.2e6, 0.82)
+        scaleByDistance: new Cesium.NearFarScalar(420, 1.12, 2.4e6, 0.74)
       },
       label: {
         text: camera.name || "CameraNet camera",
@@ -632,7 +715,7 @@
         verticalOrigin: Cesium.VerticalOrigin.TOP,
         pixelOffset: new Cesium.Cartesian2(0, 4),
         heightReference: Cesium.HeightReference.NONE,
-        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        disableDepthTestDistance: 0,
         distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 920000),
         show: selected
       },
@@ -666,7 +749,7 @@
     }
 
     var cameraHeight = viewer.camera.positionCartographic.height;
-    var clustered = clusterCameras(cameraNetState.cameras, cameraHeight);
+    var clustered = clusterCameras(cameraNetState.cameras, cameraHeight, viewer);
     var prioritized = prioritizeCamerasForView(viewer, clustered, CAMERA_CONFIG.maxCamerasToRender);
     var signature = [
       cameraNetState.cameras.length,
@@ -778,6 +861,9 @@
     cameraNetState.lastFetchTime = now;
 
     fetchCamerasForBbox(viewer, bbox, requestKey).then(function (cameras) {
+      if (!Array.isArray(cameras) || !cameraNetState.enabled) {
+        return;
+      }
       cameraNetState.cameras = cameras;
       cameraNetState.renderSignature = "";
       updateCameraNet(viewer);
@@ -813,8 +899,9 @@
       return;
     }
 
+    var absoluteSnapshotUrl = /^https?:\/\//i.test(camera.snapshot_url || "") ? camera.snapshot_url : "";
     var snapshotUrl = isStaticHostMode()
-      ? (camera.upstream_snapshot_url || camera.snapshot_source_url || "")
+      ? (camera.upstream_snapshot_url || camera.snapshot_source_url || absoluteSnapshotUrl)
       : (camera.snapshot_url || (camera.id ? "/camera/snapshot?id=" + encodeURIComponent(camera.id) : ""));
     if (!snapshotUrl) {
       frame.innerHTML = "<div class='camera-feed-message'>Snapshot unavailable</div>";
@@ -1004,6 +1091,14 @@
       return;
     }
 
+    var directStaticStream = camera.upstream_stream_url ||
+      (/^https?:\/\//i.test(camera.stream_url || "") ? camera.stream_url : "");
+    if (camera.stream_type && String(camera.stream_type).toLowerCase() === "hls" &&
+        isStaticHostMode() && directStaticStream) {
+      playHls(camera, { stream_url: directStaticStream });
+      return;
+    }
+
     if (camera.stream_type && String(camera.stream_type).toLowerCase() === "hls" && camera.stream_url) {
       var controller = typeof AbortController !== "undefined" ? new AbortController() : null;
       cameraNetState.currentResolverController = controller;
@@ -1129,6 +1224,13 @@
 
   function disableCameraNet(viewer) {
     cameraNetState.enabled = false;
+    cameraNetState.requestVersion += 1;
+    if (cameraNetState.activeFetchController) {
+      cameraNetState.activeFetchController.abort();
+      cameraNetState.activeFetchController = null;
+    }
+    cameraNetState.activeFetchKey = "";
+    cameraNetState.activeFetchPromise = null;
     disposePlayback();
 
     if (cameraNetState.removeMoveEndListener) {

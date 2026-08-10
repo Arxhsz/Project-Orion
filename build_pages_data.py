@@ -9,6 +9,7 @@ os.environ.setdefault("ORION_SYNTHETIC_INTEL", "1")
 
 from camera_providers import get_all_cameras
 import orion_server
+from power_grid_data import fetch_openinframap_global_power
 
 
 ROOT = Path(__file__).resolve().parent
@@ -134,27 +135,25 @@ def build_weather_radar():
 
 
 def build_weather_fields():
-    log("building weather field metadata")
+    log("building Open-Meteo weather field grids")
     modes = ["precipitation", "wind", "temperature", "humidity", "pressure"]
     for mode in modes:
-        payload = {
-            "source": "Open-Meteo",
-            "provider": "Open-Meteo Forecast API",
-            "api": orion_server.OPEN_METEO_FORECAST_URL,
-            "weather_mode": mode,
-            "generated": int(time.time()),
-            "refresh_seconds": 600,
-            "count": 0,
-            "mode": "metadata-only",
-            "fallback": False,
-            "latest": None,
-            "frames": [],
-            "tile_template": None,
-            "supportsHistorical": True,
-            "supportsLive": True,
-            "attribution": "Open-Meteo",
-            "message": "Documented Open-Meteo JSON fields are approved, but Orion has no approved raster tile renderer for this mode yet.",
-        }
+        try:
+            payload = orion_server.open_meteo_weather_field_payload(mode)
+            payload["mode"] = "pages-global-grid"
+        except Exception as error:
+            payload = {
+                "source": "Open-Meteo",
+                "provider": "Open-Meteo Forecast API",
+                "weather_mode": mode,
+                "generated": int(time.time()),
+                "count": 0,
+                "mode": "pages-unavailable",
+                "provider_health": "unavailable",
+                "fallback": False,
+                "error": type(error).__name__,
+                "grid": None,
+            }
         write_json(OUT / "weather" / f"field-{mode}.json", payload)
 
 
@@ -234,7 +233,7 @@ def build_aircraft():
 def build_cameras():
     log("building camera snapshot")
     try:
-        cameras, providers = get_all_cameras((-125.2, 24.1, -66.7, 49.6), None, None)
+        cameras, providers = get_all_cameras(None, None, None)
         clean = []
         for camera in cameras[:30000]:
             item = dict(camera)
@@ -242,7 +241,14 @@ def build_cameras():
                 value = item.get(key)
                 if isinstance(value, str) and value.startswith("/"):
                     item.pop(key, None)
-            if not (item.get("embed_url") or item.get("upstream_snapshot_url") or item.get("snapshot_source_url")):
+            if not (
+                item.get("embed_url")
+                or item.get("upstream_stream_url")
+                or item.get("upstream_snapshot_url")
+                or item.get("snapshot_source_url")
+                or item.get("stream_url")
+                or item.get("snapshot_url")
+            ):
                 continue
             clean.append(item)
         payload = {
@@ -276,6 +282,7 @@ def build_intel():
         "volumetricWeather": orion_server.nws_weather_volume_payload,
         "lightning": orion_server.nws_lightning_payload,
         "underseaCables": orion_server.submarine_cables_payload,
+        "powerGrid": lambda force=False: fetch_openinframap_global_power(),
     }
     layers = [
         "liveShips",

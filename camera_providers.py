@@ -8,6 +8,7 @@ import gzip
 import re
 import html
 import math
+import os
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FutureTimeoutError
 
 
@@ -114,6 +115,9 @@ class CameraProvider:
     
     def normalize_camera(self, raw_camera):
         raise NotImplementedError
+
+    def is_configured(self):
+        return not self.requires_token
     
     def get_cameras(self, bbox=None):
         if bbox and self.state_bbox and not state_bbox_intersects(bbox, self.state_bbox):
@@ -747,7 +751,9 @@ class Iteris511Provider(CameraProvider):
             has_stream = bool(upstream_stream_url) and not image.get("videoDisabled") and not image.get("blocked")
             if self.use_map_icons:
                 has_stream = True
-            image_description = image.get("description") or ""
+            image_description = strip_markup(image.get("description") or "")
+            if image_description.lower() in {"n/a", "na", "none", "unknown"}:
+                image_description = ""
             raw_location = raw.get("location")
             location_name = raw_location if isinstance(raw_location, str) else ""
             name = image_description or raw.get("title") or location_name or raw.get("cameraName") or raw.get("roadway") or f"{self.name} Camera {raw_id}"
@@ -1011,34 +1017,59 @@ class NorthCarolinaDOTProvider(CameraProvider):
         super().__init__()
         self.name = "NCDOT"
         self.id = "ncdot"
+        self.requires_token = True
         self.state_bbox = (-84.4, 33.7, -75.2, 36.7)
-        self.api_url = "https://eapps.ncdot.gov/services/traffic-prod/v1/cameras/"
+        self.api_url = "https://www.drivenc.gov/api/v2/get/cameras"
+        self.api_key = os.environ.get("DRIVENC_API_KEY", "").strip()
+        if not self.api_key:
+            self.health = "unavailable"
+            self.last_error = "DRIVENC_API_KEY is not configured"
+
+    def is_configured(self):
+        return bool(self.api_key)
+
+    def get_cameras(self, bbox=None):
+        if not self.is_configured():
+            self.health = "unavailable"
+            self.last_error = "DRIVENC_API_KEY is not configured"
+            return []
+        return super().get_cameras(bbox)
 
     def fetch_cameras(self, bbox=None):
-        data = fetch_json(self.api_url, timeout=18, referer="https://drivenc.gov/")
+        url = self.api_url + "?" + urlencode({"key": self.api_key, "format": "json"})
+        data = fetch_json(url, timeout=18, referer="https://www.drivenc.gov/")
         return data if isinstance(data, list) else []
 
     def normalize_camera(self, raw):
         try:
-            camera_id = str(raw.get("id") or "unknown")
+            camera_id = str(raw.get("Id") or raw.get("id") or "unknown")
+            views = raw.get("Views") or raw.get("views") or []
+            view = next(
+                (item for item in views if str(item.get("Status") or item.get("status") or "").lower() == "enabled"),
+                views[0] if views else {},
+            )
+            upstream_snapshot = view.get("Url") or view.get("url") or ""
+            upstream_stream = view.get("VideoUrl") or view.get("videoUrl") or ""
+            snapshot_url, upstream_snapshot_url = proxied_snapshot(f"ncdot-{camera_id}", upstream_snapshot)
             return {
                 "id": f"ncdot-{camera_id}",
-                "name": raw.get("locationName") or raw.get("displayName") or f"NCDOT Camera {camera_id}",
+                "name": raw.get("Location") or raw.get("location") or view.get("Description") or f"NCDOT Camera {camera_id}",
                 "provider": "NCDOT",
                 "state": "NC",
                 "country": "US",
-                "lat": float(raw.get("latitude", 0)),
-                "lon": float(raw.get("longitude", 0)),
+                "lat": float(raw.get("Latitude", raw.get("latitude", 0))),
+                "lon": float(raw.get("Longitude", raw.get("longitude", 0))),
                 "category": "highway",
-                "road": raw.get("roadName", ""),
-                "direction": "",
-                "status": "snapshot_only",
-                "snapshot_url": f"/camera/snapshot?id=ncdot-{camera_id}",
-                "upstream_snapshot_url": raw.get("imageURL", ""),
-                "stream_url": "",
-                "stream_type": "snapshot",
+                "road": raw.get("Roadway", raw.get("roadway", "")),
+                "direction": raw.get("Direction", raw.get("direction", "")),
+                "status": "stream_available" if upstream_stream else ("snapshot_only" if upstream_snapshot_url else "unknown"),
+                "snapshot_url": snapshot_url,
+                "upstream_snapshot_url": upstream_snapshot_url,
+                "stream_url": f"/camera/resolve?id=ncdot-{camera_id}" if upstream_stream else "",
+                "upstream_stream_url": upstream_stream,
+                "stream_type": "hls" if upstream_stream else "snapshot",
                 "last_updated": int(time.time()),
-                "source_url": self.api_url,
+                "source_url": "https://www.drivenc.gov/help/endpoint/cameras",
                 "metadata": raw
             }
         except Exception as error:
@@ -1046,26 +1077,11 @@ class NorthCarolinaDOTProvider(CameraProvider):
             return None
 
     def resolve_camera(self, camera_id):
-        raw_id = str(camera_id or "").replace("ncdot-", "", 1)
-        if not raw_id:
-            return None
-        data = fetch_json(self.api_url + raw_id, timeout=12, referer="https://drivenc.gov/")
-        image_url = data.get("imageURL") or ""
-        snapshot_url, upstream_snapshot_url = proxied_snapshot(f"ncdot-{raw_id}", image_url)
-        return {
-            "id": f"ncdot-{raw_id}",
-            "name": data.get("locationName") or data.get("displayName") or f"NCDOT Camera {raw_id}",
-            "provider": "NCDOT",
-            "state": "NC",
-            "country": "US",
-            "status": "snapshot_only" if upstream_snapshot_url else "unknown",
-            "snapshot_url": snapshot_url,
-            "upstream_snapshot_url": upstream_snapshot_url,
-            "stream_url": "",
-            "stream_type": "snapshot",
-            "source_url": self.api_url + raw_id,
-            "metadata": data,
-        }
+        normalized_id = str(camera_id or "")
+        for camera in self.cache.get("data") or []:
+            if camera.get("id") == normalized_id:
+                return dict(camera)
+        return None
 
 
 class MichiganDOTProvider(CameraProvider):
@@ -1423,6 +1439,7 @@ CAMERA_PROVIDERS = {
     "id511": Iteris511Provider("id511", "Idaho 511", "ID", "https://511.idaho.gov", (-117.3, 42.0, -111.0, 49.1)),
     "la511": Iteris511Provider("la511", "Louisiana 511", "LA", "https://www.511la.org", (-94.1, 28.8, -88.7, 33.1)),
     "newengland": Iteris511Provider("newengland", "New England 511", "NE-US", "https://newengland511.org", (-73.8, 41.0, -66.8, 47.6)),
+    "ak511": Iteris511Provider("ak511", "Alaska 511", "AK", "https://511.alaska.gov", (-179.9, 51.0, -129.0, 72.0)),
 }
 
 
@@ -1447,14 +1464,18 @@ def is_valid_coordinate(lat, lon):
 def camera_has_media(camera):
     if not camera:
         return False
-    return any(camera.get(key) for key in (
+    if any(camera.get(key) for key in (
         "embed_url",
-        "stream_url",
         "upstream_stream_url",
-        "snapshot_url",
         "upstream_snapshot_url",
         "snapshot_source_url",
-    ))
+    )):
+        return True
+
+    return any(
+        isinstance(camera.get(key), str) and camera.get(key).startswith(("https://", "http://"))
+        for key in ("stream_url", "snapshot_url")
+    )
 
 
 def get_all_cameras(bbox=None, provider_filter=None, state_filter=None):
@@ -1496,7 +1517,7 @@ def get_all_cameras(bbox=None, provider_filter=None, state_filter=None):
     if len(providers) > 1:
         executor = ThreadPoolExecutor(max_workers=min(24, len(providers)))
         futures = [executor.submit(load_provider, provider) for provider in providers]
-        wait_seconds = 10 if bbox else 20
+        wait_seconds = 18 if bbox else 60
         try:
             for future in as_completed(futures, timeout=wait_seconds):
                 provider_id, cameras = future.result()
@@ -1507,7 +1528,7 @@ def get_all_cameras(bbox=None, provider_filter=None, state_filter=None):
             for provider, future in zip(providers, futures):
                 if not future.done():
                     future.cancel()
-                    provider.health = "degraded" if provider.cache.get("data") else "offline"
+                    provider.health = "degraded" if provider.cache.get("data") else "loading"
                     provider.last_error = f"Camera provider exceeded {wait_seconds}s aggregation deadline"
                     cached = list(provider.cache.get("data") or [])
                     if bbox and cached:
@@ -1534,12 +1555,14 @@ def get_provider_status():
     status = []
     for provider_id, provider in CAMERA_PROVIDERS.items():
         cached_cameras = provider.cache.get("data", [])
+        configured = provider.is_configured()
         status.append({
             "id": provider_id,
             "name": provider.name,
             "requires_token": provider.requires_token,
             "supports_bbox": provider.supports_bbox,
-            "active": True,
+            "active": configured,
+            "configured": configured,
             "health": getattr(provider, "health", "unknown"),
             "last_error": getattr(provider, "last_error", None),
             "last_success": getattr(provider, "last_success", None),

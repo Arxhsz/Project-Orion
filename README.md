@@ -36,8 +36,9 @@ docs/                       Audit, issues, data sources, architecture, plan
 - Satellites: CelesTrak GP/TLE data.
 - Earthquakes: USGS GeoJSON summary feeds.
 - Wildfires: NASA EONET event metadata.
-- Weather fields: Open-Meteo is documented as the approved JSON provider, but raster weather tiles for precipitation, wind, temperature, humidity, and pressure are currently marked unavailable until an approved renderer is implemented.
+- Weather fields: Open-Meteo current conditions sampled on a cached global grid and rendered client-side for precipitation, wind, temperature, humidity, and pressure.
 - Cameras: public DOT/511/open-data providers through CameraNet adapters.
+- Power infrastructure: OpenInfraMap global OpenStreetMap-derived vector tiles, with the official U.S. transmission-line ArcGIS service as a regional fallback.
 - Aircraft and AIS: backend adapters only; credentials must remain server-side.
 
 See [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md) for the source matrix and attribution notes.
@@ -55,6 +56,7 @@ Heavy live and environment layers are off on first load:
 Use Python directly:
 
 ```bash
+python3 -m pip install -r requirements.txt
 python3 orion_server.py 4174
 ```
 
@@ -78,6 +80,7 @@ Optional variables include:
 
 - `CESIUM_ION_TOKEN` for optional OSM Buildings / terrain.
 - `OPENSKY_CLIENT_ID` and `OPENSKY_CLIENT_SECRET` for OpenSky OAuth-backed aircraft access.
+- `DRIVENC_API_KEY` for North Carolina's official DriveNC camera API.
 - `AIS_PROVIDER` and `AIS_API_KEY` for licensed AIS integrations.
 - `ORION_ALLOWED_ORIGINS` for production backend CORS.
 - `ORION_SYNTHETIC_INTEL=1` only when intentionally building demo fallback intel snapshots.
@@ -103,15 +106,17 @@ Supported:
 
 - Static NASA GIBS imagery.
 - Local and static NOAA/NWS current radar map service.
+- Current Open-Meteo precipitation, wind, temperature, humidity, and pressure overlays.
 - CelesTrak satellite OMM snapshots with legacy TLE fallback.
 - USGS earthquakes.
 - NASA EONET wildfire event metadata.
 - CameraNet discovery, verified public embeds, HLS playback, and refreshed snapshots where providers allow it.
+- Global high-voltage power lines, cables, substations, plants, generators, and local grid assets where source detail supports them.
 - Local backend mode for richer same-origin provider access.
 
 Known limits:
 
-- Weather field modes beyond radar are metadata-only until an approved map renderer is built.
+- Open-Meteo weather-field overlays are current global grids rather than provider-native raster tiles or historical animations.
 - Timelapse exports WebM plus metadata in-browser; MP4 requires a future backend ffmpeg pipeline.
 - Licensed AIS and higher-volume aircraft feeds require server-side provider credentials.
 - Some CameraNet streams are provider-limited, blocked, expired, or snapshot-only.

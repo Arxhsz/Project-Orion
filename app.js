@@ -1179,7 +1179,7 @@
   }
 
   function timelineRefreshKey(date) {
-    return formatDate(date) + "T" + formatHour(date);
+    return formatDate(effectiveGibsDate(date));
   }
 
   function buildTrackingCatalog(seedDefinitions) {
@@ -3403,8 +3403,7 @@ void main() {
     return layerId === "rfHeatmap" ||
       layerId === "socialEvents" ||
       layerId === "emergencyIncidents" ||
-      layerId === "traffic" ||
-      layerId === "cameras";
+      layerId === "traffic";
   }
 
   function isDensityOnlyIntelLayer(layerId) {
@@ -3854,15 +3853,15 @@ void main() {
 
   function heatmapOpacity(layerId) {
     if (layerId === "cameras") {
-      return 0.38;
+      return 0.32;
     }
     if (layerId === "traffic") {
-      return 0.62;
+      return 0.48;
     }
     if (layerId === "emergencyIncidents") {
-      return 0.58;
+      return 0.5;
     }
-    return 0.54;
+    return 0.46;
   }
 
   function heatmapPointsFromItems(layerId, items) {
@@ -3993,6 +3992,85 @@ void main() {
     return stops[stops.length - 1][1];
   }
 
+  function heatmapZoomBucket() {
+    if (!viewer || !viewer.camera) {
+      return "global";
+    }
+
+    var height = viewer.camera.positionCartographic.height;
+    if (height > 7000000) return "global";
+    if (height > 1800000) return "regional";
+    return "local";
+  }
+
+  function heatmapKernelRadius(layerId, point, pointCount, width, height) {
+    var zoomBucket = heatmapZoomBucket();
+    var baseRadius = zoomBucket === "global" ? 7 : zoomBucket === "regional" ? 11 : 16;
+    var densityScale = clamp(Math.sqrt(900 / Math.max(1, pointCount)), 0.62, 1.2);
+    var sourceScale = clamp(Math.sqrt((Number(point.radiusKm) || 24) / 36), 0.72, 1.42);
+
+    if (layerId === "cameras") {
+      baseRadius *= 0.82;
+    } else if (layerId === "traffic") {
+      baseRadius *= 0.92;
+    }
+
+    return clamp(baseRadius * densityScale * sourceScale, 5, Math.min(width, height) * 0.065);
+  }
+
+  function heatmapPercentile(values, percentile) {
+    if (!values.length) {
+      return 1;
+    }
+
+    var sorted = values.slice().sort(function (a, b) { return a - b; });
+    var index = clamp(Math.ceil(sorted.length * percentile) - 1, 0, sorted.length - 1);
+    return Math.max(0.01, sorted[index]);
+  }
+
+  function aggregateHeatmapPoints(layerId, points, bounds, width, height) {
+    var lonSpan = Math.max(0.0001, bounds.east - bounds.west);
+    var latSpan = Math.max(0.0001, bounds.north - bounds.south);
+    var cellSize = heatmapZoomBucket() === "global" ? 9 : heatmapZoomBucket() === "regional" ? 12 : 15;
+    var cells = {};
+
+    points.forEach(function (point) {
+      var x = clamp((point.lon - bounds.west) / lonSpan * width, 0, width - 1);
+      var y = clamp((bounds.north - point.lat) / latSpan * height, 0, height - 1);
+      var key = Math.floor(x / cellSize) + ":" + Math.floor(y / cellSize);
+      var weight = clamp(Number(point.intensity) || 0.5, 0.05, 1);
+      var cell = cells[key] || { x: 0, y: 0, weight: 0, peak: 0, radiusKm: 0, count: 0 };
+
+      cell.x += x * weight;
+      cell.y += y * weight;
+      cell.weight += weight;
+      cell.peak = Math.max(cell.peak, weight);
+      cell.radiusKm = Math.max(cell.radiusKm, Number(point.radiusKm) || 24);
+      cell.count += 1;
+      cells[key] = cell;
+    });
+
+    var aggregated = Object.keys(cells).map(function (key) {
+      var cell = cells[key];
+      var density = cell.peak + Math.log1p(cell.count - 1) * 0.24;
+      return {
+        x: cell.x / cell.weight,
+        y: cell.y / cell.weight,
+        intensity: density,
+        radiusKm: cell.radiusKm,
+        count: cell.count
+      };
+    });
+    var normalization = heatmapPercentile(aggregated.map(function (cell) { return cell.intensity; }), 0.95);
+
+    aggregated.forEach(function (cell) {
+      cell.intensity = clamp(cell.intensity / normalization, 0.06, 1);
+      cell.radius = heatmapKernelRadius(layerId, cell, aggregated.length, width, height);
+    });
+
+    return aggregated;
+  }
+
   function buildHeatmapTexture(layerId, points) {
     var bounds = heatmapBounds(points, layerId);
     var width = 768;
@@ -4006,25 +4084,19 @@ void main() {
     ctx.clearRect(0, 0, width, height);
     ctx.globalCompositeOperation = "lighter";
 
-    var lonSpan = Math.max(0.0001, bounds.east - bounds.west);
-    var latSpan = Math.max(0.0001, bounds.north - bounds.south);
+    var cells = aggregateHeatmapPoints(layerId, points, bounds, width, height);
 
-    points.forEach(function (point) {
-      var x = (point.lon - bounds.west) / lonSpan * width;
-      var y = (bounds.north - point.lat) / latSpan * height;
-      var latRadius = (Number(point.radiusKm) || 28) / 111;
-      var lonRadius = latRadius / Math.max(0.25, Math.cos(Cesium.Math.toRadians(point.lat)));
-      var minRadiusPx = 10;
-      var maxRadiusPx = Math.max(width, height) * 0.28;
-      var radius = clamp(Math.max(lonRadius / lonSpan * width, latRadius / latSpan * height), minRadiusPx, maxRadiusPx);
-      var gradient = ctx.createRadialGradient(x, y, 0, x, y, radius);
-      var alpha = clamp((Number(point.intensity) || 0.5) * 0.62, 0.12, 0.72);
+    cells.forEach(function (cell) {
+      var radius = cell.radius;
+      var gradient = ctx.createRadialGradient(cell.x, cell.y, 0, cell.x, cell.y, radius);
+      var alpha = clamp(cell.intensity * 0.38, 0.045, 0.38);
 
       gradient.addColorStop(0, "rgba(0,0,0," + alpha + ")");
-      gradient.addColorStop(0.38, "rgba(0,0,0," + (alpha * 0.5) + ")");
+      gradient.addColorStop(0.34, "rgba(0,0,0," + (alpha * 0.46) + ")");
+      gradient.addColorStop(0.72, "rgba(0,0,0," + (alpha * 0.1) + ")");
       gradient.addColorStop(1, "rgba(0,0,0,0)");
       ctx.fillStyle = gradient;
-      ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+      ctx.fillRect(cell.x - radius, cell.y - radius, radius * 2, radius * 2);
     });
 
     var colorCtx = colorCanvas.getContext("2d");
@@ -4032,8 +4104,8 @@ void main() {
     var data = image.data;
 
     for (var pixel = 0; pixel < data.length; pixel += 4) {
-      var value = clamp(data[pixel + 3] / 220, 0, 1);
-      if (value < 0.025) {
+      var value = clamp(data[pixel + 3] / 150, 0, 1);
+      if (value < 0.045) {
         data[pixel + 3] = 0;
         continue;
       }
@@ -4041,7 +4113,7 @@ void main() {
       data[pixel] = color[0];
       data[pixel + 1] = color[1];
       data[pixel + 2] = color[2];
-      data[pixel + 3] = Math.round(color[3] * clamp(value * 1.35, 0.18, 1));
+      data[pixel + 3] = Math.round(color[3] * clamp(value * 1.12, 0.12, 0.92));
     }
 
     colorCtx.putImageData(image, 0, 0);
@@ -4053,7 +4125,7 @@ void main() {
   }
 
   function heatmapSignature(points) {
-    return points.map(function (point) {
+    return heatmapZoomBucket() + "|" + points.map(function (point) {
       return [
         point.lat.toFixed(3),
         point.lon.toFixed(3),
@@ -5259,8 +5331,9 @@ void main() {
       return;
     }
 
-    if (layerId === "cameras" && currentLODLevel === 'distant') {
+    if (layerId === "cameras") {
       if (layerStateManager.isLayerEnabled(layerId)) {
+        clearPlatformLayer(layerId);
         renderCamerasAsPrimitives(items);
       } else {
         destroyLayerCompletely(layerId);
@@ -5290,8 +5363,9 @@ void main() {
   }
 
   function refreshPlatformLayersForLOD() {
-    var lodSensitiveLayers = ['earthquakes', 'wildfires', 'volumetricWeather', 'lightning', 
-                             'cameras', 'liveShips', 'liveAircraft'].concat(orbitalLayerIds);
+    var lodSensitiveLayers = ['earthquakes', 'wildfires', 'volumetricWeather', 'lightning',
+                             'cameras', 'rfHeatmap', 'socialEvents', 'traffic', 'emergencyIncidents',
+                             'liveShips', 'liveAircraft'].concat(orbitalLayerIds);
     
     lodSensitiveLayers.forEach(function(layerId) {
       if (layerStateManager.isLayerEnabled(layerId)) {
@@ -5306,9 +5380,11 @@ void main() {
         } else if (orbitalLayerIds.indexOf(layerId) !== -1) {
           renderWithPlatformRenderer("Orbital", [trackingFilterMatchesPlatformLayer(layerId) ? items : [], layerId, time], layerId);
         } else if (layerId === 'cameras') {
-          if (currentLODLevel === 'distant') {
-            renderCamerasAsPrimitives(items);
-          } else {
+          clearPlatformLayer(layerId);
+          renderCamerasAsPrimitives(items);
+        } else if (isHeatmapLayer(layerId)) {
+          updatePlatformHeatmap(layerId, items);
+          if (!isDensityOnlyIntelLayer(layerId)) {
             updatePlatformLayerEntities(layerId);
           }
         } else {
@@ -5831,20 +5907,27 @@ void main() {
     north = Math.max(-90, Math.min(90, north));
 
     if (layerId === "powerGrid") {
-      var lonSpan = Math.abs(east - west);
+      var crossesDateLine = east < west;
+      var lonSpan = crossesDateLine ? 360 - west + east : east - west;
       var latSpan = Math.abs(north - south);
-      var hasRegionalView = lonSpan < 60 && latSpan < 40;
-      var hasTarget = typeof state.target.lon === "number" && typeof state.target.lat === "number";
+      var cameraHeight = viewer.camera.positionCartographic.height;
 
-      if (hasTarget || (hasRegionalView && (lonSpan > 0.6 || latSpan > 0.45))) {
-        var centerLon = hasTarget ? state.target.lon : (west + east) / 2;
-        var centerLat = hasTarget ? state.target.lat : (south + north) / 2;
-
-        west = Math.max(-180, centerLon - 0.3);
-        east = Math.min(180, centerLon + 0.3);
-        south = Math.max(-90, centerLat - 0.225);
-        north = Math.min(90, centerLat + 0.225);
+      if (crossesDateLine || lonSpan > 16 || latSpan > 12 || cameraHeight > 7500000) {
+        lastViewportRegionKeys[layerId] = "global";
+        return "&detail=global";
       }
+
+      var maxLonSpan = cameraHeight < 50000 ? 0.22 : cameraHeight < 180000 ? 1.4 : cameraHeight < 700000 ? 3.2 : cameraHeight < 2200000 ? 6.5 : 11;
+      var maxLatSpan = cameraHeight < 50000 ? 0.18 : cameraHeight < 180000 ? 1.0 : cameraHeight < 700000 ? 2.4 : cameraHeight < 2200000 ? 4.8 : 8;
+      var requestLonSpan = clamp(lonSpan, cameraHeight < 50000 ? 0.12 : 0.45, maxLonSpan);
+      var requestLatSpan = clamp(latSpan, cameraHeight < 50000 ? 0.1 : 0.35, maxLatSpan);
+      var centerLon = (west + east) / 2;
+      var centerLat = (south + north) / 2;
+
+      west = Math.max(-180, centerLon - requestLonSpan / 2);
+      east = Math.min(180, centerLon + requestLonSpan / 2);
+      south = Math.max(-85, centerLat - requestLatSpan / 2);
+      north = Math.min(85, centerLat + requestLatSpan / 2);
     }
 
     var bboxStr = [west.toFixed(4), south.toFixed(4), east.toFixed(4), north.toFixed(4)].join(",");
@@ -5853,7 +5936,10 @@ void main() {
     }
     lastCameraRegionKey = bboxStr;
     
-    return "&bbox=" + encodeURIComponent(bboxStr);
+    return "&bbox=" + encodeURIComponent(bboxStr) + (layerId === "powerGrid"
+      ? "&detail=" + ((east - west <= 0.24 && north - south <= 0.2) ? "asset" :
+        (east - west <= 1.6 && north - south <= 1.6) ? "local" : "regional")
+      : "");
   }
 
   function refreshViewportBoundPlatformLayers(force) {
@@ -6193,11 +6279,13 @@ void main() {
       });
       weatherRadarPreviousLayers = [];
 
-      platformFeeds.weatherRadar = {
-        status: "standby",
-        loadedAt: Date.now(),
-        items: []
-      };
+      if (!isZoomWeatherMapMode(state.weatherMapMode) && state.weatherMapMode !== "radar") {
+        platformFeeds.weatherRadar = {
+          status: "standby",
+          loadedAt: Date.now(),
+          items: []
+        };
+      }
       updateStreetDetailBlend(viewer.camera.positionCartographic.height);
       viewer.scene.requestRender();
       return;
@@ -6490,6 +6578,112 @@ void main() {
   function zoomWeatherLayerAlpha(mode) {
     var config = zoomWeatherModeConfig[mode] || {};
     return Math.max(0.05, Math.min(1, (config.alpha || 0.72) * state.radarOpacity));
+  }
+
+  var weatherFieldPalettes = {
+    precipitation: [[0, [24, 42, 86]], [0.12, [48, 103, 255]], [0.34, [51, 215, 255]], [0.58, [69, 236, 132]], [0.8, [255, 228, 88]], [1, [240, 72, 72]]],
+    wind: [[0, [69, 72, 148]], [0.22, [49, 119, 215]], [0.44, [33, 184, 210]], [0.64, [88, 223, 182]], [0.82, [216, 246, 106]], [1, [218, 66, 138]]],
+    temperature: [[0, [89, 43, 160]], [0.2, [40, 114, 215]], [0.42, [40, 205, 211]], [0.58, [114, 224, 117]], [0.75, [240, 232, 107]], [0.9, [255, 155, 67]], [1, [186, 22, 86]]],
+    humidity: [[0, [90, 78, 143]], [0.24, [56, 132, 219]], [0.48, [43, 211, 211]], [0.7, [95, 226, 138]], [0.88, [215, 239, 114]], [1, [246, 250, 252]]],
+    pressure: [[0, [184, 74, 63]], [0.28, [243, 179, 158]], [0.5, [239, 244, 246]], [0.72, [127, 217, 216]], [1, [42, 159, 165]]]
+  };
+
+  var weatherFieldDomains = {
+    precipitation: [0, 12],
+    wind: [0, 85],
+    temperature: [-20, 120],
+    humidity: [0, 100],
+    pressure: [950, 1045]
+  };
+
+  function weatherFieldColor(mode, value) {
+    var palette = weatherFieldPalettes[mode] || weatherFieldPalettes.wind;
+    var domain = weatherFieldDomains[mode] || weatherFieldDomains.wind;
+    var normalized = clamp((value - domain[0]) / Math.max(0.001, domain[1] - domain[0]), 0, 1);
+
+    for (var index = 1; index < palette.length; index += 1) {
+      if (normalized <= palette[index][0]) {
+        var lower = palette[index - 1];
+        var upper = palette[index];
+        var amount = (normalized - lower[0]) / Math.max(0.001, upper[0] - lower[0]);
+        return lower[1].map(function (channel, channelIndex) {
+          return Math.round(Cesium.Math.lerp(channel, upper[1][channelIndex], amount));
+        });
+      }
+    }
+
+    return palette[palette.length - 1][1];
+  }
+
+  function buildWeatherFieldTexture(payload, mode) {
+    var grid = payload && payload.grid;
+    var gridWidth = Number(grid && grid.width);
+    var gridHeight = Number(grid && grid.height);
+    var values = grid && Array.isArray(grid.values) ? grid.values : [];
+
+    if (gridWidth < 2 || gridHeight < 2 || values.length < gridWidth * gridHeight) {
+      return null;
+    }
+
+    var canvas = document.createElement("canvas");
+    canvas.width = 720;
+    canvas.height = 320;
+    var context = canvas.getContext("2d", { alpha: true });
+    var image = context.createImageData(canvas.width, canvas.height);
+
+    function gridValue(row, column) {
+      var value = Number(values[row * gridWidth + column]);
+      return Number.isFinite(value) ? value : null;
+    }
+
+    for (var y = 0; y < canvas.height; y += 1) {
+      var gridY = (1 - y / (canvas.height - 1)) * (gridHeight - 1);
+      var y0 = Math.floor(gridY);
+      var y1 = Math.min(gridHeight - 1, y0 + 1);
+      var fy = gridY - y0;
+
+      for (var x = 0; x < canvas.width; x += 1) {
+        var gridX = x / (canvas.width - 1) * (gridWidth - 1);
+        var x0 = Math.floor(gridX);
+        var x1 = Math.min(gridWidth - 1, x0 + 1);
+        var fx = gridX - x0;
+        var samples = [
+          [gridValue(y0, x0), (1 - fx) * (1 - fy)],
+          [gridValue(y0, x1), fx * (1 - fy)],
+          [gridValue(y1, x0), (1 - fx) * fy],
+          [gridValue(y1, x1), fx * fy]
+        ].filter(function (sample) { return sample[0] !== null; });
+        var totalWeight = samples.reduce(function (sum, sample) { return sum + sample[1]; }, 0);
+        var offset = (y * canvas.width + x) * 4;
+
+        if (!samples.length || totalWeight <= 0) {
+          image.data[offset + 3] = 0;
+          continue;
+        }
+
+        var value = samples.reduce(function (sum, sample) {
+          return sum + sample[0] * sample[1];
+        }, 0) / totalWeight;
+        var color = weatherFieldColor(mode, value);
+        var alpha = mode === "precipitation" ? clamp(value / 1.8, 0, 0.88) : 0.78;
+
+        image.data[offset] = color[0];
+        image.data[offset + 1] = color[1];
+        image.data[offset + 2] = color[2];
+        image.data[offset + 3] = Math.round(alpha * 255);
+      }
+    }
+
+    context.putImageData(image, 0, 0);
+    return {
+      url: canvas.toDataURL("image/png"),
+      rectangle: Cesium.Rectangle.fromDegrees(
+        Number(grid.west) || -180,
+        Number(grid.south) || -80,
+        Number(grid.east) || 180,
+        Number(grid.north) || 80
+      )
+    };
   }
 
   function ensureWeatherEffectCanvas() {
@@ -6824,12 +7018,13 @@ void main() {
 
     payload = resolveZoomWeatherPayloadForDate(payload, mode, state.date);
 
-    if (!payload.tile_template) {
+    var fieldTexture = payload.grid ? buildWeatherFieldTexture(payload, mode) : null;
+    if (!payload.tile_template && !fieldTexture) {
       return false;
     }
 
     var config = zoomWeatherModeConfig[mode] || zoomWeatherModeConfig.wind;
-    var frameKey = payload.tile_template;
+    var frameKey = payload.tile_template || ["grid", mode, payload.generated || "current"].join(":");
 
     if (zoomWeatherLayer && imageryLayerExists(zoomWeatherLayer) && zoomWeatherLayer.orionFrameKey === frameKey) {
       zoomWeatherLayer.alpha = zoomWeatherLayerAlpha(mode);
@@ -6845,25 +7040,35 @@ void main() {
     }
 
     if (zoomWeatherLayer && imageryLayerExists(zoomWeatherLayer)) {
-      zoomWeatherLayer.alpha = Math.max(0.04, zoomWeatherLayer.alpha * 0.42);
-      zoomWeatherPreviousLayers.push(zoomWeatherLayer);
+      var outgoingWeatherLayer = zoomWeatherLayer;
+      outgoingWeatherLayer.alpha = Math.max(0.04, outgoingWeatherLayer.alpha * 0.42);
+      zoomWeatherPreviousLayers.push(outgoingWeatherLayer);
       window.setTimeout(function () {
-        var oldLayer = zoomWeatherPreviousLayers.shift();
-        if (oldLayer && imageryLayerExists(oldLayer)) {
-          viewer.imageryLayers.remove(oldLayer, true);
+        if (outgoingWeatherLayer && imageryLayerExists(outgoingWeatherLayer)) {
+          viewer.imageryLayers.remove(outgoingWeatherLayer, true);
           viewer.scene.requestRender();
         }
-      }, 1800);
+        zoomWeatherPreviousLayers = zoomWeatherPreviousLayers.filter(function (layer) {
+          return layer !== outgoingWeatherLayer;
+        });
+      }, 450);
       zoomWeatherLayer = null;
     }
 
-    zoomWeatherLayer = viewer.imageryLayers.addImageryProvider(new Cesium.UrlTemplateImageryProvider({
-      url: payload.tile_template,
-      tilingScheme: new Cesium.WebMercatorTilingScheme(),
-      minimumLevel: 0,
-      maximumLevel: config.maxLevel || 8,
-      credit: payload.provider || config.sourceLabel || "Weather provider"
-    }));
+    var weatherProvider = fieldTexture
+      ? new Cesium.SingleTileImageryProvider({
+          url: fieldTexture.url,
+          rectangle: fieldTexture.rectangle,
+          credit: payload.provider || config.sourceLabel || "Weather provider"
+        })
+      : new Cesium.UrlTemplateImageryProvider({
+          url: payload.tile_template,
+          tilingScheme: new Cesium.WebMercatorTilingScheme(),
+          minimumLevel: 0,
+          maximumLevel: config.maxLevel || 8,
+          credit: payload.provider || config.sourceLabel || "Weather provider"
+        });
+    zoomWeatherLayer = viewer.imageryLayers.addImageryProvider(weatherProvider);
     zoomWeatherLayer.orionKey = "zoomWeather";
     zoomWeatherLayer.orionFrameKey = frameKey;
     zoomWeatherLayer.orionFrameTime = payload.selected_time || (payload.latest ? payload.latest.valid_time || payload.latest.time : null);
@@ -7097,8 +7302,8 @@ void main() {
         return response.json();
       })
       .then(function (payload) {
-        if (!payload || !payload.tile_template) {
-          throw new Error((payload && payload.message) || "Weather field map tiles are not implemented");
+        if (!payload || (!payload.tile_template && !payload.grid)) {
+          throw new Error((payload && payload.message) || "Weather field map unavailable");
         }
         return payload;
       });
@@ -7230,9 +7435,10 @@ void main() {
     var token = window.CESIUM_ION_TOKEN || window.localStorage.getItem("orion:cesiumIonToken");
 
     if (!token || !Cesium.createOsmBuildingsAsync) {
-      platformFeeds.cities3d.status = "Cesium ion token needed";
+      platformFeeds.cities3d.status = "unavailable";
+      platformFeeds.cities3d.error = "Cesium ion token required";
       updatePlatformTelemetry();
-      showToast("3D buildings are wired in. Add a Cesium ion token to enable OSM Buildings.");
+      showToast("Cesium ion token required for 3D buildings.");
       return;
     }
 
@@ -7811,7 +8017,9 @@ void main() {
     });
     removePlatformHeatmap(layerId);
 
-    if (platformFeeds[layerId]) {
+    var preservesActiveWeatherMap = layerId === "weatherRadar" &&
+      (isZoomWeatherMapMode(state.weatherMapMode) || state.weatherMapMode === "radar");
+    if (platformFeeds[layerId] && !preservesActiveWeatherMap) {
       platformFeeds[layerId].items = [];
       platformFeeds[layerId].status = "standby";
       platformFeeds[layerId].loadedAt = 0;
@@ -7893,6 +8101,30 @@ void main() {
     }
 
     return compactDetailValue(value);
+  }
+
+  function detailAgeValue(value) {
+    var date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return "Unknown";
+    }
+
+    var ageMinutes = Math.max(0, Math.round((Date.now() - date.getTime()) / 60000));
+    if (ageMinutes < 60) {
+      return ageMinutes + "m";
+    }
+    if (ageMinutes < 1440) {
+      return Math.round(ageMinutes / 60) + "h";
+    }
+    return Math.round(ageMinutes / 1440) + "d";
+  }
+
+  function satelliteOrbitPeriodMinutes(satrec) {
+    var radiansPerMinute = satrec && Number(satrec.no);
+    if (!Number.isFinite(radiansPerMinute) || radiansPerMinute <= 0) {
+      return null;
+    }
+    return (Math.PI * 2) / radiansPerMinute;
   }
 
   function infrastructureDetailRows(record) {
@@ -7992,7 +8224,7 @@ void main() {
       ["Severity", typeof severity === "number" ? Number(severity).toFixed(2) : severity],
       ["Status", status],
       ["Confidence", (confidence * 100).toFixed(0) + "%"],
-      ["Data Age", ageMin > 0 ? ageMin + "m ago" : "LIVE"]
+      ["Feed Age", ageMin > 0 ? ageMin + "m ago" : "LIVE"]
     ];
 
     var infraRows = infrastructureDetailRows(record);
@@ -8014,12 +8246,14 @@ void main() {
     );
 
     if (record.definition.type === "satellite") {
+      var orbitPeriodMinutes = satelliteOrbitPeriodMinutes(item.satrec);
       rows.splice(1, 0,
         ["NORAD", item.id || "-"],
         ["COSPAR", item.objectId || "-"],
         ["Catalog", item.group || record.definition.label],
         ["Element epoch", item.tleEpoch || "-"],
-        ["Orbit", item.satrec && Number.isFinite(item.satrec.no) ? (1440 / Math.max(0.0001, item.satrec.no)).toFixed(1) + " min" : "TLE propagated"]
+        ["Element age", item.tleEpoch ? detailAgeValue(item.tleEpoch) : "Unknown"],
+        ["Orbit", orbitPeriodMinutes ? orbitPeriodMinutes.toFixed(1) + " min" : "TLE propagated"]
       );
     }
 
@@ -8065,6 +8299,10 @@ void main() {
     hideIntelMapCallout();
   }
 
+  function isInfrastructurePrimitiveLayer(layerId) {
+    return layerId === "powerGrid" || layerId === "underseaCables" || layerId === "cyberNetwork";
+  }
+
   function ensurePrimitivePlatformSelectionRecord(platformEntityId) {
     if (platformEntities[platformEntityId]) {
       return platformEntities[platformEntityId];
@@ -8075,7 +8313,9 @@ void main() {
     var feed = platformFeeds[layerId];
     var items = feed && Array.isArray(feed.items) ? feed.items : [];
 
-    if (!definition || !items.length || PLATFORM_PRIMITIVE_LAYERS.indexOf(layerId) === -1 || !layerStateManager.isLayerEnabled(layerId)) {
+    if (!definition || !items.length ||
+        (PLATFORM_PRIMITIVE_LAYERS.indexOf(layerId) === -1 && !isInfrastructurePrimitiveLayer(layerId)) ||
+        !layerStateManager.isLayerEnabled(layerId)) {
       return null;
     }
 
@@ -8119,7 +8359,9 @@ void main() {
     operationalIntelligenceManager.recordAttention(platformEntityId);
     cognitiveGovernanceManager.recordInteraction();
 
-    updatePlatformLayerEntities(record.layerId);
+    if (!isInfrastructurePrimitiveLayer(record.layerId)) {
+      updatePlatformLayerEntities(record.layerId);
+    }
 
     setTarget({
       name: record.item.name || record.definition.label,
@@ -8275,7 +8517,12 @@ void main() {
     }
 
     if (!hasUpstream) {
-      renderRefreshingCameraImage(snapshotUrl, alt, "GENERATED LIVE");
+      elements.cameraFrame.innerHTML = [
+        "<div class=\"camera-feed-message\">",
+        "<strong>Camera media unavailable</strong>",
+        "<span>This source did not provide a usable live stream or snapshot.</span>",
+        "</div>"
+      ].join("");
     } else if (streamType === "MJPEG" && streamUrl) {
       elements.cameraFrame.innerHTML = [
         "<div class=\"camera-live-shell\">",
@@ -8696,6 +8943,10 @@ void main() {
       var definition = platformLayerDefinitions[layerId];
       var feed = platformFeeds[layerId];
       var items = feed && Array.isArray(feed.items) ? feed.items : [];
+
+      if (layerId === "cameras" && window.CameraNet) {
+        return;
+      }
 
       if (!items.length || PLATFORM_PRIMITIVE_LAYERS.indexOf(layerId) === -1) {
         return;
@@ -10352,11 +10603,37 @@ void main() {
       }
     });
 
-    var newLayers = ensureBaseImageryFallback(buildImageryLayerList(0.02), 0.02);
+    var newLayers;
+    var layerCountBeforeBuild = viewer.imageryLayers.length;
+
+    try {
+      newLayers = ensureBaseImageryFallback(buildImageryLayerList(0.02), 0.02);
+    } catch (error) {
+      for (var failedIndex = viewer.imageryLayers.length - 1; failedIndex >= layerCountBeforeBuild; failedIndex--) {
+        var failedLayer = viewer.imageryLayers.get(failedIndex);
+        if (failedLayer && failedLayer.orionKey) {
+          viewer.imageryLayers.remove(failedLayer, true);
+        }
+      }
+      oldLayers.forEach(function (layer) {
+        if (imageryLayerExists(layer)) {
+          layer.orionAllowLowFade = false;
+          layer.orionFadeAlpha = 1;
+          applyLayerDisplayAlpha(layer);
+        }
+      });
+      imageryTransitionActive = false;
+      console.error("[Orion] Imagery transaction rolled back:", error);
+      viewer.scene.requestRender();
+      return;
+    }
+
+    var requestedFrameKey = timelineRefreshKey(state.date);
 
     newLayers.forEach(function (layer) {
       layer.orionAllowLowFade = true;
       layer.orionFadeAlpha = 0.02;
+      layer.orionFrameKey = requestedFrameKey;
       layer.show = true;
       applyLayerDisplayAlpha(layer);
     });
@@ -10370,9 +10647,9 @@ void main() {
     raiseOperationalLayers();
     viewer.scene.requestRender();
 
-    var holdUntil = performance.now() + (state.timelineMode === "updates" ? 640 : 360);
+    var holdUntil = performance.now() + (state.playing ? 100 : (state.timelineMode === "updates" ? 220 : 160));
     var start = 0;
-    var duration = state.timelineMode === "updates" ? 2600 : 1180;
+    var duration = state.playing ? 420 : (state.timelineMode === "updates" ? 720 : 620);
 
     function animateImageryBlend(now) {
       if (token !== imageryTransitionToken) {
@@ -10842,6 +11119,32 @@ void main() {
         try { window.localStorage.setItem(PANEL_STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
       }
 
+      function collapseCompactPanel(panelId, buttonId, expandIcon) {
+        var compactPanel = document.getElementById(panelId);
+        var compactButton = document.getElementById(buttonId);
+        if (!compactPanel || compactPanel.classList.contains("collapsed")) return;
+        compactPanel.classList.add("collapsed");
+        if (compactButton) {
+          compactButton.textContent = expandIcon;
+          compactButton.setAttribute("aria-label", "Expand " + panelId.replace("Panel", "") + " panel");
+        }
+        var compactState = loadCollapsed();
+        compactState[panelId] = true;
+        saveCollapsed(compactState);
+      }
+
+      function collapseCompactTimeline() {
+        var compactTimeline = document.getElementById("timelineHud");
+        var compactTimelineButton = document.getElementById("timelineHudToggle");
+        if (!compactTimeline || compactTimeline.classList.contains("collapsed")) return;
+        compactTimeline.classList.add("collapsed");
+        if (compactTimelineButton) {
+          compactTimelineButton.textContent = "^";
+          compactTimelineButton.setAttribute("aria-label", "Expand timeline");
+        }
+        try { window.localStorage.setItem("orion:timelineCollapsed", "1"); } catch (e) {}
+      }
+
       function initPanelToggle(panelId, btnId, collapseIcon, expandIcon) {
         var panel = document.getElementById(panelId);
         var btn = document.getElementById(btnId);
@@ -10855,6 +11158,15 @@ void main() {
         }
 
         btn.addEventListener("click", function () {
+          var willExpand = panel.classList.contains("collapsed");
+          if (willExpand && window.matchMedia("(max-width: 760px)").matches) {
+            if (panelId === "commandPanel") {
+              collapseCompactPanel("telemetryPanel", "telemetryPanelToggle", "<");
+            } else {
+              collapseCompactPanel("commandPanel", "commandPanelToggle", ">");
+            }
+            collapseCompactTimeline();
+          }
           var isCollapsed = panel.classList.toggle("collapsed");
           btn.textContent = isCollapsed ? expandIcon : collapseIcon;
           btn.setAttribute("aria-label", (isCollapsed ? "Expand " : "Collapse ") + panelId.replace("Panel", "") + " panel");
@@ -10879,6 +11191,29 @@ void main() {
           timelineBtn.setAttribute("aria-label", "Expand timeline");
         }
         timelineBtn.addEventListener("click", function () {
+          var willExpand = timelineHud.classList.contains("collapsed");
+          if (willExpand && window.matchMedia("(max-width: 760px)").matches) {
+            var commandPanel = document.getElementById("commandPanel");
+            var commandButton = document.getElementById("commandPanelToggle");
+            var telemetryPanel = document.getElementById("telemetryPanel");
+            var telemetryButton = document.getElementById("telemetryPanelToggle");
+            if (commandPanel) commandPanel.classList.add("collapsed");
+            if (telemetryPanel) telemetryPanel.classList.add("collapsed");
+            if (commandButton) {
+              commandButton.textContent = ">";
+              commandButton.setAttribute("aria-label", "Expand command panel");
+            }
+            if (telemetryButton) {
+              telemetryButton.textContent = "<";
+              telemetryButton.setAttribute("aria-label", "Expand telemetry panel");
+            }
+            try {
+              var panelState = JSON.parse(window.localStorage.getItem("orion:panelCollapsed") || "{}");
+              panelState.commandPanel = true;
+              panelState.telemetryPanel = true;
+              window.localStorage.setItem("orion:panelCollapsed", JSON.stringify(panelState));
+            } catch (e) {}
+          }
           var isCollapsed = timelineHud.classList.toggle("collapsed");
           timelineBtn.textContent = isCollapsed ? "^" : "v";
           timelineBtn.setAttribute("aria-label", isCollapsed ? "Expand timeline" : "Collapse timeline");

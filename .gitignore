@@ -19,6 +19,7 @@ reset-onboarding.html
 .zoom-*.js
 fl511.com*.txt
 *.txt
+!requirements.txt
 orion-*-verify.png
 orion-verify.png
 TEXTURE_AND_TILE_FIXES.js

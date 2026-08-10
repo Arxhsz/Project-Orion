@@ -331,11 +331,11 @@
     },
     powerGrid: {
       label: "Power grid",
-      source: "OpenStreetMap / Overpass power infrastructure",
+      source: "OpenInfraMap / OpenStreetMap with ArcGIS U.S. fallback",
       type: "intel",
       endpoint: "/live/intel?layer=powerGrid",
       controlId: "platformPower",
-      maxItems: 5000,
+      maxItems: 15000,
       refreshMs: 5 * 60 * 1000,
       color: "#ffe29a"
     },

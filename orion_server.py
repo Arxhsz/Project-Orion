@@ -33,6 +33,13 @@ except ImportError:
     CAMERANET_AVAILABLE = False
     print("Warning: camera_providers.py not found. CameraNet will use fallback mode.")
 
+from power_grid_data import (
+    fetch_arcgis_us_transmission,
+    fetch_openinframap_global_power,
+    filter_power_features_to_bbox,
+    load_bundled_global_power,
+)
+
 
 ROOT = Path(__file__).resolve().parent
 GIBS_ORIGIN = "https://gibs.earthdata.nasa.gov"
@@ -81,6 +88,16 @@ USGS_EARTHQUAKE_FEEDS = {
 }
 NOAA_RADAR_MAPSERVER_URL = "https://mapservices.weather.noaa.gov/eventdriven/rest/services/radar/radar_base_reflectivity/MapServer"
 OPEN_METEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+OPEN_METEO_WEATHER_FIELDS = {
+    "precipitation": ("precipitation", "mm"),
+    "wind": ("wind_speed_10m", "mph"),
+    "wind-speed": ("wind_speed_10m", "mph"),
+    "temperature": ("temperature_2m", "F"),
+    "humidity": ("relative_humidity_2m", "%"),
+    "pressure": ("pressure_msl", "hPa"),
+}
+OPEN_METEO_GRID_LATITUDES = tuple(range(-80, 81, 20))
+OPEN_METEO_GRID_LONGITUDES = tuple(range(-170, 171, 20))
 NASA_EONET_WILDFIRES_URL = "https://eonet.gsfc.nasa.gov/api/v3/events?category=wildfires&days=30&status=open&limit=200"
 NWS_ACTIVE_ALERTS_URL = "https://api.weather.gov/alerts/active?status=actual&message_type=alert"
 FL511_CAMERA_LAYER_URL = "https://services.arcgis.com/3wFbqsFPLeKqOlIK/ArcGIS/rest/services/FL511_Traffic_Cameras/FeatureServer/0"
@@ -125,6 +142,7 @@ UPSTREAM_FETCH_ERRORS = (
     OSError,
 )
 UPSTREAM_PAYLOAD_ERRORS = UPSTREAM_FETCH_ERRORS + (json.JSONDecodeError,)
+WEATHER_FIELD_ERRORS = UPSTREAM_PAYLOAD_ERRORS + (ValueError,)
 AIRCRAFT_CACHE = {"timestamp": 0, "payload": None}
 FEED_CACHE = {}
 CAMERA_CACHE = {"timestamp": 0, "payload": None, "providers": []}
@@ -251,14 +269,8 @@ STATIC_INTEL_LAYERS = {
         ],
     },
     "powerGrid": {
-        "source": "Global high-voltage corridor reference",
-        "features": [
-            {"id": "grid-us-east", "name": "Eastern interconnect", "kind": "line", "points": [[-87.6, 41.8, 1200], [-83.0, 39.9, 1200], [-77.0, 38.9, 1200], [-74.0, 40.7, 1200]]},
-            {"id": "grid-us-west", "name": "Western transmission", "kind": "line", "points": [[-122.4, 37.8, 1200], [-118.2, 34.0, 1200], [-112.0, 33.4, 1200]]},
-            {"id": "grid-eu-core", "name": "Central Europe transfer", "kind": "line", "points": [[2.35, 48.85, 1200], [7.4, 46.9, 1200], [11.58, 48.14, 1200], [14.4, 50.1, 1200]]},
-            {"id": "grid-jp", "name": "Japan HV corridor", "kind": "line", "points": [[139.7, 35.6, 1200], [137.4, 35.2, 1200], [135.5, 34.7, 1200]]},
-            {"id": "grid-au", "name": "NSW power spine", "kind": "line", "points": [[151.2, -33.8, 1200], [149.1, -35.2, 1200], [144.9, -37.8, 1200]]}
-        ],
+        "source": "OpenInfraMap / OpenStreetMap power infrastructure",
+        "features": [],
     },
     "rfHeatmap": {
         "source": "OpenCellID / WiGLE dense urban fallback",
@@ -448,6 +460,99 @@ def cached_payload(key, ttl):
 
 def store_payload(key, payload):
     FEED_CACHE[key] = {"timestamp": time.time(), "payload": payload}
+
+
+def fetch_open_meteo_weather_grid(force=False):
+    cache_key = "open-meteo:global-weather-grid"
+    if not force:
+        cached = cached_payload(cache_key, 10 * 60)
+        if cached is not None:
+            return cached
+
+    coordinates = [
+        (lat, lon)
+        for lat in OPEN_METEO_GRID_LATITUDES
+        for lon in OPEN_METEO_GRID_LONGITUDES
+    ]
+    variables = sorted({field[0] for field in OPEN_METEO_WEATHER_FIELDS.values()})
+    query = urlencode({
+        "latitude": ",".join(str(lat) for lat, _lon in coordinates),
+        "longitude": ",".join(str(lon) for _lat, lon in coordinates),
+        "current": ",".join(variables),
+        "temperature_unit": "fahrenheit",
+        "wind_speed_unit": "mph",
+        "timezone": "UTC",
+    })
+    request = Request(OPEN_METEO_FORECAST_URL + "?" + query, headers={
+        "User-Agent": "Project-Orion/1.1 (+https://github.com/Arxhsz/Project-Orion)",
+        "Accept": "application/json",
+    })
+    with urlopen(request, timeout=30) as response:
+        upstream = json.loads(response.read().decode("utf-8", errors="replace"))
+
+    records = upstream if isinstance(upstream, list) else [upstream]
+    if len(records) != len(coordinates):
+        raise ValueError("Open-Meteo global grid response was incomplete")
+
+    values = {variable: [] for variable in variables}
+    valid_time = None
+    for record in records:
+        current = record.get("current") or {}
+        valid_time = valid_time or current.get("time")
+        for variable in variables:
+            values[variable].append(parse_float(current.get(variable)))
+
+    payload = {
+        "source": "Open-Meteo",
+        "provider": "Open-Meteo Forecast API",
+        "generated": generated_at(),
+        "valid_time": valid_time,
+        "width": len(OPEN_METEO_GRID_LONGITUDES),
+        "height": len(OPEN_METEO_GRID_LATITUDES),
+        "latitudes": list(OPEN_METEO_GRID_LATITUDES),
+        "longitudes": list(OPEN_METEO_GRID_LONGITUDES),
+        "values": values,
+    }
+    store_payload(cache_key, payload)
+    return payload
+
+
+def open_meteo_weather_field_payload(mode, force=False):
+    normalized_mode = mode if mode in OPEN_METEO_WEATHER_FIELDS else "wind"
+    variable, unit = OPEN_METEO_WEATHER_FIELDS[normalized_mode]
+    grid = fetch_open_meteo_weather_grid(force)
+    values = list((grid.get("values") or {}).get(variable) or [])
+    valid_count = sum(1 for value in values if value is not None)
+
+    return {
+        "source": "Open-Meteo",
+        "provider": "Open-Meteo Forecast API",
+        "api": OPEN_METEO_FORECAST_URL,
+        "weather_mode": "wind" if normalized_mode == "wind-speed" else normalized_mode,
+        "generated": grid.get("generated") or generated_at(),
+        "refresh_seconds": 600,
+        "count": valid_count,
+        "mode": "live-global-grid",
+        "provider_health": "online" if valid_count else "empty",
+        "fallback": False,
+        "latest": {"time": grid.get("valid_time")},
+        "frames": [],
+        "tile_template": None,
+        "grid": {
+            "width": grid.get("width"),
+            "height": grid.get("height"),
+            "west": -180,
+            "south": -80,
+            "east": 180,
+            "north": 80,
+            "unit": unit,
+            "variable": variable,
+            "values": values,
+        },
+        "supportsHistorical": False,
+        "supportsLive": True,
+        "attribution": "Open-Meteo",
+    }
 
 
 def fetch_arcgis_features(layer_url, cache_key, ttl=300, page_size=2000, max_records=12000, force=False):
@@ -1257,35 +1362,144 @@ def parse_osm_voltage(value):
     return int(voltage)
 
 
-def power_grid_payload(bbox_value=None, force=False):
+POWER_LINE_TYPES = {"line", "minor_line", "cable", "busbar"}
+POWER_FACILITY_TYPES = {
+    "substation", "plant", "generator", "transformer", "converter", "switch",
+    "compensator", "tower", "pole", "portal",
+}
+
+
+def bundled_power_payload(bbox=None, notice=None):
+    cache_key = "power-grid:global-backbone"
+    cached = FEED_CACHE.get(cache_key)
+    payload = copy.deepcopy(cached["payload"]) if cached else None
+
+    try:
+        if payload is None:
+            payload = load_bundled_global_power(ROOT)
+            FEED_CACHE[cache_key] = {"timestamp": time.time(), "payload": copy.deepcopy(payload)}
+    except (OSError, ValueError, json.JSONDecodeError):
+        try:
+            payload = fetch_openinframap_global_power()
+            FEED_CACHE[cache_key] = {"timestamp": time.time(), "payload": copy.deepcopy(payload)}
+        except (OSError, ValueError, RuntimeError, HTTPError, URLError, TimeoutError, json.JSONDecodeError) as error:
+            payload = {
+                "source": "OpenInfraMap / OpenStreetMap power infrastructure",
+                "provider": "OpenInfraMap / OpenStreetMap contributors",
+                "mode": "global-backbone-unavailable",
+                "fallback": False,
+                "cached": False,
+                "provider_health": "unavailable",
+                "generated": generated_at(),
+                "count": 0,
+                "features": [],
+                "notice": type(error).__name__,
+            }
+
+    if bbox:
+        payload["features"] = filter_power_features_to_bbox(payload, bbox)
+        payload["count"] = len(payload["features"])
+        payload["mode"] = "regional-backbone"
+        payload["bbox"] = ",".join(str(bbox[key]) for key in ("west", "south", "east", "north"))
+    if notice:
+        payload["notice"] = notice
+    return payload
+
+
+def power_element_center(element):
+    lat = parse_float(element.get("lat"))
+    lon = parse_float(element.get("lon"))
+    if lat is not None and lon is not None:
+        return lat, lon
+
+    center = element.get("center") or {}
+    lat = parse_float(center.get("lat"))
+    lon = parse_float(center.get("lon"))
+    if lat is not None and lon is not None:
+        return lat, lon
+
+    geometry = element.get("geometry") or []
+    coordinates = [
+        (parse_float(point.get("lat")), parse_float(point.get("lon")))
+        for point in geometry
+    ]
+    coordinates = [point for point in coordinates if point[0] is not None and point[1] is not None]
+    if not coordinates:
+        return None
+    return (
+        sum(point[0] for point in coordinates) / len(coordinates),
+        sum(point[1] for point in coordinates) / len(coordinates),
+    )
+
+
+def normalize_osm_power_element(element):
+    tags = element.get("tags") or {}
+    category = tags.get("power") or "power"
+    voltage = parse_osm_voltage(tags.get("voltage")) or 0
+    osm_type = element.get("type") or "element"
+    osm_id = element.get("id")
+    common = {
+        "id": f"osm-power-{osm_type}-{osm_id}",
+        "name": tags.get("name") or tags.get("operator") or f"OSM power {category.replace('_', ' ')}",
+        "category": category,
+        "status": "construction" if tags.get("construction") else "active",
+        "source": "OpenStreetMap / Overpass",
+        "provider": "OpenStreetMap contributors",
+        "voltage": voltage,
+        "metadata": {
+            "osm_id": osm_id,
+            "operator": tags.get("operator"),
+            "circuits": tags.get("circuits"),
+            "frequency": tags.get("frequency"),
+            "wires": tags.get("wires"),
+            "output": tags.get("generator:output:electricity"),
+            "source": tags.get("plant:source") or tags.get("generator:source"),
+        },
+    }
+
+    if category in POWER_LINE_TYPES:
+        path = []
+        for point in element.get("geometry") or []:
+            lat = parse_float(point.get("lat"))
+            lon = parse_float(point.get("lon"))
+            if lat is not None and lon is not None:
+                path.append([round(lon, 6), round(lat, 6), 48])
+        path = downsample_path(path, 90)
+        if len(path) < 2:
+            return None
+        common.update({"kind": "line", "points": path})
+        return common
+
+    if category in POWER_FACILITY_TYPES:
+        center = power_element_center(element)
+        if not center:
+            return None
+        common.update({
+            "kind": "point",
+            "lat": round(center[0], 6),
+            "lon": round(center[1], 6),
+            "height": 72,
+        })
+        return common
+
+    return None
+
+
+def power_grid_payload(bbox_value=None, force=False, detail=None):
     bbox, bbox_error = bounded_power_bbox(parse_bbox_value(bbox_value))
     if bbox_error:
-        fallback = static_intel_payload("powerGrid", mode="regional-reference", error=None)
-        if fallback is not None:
-            fallback["source"] = "Global high-voltage corridor reference; zoom to a regional viewport for OpenStreetMap/Overpass live lines"
-            fallback["bbox"] = bbox_value or None
-            fallback["provider_health"] = "fallback"
-            fallback["notice"] = bbox_error
-            return fallback
+        return bundled_power_payload(notice=bbox_error)
 
-        return {
-            "source": "OpenStreetMap / Overpass",
-            "mode": "regional-reference",
-            "notice": bbox_error,
-            "fallback": True,
-            "provider_health": "fallback",
-            "generated": generated_at(),
-            "count": 0,
-            "features": [],
-        }
-
+    width = bbox["east"] - bbox["west"]
+    height = bbox["north"] - bbox["south"]
+    detail = detail if detail in {"asset", "local", "regional"} else ("local" if width <= 1.6 and height <= 1.6 else "regional")
     bbox_key = ",".join([
         f"{bbox['west']:.3f}",
         f"{bbox['south']:.3f}",
         f"{bbox['east']:.3f}",
         f"{bbox['north']:.3f}",
     ])
-    cache_key = f"power-grid:{bbox_key}"
+    cache_key = f"power-grid:{detail}:{bbox_key}"
     cached = FEED_CACHE.get(cache_key)
     if not force and cached and time.time() - cached["timestamp"] < 20 * 60:
         payload = dict(cached["payload"])
@@ -1297,32 +1511,54 @@ def power_grid_payload(bbox_value=None, force=False):
     west = bbox["west"]
     north = bbox["north"]
     east = bbox["east"]
-    query = f"""
-    [out:json][timeout:12];
-    (
-      way["power"~"^(line|minor_line)$"]({south:.5f},{west:.5f},{north:.5f},{east:.5f});
-    );
-    out tags geom 240;
+    if detail == "asset":
+        facility_filter = "substation|plant|generator|transformer|converter|switch|compensator|tower|pole|portal"
+    elif detail == "local":
+        facility_filter = "substation|plant|transformer|converter"
+    else:
+        facility_filter = "substation|plant"
+    line_limit = 900 if detail in {"asset", "local"} else 1200
+    facility_limit = 1000 if detail == "asset" else 700 if detail == "local" else 500
+    result_limit = line_limit + facility_limit
+    line_query = f"""
+    [out:json][timeout:14];
+    way["power"~"^(line|minor_line|cable|busbar)$"]({south:.5f},{west:.5f},{north:.5f},{east:.5f});
+    out tags geom {line_limit};
     """
-    data = urlencode({"data": query}).encode("utf-8")
-    def fetch_overpass(endpoint):
+    facility_query = f"""
+    [out:json][timeout:14];
+    nwr["power"~"^({facility_filter})$"]({south:.5f},{west:.5f},{north:.5f},{east:.5f});
+    out tags center {facility_limit};
+    """
+
+    def fetch_overpass(endpoint, query):
+        data = urlencode({"data": query}).encode("utf-8")
         request = Request(endpoint, data=data, headers={
-            "User-Agent": "Project-Orion/1.0 (local power-grid visualization)",
+            "User-Agent": "Project-Orion/1.1 (+https://github.com/Arxhsz/Project-Orion)",
             "Accept": "application/json",
             "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
         })
         with urlopen(request, timeout=16) as response:
             return json.loads(response.read().decode("utf-8", errors="replace"))
 
-    upstream = None
+    upstream_by_kind = {}
     last_error = None
-    executor = ThreadPoolExecutor(max_workers=len(OVERPASS_INTERPRETER_URLS))
-    futures = [executor.submit(fetch_overpass, endpoint) for endpoint in OVERPASS_INTERPRETER_URLS]
+    line_endpoints = OVERPASS_INTERPRETER_URLS[1:] if len(OVERPASS_INTERPRETER_URLS) > 1 else OVERPASS_INTERPRETER_URLS
+    executor = ThreadPoolExecutor(max_workers=len(line_endpoints) + 1)
+    futures = {
+        executor.submit(fetch_overpass, endpoint, line_query): "lines"
+        for endpoint in line_endpoints
+    }
+    futures[executor.submit(fetch_overpass, OVERPASS_INTERPRETER_URLS[0], facility_query)] = "facilities"
     try:
         for future in as_completed(futures, timeout=18):
+            kind = futures[future]
+            if kind in upstream_by_kind:
+                continue
             try:
-                upstream = future.result()
-                break
+                upstream_by_kind[kind] = future.result()
+                if len(upstream_by_kind) == 2:
+                    break
             except UPSTREAM_PAYLOAD_ERRORS as error:
                 last_error = error
     except FutureTimeoutError as error:
@@ -1330,7 +1566,7 @@ def power_grid_payload(bbox_value=None, force=False):
     finally:
         executor.shutdown(wait=False, cancel_futures=True)
 
-    if upstream is None:
+    if not upstream_by_kind:
         if stale_payload:
             stale_payload.update({
                 "cached": True,
@@ -1339,69 +1575,64 @@ def power_grid_payload(bbox_value=None, force=False):
                 "notice": type(last_error).__name__ if last_error else "OverpassUnavailable",
             })
             return stale_payload
-        raise last_error or RuntimeError("No Overpass endpoint returned power infrastructure")
+        try:
+            arcgis_features = fetch_arcgis_us_transmission(bbox, limit=result_limit)
+        except UPSTREAM_PAYLOAD_ERRORS:
+            arcgis_features = []
+        if arcgis_features:
+            return {
+                "source": "U.S. Electric Power Transmission Lines",
+                "mode": "arcgis-us-fallback",
+                "fallback": False,
+                "cached": False,
+                "provider_health": "online",
+                "generated": generated_at(),
+                "bbox": bbox_key,
+                "count": len(arcgis_features),
+                "features": arcgis_features,
+                "attribution": "ArcGIS Living Atlas / EIA-HIFLD",
+            }
+        return bundled_power_payload(bbox, type(last_error).__name__ if last_error else "OverpassUnavailable")
 
-    features = []
-    for element in upstream.get("elements") or []:
-        geometry = element.get("geometry") or []
-        if element.get("type") != "way" or len(geometry) < 2:
-            continue
-
-        tags = element.get("tags") or {}
-        path = []
-        for point in geometry:
-            lat = parse_float(point.get("lat"))
-            lon = parse_float(point.get("lon"))
-            if lat is None or lon is None:
-                continue
-            path.append([round(lon, 6), round(lat, 6), 48])
-
-        path = downsample_path(path, 90)
-        if len(path) < 2:
-            continue
-
-        voltage = parse_osm_voltage(tags.get("voltage"))
-        features.append({
-            "id": f"osm-power-way-{element.get('id')}",
-            "name": tags.get("name") or tags.get("operator") or "OSM power transmission line",
-            "kind": "line",
-            "category": tags.get("power") or "line",
-            "status": "active",
-            "source": "OpenStreetMap / Overpass",
-            "provider": "OpenStreetMap contributors",
-            "voltage": voltage or 0,
-            "points": path,
-            "metadata": {
-                "osm_id": element.get("id"),
-                "operator": tags.get("operator"),
-                "circuits": tags.get("circuits"),
-                "frequency": tags.get("frequency"),
-                "wires": tags.get("wires"),
-            },
-        })
-
-        if len(features) >= 500:
-            break
+    elements = []
+    for upstream in upstream_by_kind.values():
+        elements.extend(upstream.get("elements") or [])
+    features = [normalize_osm_power_element(element) for element in elements]
+    features = [feature for feature in features if feature]
 
     if not features:
-        fallback = static_intel_payload("powerGrid", mode="regional-reference", error=None)
-        if fallback is not None:
-            fallback["source"] = "Global high-voltage corridor reference; OpenStreetMap/Overpass returned no regional power lines"
-            fallback["bbox"] = bbox_key
-            fallback["provider_health"] = "fallback"
-            fallback["notice"] = "NoOverpassPowerLines"
-            return fallback
+        try:
+            features = fetch_arcgis_us_transmission(bbox, limit=result_limit)
+        except UPSTREAM_PAYLOAD_ERRORS:
+            features = []
+        if not features:
+            return bundled_power_payload(bbox, "NoRegionalPowerFeatures")
+
+    if not any(feature.get("kind") == "line" for feature in features):
+        try:
+            line_fallback = fetch_arcgis_us_transmission(bbox, limit=line_limit)
+        except UPSTREAM_PAYLOAD_ERRORS:
+            line_fallback = []
+        if not line_fallback:
+            line_fallback = [
+                feature for feature in bundled_power_payload(bbox).get("features") or []
+                if feature.get("kind") == "line"
+            ]
+        features.extend(line_fallback)
 
     payload = {
-        "source": "OpenStreetMap / Overpass",
+        "source": "OpenStreetMap / Overpass" + (" with transmission fallback" if "lines" not in upstream_by_kind else ""),
         "mode": "public_no_token",
         "fallback": False,
+        "provider_health": "online",
         "cached": False,
         "generated": generated_at(),
         "bbox": bbox_key,
         "count": len(features),
         "features": features,
         "attribution": "OpenStreetMap contributors",
+        "detail": detail,
+        "facility_detail": "facilities" in upstream_by_kind,
     }
     FEED_CACHE[cache_key] = {"timestamp": time.time(), "payload": payload}
     return payload
@@ -1742,20 +1973,6 @@ def build_expanded_intel_layers():
         }
     augment_layer("underseaCables", 54, cable_factory)
 
-    grid_regions = [GLOBAL_HUBS[i:i + 4] for i in range(0, len(GLOBAL_HUBS) - 4, 2)]
-    def grid_factory(index):
-        cluster = grid_regions[index % len(grid_regions)]
-        points = [[round(city[1], 3), round(city[2], 3), 48 + (index % 4) * 8] for city in cluster]
-        return {
-            "id": f"grid-expanded-{index + 1:02d}",
-            "name": f"{cluster[0][0]} regional transmission",
-            "kind": "line",
-            "category": "transmission",
-            "intensity": round(0.42 + (index % 9) * 0.052, 2),
-            "points": points,
-        }
-    augment_layer("powerGrid", 44, grid_factory)
-
     def heat_factory(prefix, category, radius_base):
         def factory(index):
             city = GLOBAL_HUBS[index % len(GLOBAL_HUBS)]
@@ -1889,7 +2106,7 @@ def camera_frame_svg(camera, frame_index=0):
     clock = time.strftime("%Y-%m-%d %H:%M:%S UTC", now)
     lat = camera.get("lat", "--")
     lon = camera.get("lon", "--")
-    upstream = "UPSTREAM PROXY" if external_camera_url(camera, "stream_url") else "GENERATED LIVE"
+    upstream = "NO UPSTREAM FRAME"
 
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
   <defs>
@@ -1929,10 +2146,10 @@ def camera_frame_svg(camera, frame_index=0):
   <text x="52" y="94" fill="rgba(255,255,255,.74)" font-family="Arial, Helvetica, sans-serif" font-size="17">{provider} / {category} / {status}</text>
   <text x="52" y="122" fill="rgba(255,255,255,.54)" font-family="Arial, Helvetica, sans-serif" font-size="15">{lat}, {lon}</text>
   <rect x="954" y="24" width="298" height="92" rx="18" fill="rgba(3,5,9,.66)" stroke="rgba(255,255,255,.18)"/>
-  <circle cx="989" cy="57" r="9" fill="#ffffff"/>
-  <text x="1010" y="64" fill="white" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="800">LIVE</text>
+  <circle cx="989" cy="57" r="9" fill="#76808f"/>
+  <text x="1010" y="64" fill="white" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="800">UNAVAILABLE</text>
   <text x="982" y="94" fill="rgba(255,255,255,.64)" font-family="Arial, Helvetica, sans-serif" font-size="14">{clock}</text>
-  <text x="34" y="686" fill="rgba(255,255,255,.58)" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="800" letter-spacing="3">{upstream} / FRAME {frame_index:04d}</text>
+  <text x="34" y="686" fill="rgba(255,255,255,.58)" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="800" letter-spacing="3">{upstream}</text>
 </svg>""".encode("utf-8")
 
 
@@ -2692,25 +2909,21 @@ class OrionHandler(SimpleHTTPRequestHandler):
         if mode not in allowed_modes:
             mode = "wind"
 
-        payload = {
-            "source": "Open-Meteo",
-            "provider": "Open-Meteo Forecast API",
-            "api": OPEN_METEO_FORECAST_URL,
-            "weather_mode": mode,
-            "generated": int(time.time()),
-            "refresh_seconds": 600,
-            "count": 0,
-            "mode": "metadata-only",
-            "fallback": False,
-            "latest": None,
-            "frames": [],
-            "tile_template": None,
-            "supportsHistorical": True,
-            "supportsLive": True,
-            "attribution": "Open-Meteo",
-            "message": "Documented Open-Meteo JSON fields are approved, but Orion has no approved raster tile renderer for this mode yet.",
-        }
-        self.send_json(payload, cache_seconds=300)
+        try:
+            self.send_json(open_meteo_weather_field_payload(mode), cache_seconds=300)
+        except WEATHER_FIELD_ERRORS as error:
+            self.send_json({
+                "source": "Open-Meteo",
+                "provider": "Open-Meteo Forecast API",
+                "weather_mode": mode,
+                "generated": int(time.time()),
+                "count": 0,
+                "mode": "unavailable",
+                "provider_health": "unavailable",
+                "fallback": False,
+                "error": type(error).__name__,
+                "grid": None,
+            }, status=503, cache_seconds=30)
 
     def proxy_wildfires(self):
         cached = self.cached_feed("wildfires:eonet", 5 * 60)
@@ -2952,8 +3165,9 @@ class OrionHandler(SimpleHTTPRequestHandler):
 
         if layer == "powerGrid":
             bbox_value = (params.get("bbox") or [""])[0]
+            detail = (params.get("detail") or [""])[0]
             try:
-                payload = power_grid_payload(bbox_value)
+                payload = power_grid_payload(bbox_value, detail=detail)
                 if payload.get("count", 0) > 0 and not payload.get("fallback"):
                     self.store_cached_feed(f"intel:powerGrid:{bbox_value or 'fallback'}", payload)
                     self.send_json(payload, cache_seconds=180)
@@ -2966,23 +3180,8 @@ class OrionHandler(SimpleHTTPRequestHandler):
                     stale["error"] = type(error).__name__
                     self.send_json(stale, cache_seconds=60)
                     return
-                fallback = static_intel_payload(layer, error=type(error).__name__)
-                if fallback is not None:
-                    fallback["source"] = "Global high-voltage corridor reference; OpenStreetMap/Overpass live query failed"
-                    fallback["provider_health"] = "fallback"
-                    fallback["mode"] = "regional-reference"
-                    fallback["notice"] = type(error).__name__
-                    self.send_json(fallback, cache_seconds=90)
-                    return
-                self.send_json({
-                    "source": "OpenStreetMap / Overpass",
-                    "error": type(error).__name__,
-                    "generated": int(time.time()),
-                    "count": 0,
-                    "mode": "error",
-                    "fallback": False,
-                    "features": [],
-                }, cache_seconds=30)
+                fallback = bundled_power_payload(notice=type(error).__name__)
+                self.send_json(fallback, cache_seconds=90)
                 return
 
         payload = STATIC_INTEL_LAYERS.get(layer)

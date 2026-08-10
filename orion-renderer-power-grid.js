@@ -23,6 +23,7 @@
       var infrastructure = Orion.Renderer.Infrastructure;
       if (infrastructure && infrastructure.PowerGrid && infrastructure.PowerGrid.collection) {
         infrastructure.PowerGrid.collection.removeAll();
+        infrastructure.PowerGrid.points && infrastructure.PowerGrid.points.removeAll();
       }
     }
   };
