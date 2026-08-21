@@ -29,7 +29,6 @@
 - Static intel fallback layers in `orion_server.py`.
 - Placeholder runtime modules created by `orion-core.js`.
 - Fallback imagery and transparent tile responses in `orion_server.py`.
-- Camera snapshot fallback paths in `cameranet_frontend.js`.
 
 ## Retired Features Hidden or Pending Removal
 

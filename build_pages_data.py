@@ -7,7 +7,7 @@ import time
 
 os.environ.setdefault("ORION_SYNTHETIC_INTEL", "1")
 
-from camera_providers import get_all_cameras
+from camera_providers import get_all_cameras, live_camera_record
 import orion_server
 from power_grid_data import fetch_openinframap_global_power
 
@@ -231,29 +231,22 @@ def build_aircraft():
 
 
 def build_cameras():
-    log("building camera snapshot")
+    log("building live camera catalog")
     try:
         cameras, providers = get_all_cameras(None, None, None)
         clean = []
         for camera in cameras[:30000]:
-            item = dict(camera)
-            for key in ("stream_url", "proxy_stream_url", "snapshot_url", "proxy_snapshot_url"):
+            item = live_camera_record(camera, allow_resolver=False)
+            if not item:
+                continue
+            for key in ("stream_url", "proxy_stream_url"):
                 value = item.get(key)
                 if isinstance(value, str) and value.startswith("/"):
                     item.pop(key, None)
-            if not (
-                item.get("embed_url")
-                or item.get("upstream_stream_url")
-                or item.get("upstream_snapshot_url")
-                or item.get("snapshot_source_url")
-                or item.get("stream_url")
-                or item.get("snapshot_url")
-            ):
-                continue
             clean.append(item)
         payload = {
-            "source": "CameraNet pages snapshot",
-            "mode": "pages-snapshot",
+            "source": "CameraNet live video catalog",
+            "mode": "pages-live-catalog",
             "count": len(clean),
             "total": len(clean),
             "providers": providers,
@@ -263,7 +256,7 @@ def build_cameras():
         }
     except Exception as error:
         payload = {
-            "source": "CameraNet pages snapshot",
+            "source": "CameraNet live video catalog",
             "mode": "pages-error",
             "error": type(error).__name__,
             "count": 0,

@@ -51,7 +51,6 @@ test("first-run defaults keep heavy live layers off", () => {
     "lightning",
     "cameras",
     "liveAircraft",
-    "liveShips",
     "realtimeSatellites",
     "starlink",
     "debris"
@@ -61,7 +60,6 @@ test("first-run defaults keep heavy live layers off", () => {
 
   assert.equal(defaults.tracking.air, false);
   assert.equal(defaults.tracking.sat, false);
-  assert.equal(defaults.tracking.sea, false);
 });
 
 test("provider registry exposes prompt-required provider state metadata", () => {
@@ -79,7 +77,6 @@ test("provider registry exposes prompt-required provider state metadata", () => 
   assert.equal(state.supportsLive, true);
   assert.equal(state.supportsHistorical, false);
   assert.equal(state.timeCapability, "live-only");
-  assert.equal(state.requiresApiKey, false);
   assert.match(state.attribution, /NOAA/);
   assert.equal(Orion.Telemetry.ProviderHealth.getTimeUntilRetry("weatherRadar"), 0);
 });
@@ -93,13 +90,10 @@ test("tracking provider capabilities distinguish propagated from live-only data"
   Orion.Telemetry.ProviderHealth.init();
 
   const aircraft = Orion.Telemetry.ProviderHealth.getProviderState("liveAircraft");
-  const vessels = Orion.Telemetry.ProviderHealth.getProviderState("liveShips");
   const satellites = Orion.Telemetry.ProviderHealth.getProviderState("realtimeSatellites");
 
   assert.equal(aircraft.supportsHistorical, false);
   assert.equal(aircraft.timeCapability, "live-only");
-  assert.equal(vessels.supportsHistorical, false);
-  assert.equal(vessels.timeCapability, "live-only");
   assert.equal(satellites.supportsHistorical, true);
   assert.equal(satellites.timeCapability, "propagated");
 });
@@ -121,7 +115,6 @@ test("infrastructure providers are active selectable layers", () => {
     assert.equal(Orion.Config.DefaultState.platformLayers[layerId], false, `${layerId} should default off`);
     assert.equal(provider.supportsStaticMode, true, `${layerId} should support static Pages snapshots`);
     assert.equal(provider.supportsLive, true, `${layerId} should support local live mode`);
-    assert.equal(provider.requiresApiKey, false, `${layerId} should not require frontend keys`);
     assert.ok(provider.attribution, `${layerId} should expose attribution`);
   }
 });
@@ -148,15 +141,12 @@ test("runtime code no longer contains removed weather tile providers", () => {
   }
 });
 
-test("production AIS provider is unavailable instead of synthetic fallback", () => {
+test("credential-dependent AIS integration is removed", () => {
   const source = fs.readFileSync(path.join(root, "orion_server.py"), "utf8");
-  const liveShipsBlock = source.match(/"liveShips": \{[\s\S]*?\n    \},\n    "cyberNetwork"/);
+  const config = fs.readFileSync(path.join(root, "orion-config.js"), "utf8");
 
-  assert.ok(liveShipsBlock, "liveShips server payload should be declared");
-  assert.match(liveShipsBlock[0], /"provider_health": "unavailable"/);
-  assert.match(liveShipsBlock[0], /"features": \[\]/);
-  assert.equal(liveShipsBlock[0].includes("ATLANTIC MERCHANT"), false);
-  assert.equal(liveShipsBlock[0].includes("AISStream/AISHub adapter fallback"), false);
+  assert.equal(source.includes('"liveShips"'), false);
+  assert.equal(config.includes("liveShips"), false);
 });
 
 test("live provider fetches tolerate incomplete upstream reads", () => {
@@ -265,12 +255,12 @@ test("platform renderers are rebound and guarded after boot recovery", () => {
 test("html asset version is bumped for updated runtime modules", () => {
   const source = fs.readFileSync(path.join(root, "index.html"), "utf8");
 
-  assert.match(source, /app\.js\?v=20260810-grid-timeline19/);
-  assert.match(source, /orion-config\.js\?v=20260810-grid-timeline9/);
-  assert.match(source, /orion-onboarding\.js\?v=20260809-grid-timeline8/);
-  assert.match(source, /cameranet_frontend\.js\?v=20260809-grid-timeline9/);
+  assert.match(source, /app\.js\?v=20260821-live-video1/);
+  assert.match(source, /orion-config\.js\?v=20260821-live-video1/);
+  assert.match(source, /orion-onboarding\.js\?v=20260821-live-video1/);
+  assert.match(source, /cameranet_frontend\.js\?v=20260821-live-video1/);
   assert.match(source, /orion-renderer-primitive\.js\?v=20260809-grid-timeline7/);
-  assert.match(source, /orion-telemetry-health\.js\?v=20260809-grid-timeline7/);
+  assert.match(source, /orion-telemetry-health\.js\?v=20260821-live-video1/);
   assert.equal(source.includes("20260701-hardening3"), false);
 });
 
@@ -335,7 +325,7 @@ test("orbital dataset switches preserve satellite tracking atomically", () => {
   assert.match(appSource, /trackingDomainSyncPaused = false;\s*state\.tracking\.sat = true/);
 });
 
-test("CameraNet contains no fabricated state coverage and supports verified embeds", () => {
+test("CameraNet publishes only live video and supports verified embeds", () => {
   const providersSource = fs.readFileSync(path.join(root, "camera_providers.py"), "utf8");
   const cameraSource = fs.readFileSync(path.join(root, "cameranet_frontend.js"), "utf8");
   const serverSource = fs.readFileSync(path.join(root, "orion_server.py"), "utf8");
@@ -345,9 +335,13 @@ test("CameraNet contains no fabricated state coverage and supports verified embe
   assert.match(providersSource, /publicwebcam-wptv-pbi/);
   assert.match(cameraSource, /function includeTargetInBbox/);
   assert.match(cameraSource, /function renderEmbeddedFeed/);
-  assert.match(cameraSource, /camera-snapshot-badge/);
-  assert.match(cameraSource, /isStaticHostMode\(\) && directStaticStream/);
-  assert.match(pagesSource, /item\.get\("upstream_stream_url"\)/);
+  assert.match(cameraSource, /function cameraHasLiveVideo/);
+  assert.match(cameraSource, /function renderLiveUnavailable/);
+  assert.equal(cameraSource.includes("renderSnapshot"), false);
+  assert.equal(cameraSource.includes("SNAPSHOT FALLBACK"), false);
+  assert.match(cameraSource, /isStaticHostMode\(\) \|\| !camera\.stream_url/);
+  assert.match(providersSource, /def camera_has_live_video/);
+  assert.match(pagesSource, /live_camera_record\(camera, allow_resolver=False\)/);
   assert.match(pagesSource, /get_all_cameras\(None, None, None\)/);
   assert.match(serverSource, /def camera_priority\(camera\)/);
   assert.match(serverSource, /media_priority = 0 if camera\.get\("embed_url"\) else 1/);

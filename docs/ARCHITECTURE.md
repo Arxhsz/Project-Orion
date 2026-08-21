@@ -5,7 +5,7 @@
 Project Orion runs in two modes:
 
 - Static GitHub Pages mode: `index.html` and JavaScript run from a static host. Live JSON requests are rewritten to `pages-data/*` snapshots. Provider-dependent tile services must either be CORS-safe public services or disabled with a visible status.
-- Local Python mode: `orion_server.py` serves the static app and proxies selected upstreams from localhost. This mode can handle same-origin tiles, CameraNet stream resolution, caching, and provider credentials.
+- Local Python mode: `orion_server.py` serves the static app and proxies selected upstreams from localhost. This mode handles same-origin tiles, CameraNet stream resolution, caching, and provider request shaping.
 
 ## Frontend Flow
 
@@ -13,9 +13,9 @@ Project Orion runs in two modes:
 2. `orion-config.js` defines imagery layers, platform layers, provider metadata, tracking definitions, and constants.
 3. `app.js` owns the main state object and `Orion.SimulationClock`, binds controls, initializes Cesium, loads imagery, refreshes providers, renders layers, and updates telemetry.
 4. `orion-telemetry-health.js` tracks provider health and retry/backoff.
-5. Renderer modules manage Cesium primitives for imagery, environment, infrastructure, aircraft, maritime, and orbital layers.
+5. Renderer modules manage Cesium primitives for imagery, environment, infrastructure, aircraft, and orbital layers.
 6. `orion-provider-submarine-cables.js` and `orion-provider-power-grid.js` normalize infrastructure payloads before Cesium rendering and selectable-intelligence rows.
-7. `cameranet_frontend.js` is the sole camera viewport owner and manages discovery, progressive grid clustering, selection, embeds, HLS playback, and snapshot fallback.
+7. `cameranet_frontend.js` is the sole camera viewport owner and manages discovery, progressive grid clustering, selection, embeds, and live HLS/MJPEG playback.
 
 ## Backend Flow
 

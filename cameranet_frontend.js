@@ -15,7 +15,6 @@
     lastBboxKey: "",
     lastFetchTime: 0,
     fetchDebounceTimer: null,
-    snapshotRefreshTimer: null,
     removeMoveEndListener: null,
     currentHls: null,
     currentResolverController: null,
@@ -69,6 +68,25 @@
     return !!(Orion && Orion.Config && Orion.Config.Constants && Orion.Config.Constants.STATIC_HOST);
   }
 
+  function cameraHasLiveVideo(camera) {
+    if (!camera) {
+      return false;
+    }
+
+    var streamType = String(camera.stream_type || "").toLowerCase();
+    if (streamType === "embed") {
+      return /^https:\/\//i.test(camera.embed_url || "");
+    }
+    if (streamType !== "hls" && streamType !== "mjpeg") {
+      return false;
+    }
+
+    var directUrl = camera.upstream_stream_url ||
+      (/^https?:\/\//i.test(camera.stream_url || "") ? camera.stream_url : "");
+    var verifiedResolver = camera.stream_available === true && /^\/camera\/resolve/i.test(camera.stream_url || "");
+    return Boolean(directUrl || (!isStaticHostMode() && verifiedResolver));
+  }
+
   function disposePlayback() {
     if (cameraNetState.currentResolverController) {
       cameraNetState.currentResolverController.abort();
@@ -83,10 +101,6 @@
       cameraNetState.currentHls = null;
     }
 
-    if (cameraNetState.snapshotRefreshTimer) {
-      window.clearInterval(cameraNetState.snapshotRefreshTimer);
-      cameraNetState.snapshotRefreshTimer = null;
-    }
     if (cameraNetState.startupTimer) {
       window.clearTimeout(cameraNetState.startupTimer);
       cameraNetState.startupTimer = null;
@@ -318,7 +332,7 @@
         if (requestVersion !== cameraNetState.requestVersion) {
           return null;
         }
-        var cameras = Array.isArray(data.cameras) ? data.cameras : [];
+        var cameras = Array.isArray(data.cameras) ? data.cameras.filter(cameraHasLiveVideo) : [];
         if (isStaticHostMode()) {
           cameras = cameras.filter(function (camera) {
             var lat = Number(camera.lat);
@@ -893,57 +907,47 @@
     return true;
   }
 
-  function renderSnapshot(camera, label) {
+  function renderLiveUnavailable(message) {
     var frame = document.getElementById("cameraFrame");
     if (!frame) {
       return;
     }
 
-    var absoluteSnapshotUrl = /^https?:\/\//i.test(camera.snapshot_url || "") ? camera.snapshot_url : "";
-    var snapshotUrl = isStaticHostMode()
-      ? (camera.upstream_snapshot_url || camera.snapshot_source_url || absoluteSnapshotUrl)
-      : (camera.snapshot_url || (camera.id ? "/camera/snapshot?id=" + encodeURIComponent(camera.id) : ""));
-    if (!snapshotUrl) {
-      frame.innerHTML = "<div class='camera-feed-message'>Snapshot unavailable</div>";
+    frame.innerHTML = [
+      "<div class='camera-feed-message'>",
+      "<strong>Live feed unavailable</strong>",
+      "<span>", escapeHtml(message || "The provider stream could not be played."), "</span>",
+      "</div>"
+    ].join("");
+  }
+
+  function renderMjpeg(camera, streamUrl) {
+    var frame = document.getElementById("cameraFrame");
+    if (!frame || !streamUrl) {
+      renderLiveUnavailable("The provider did not supply a playable MJPEG stream.");
       return;
     }
 
-    function cacheBust(url) {
-      return url + (url.indexOf("?") === -1 ? "?" : "&") + "t=" + Date.now();
-    }
-
     frame.innerHTML = [
-      "<div class='camera-live-shell generated'>",
-      "<img id='cameraNetSnapshot' alt='", escapeHtml(camera.name || "CameraNet camera"), "' src='", escapeHtml(cacheBust(snapshotUrl)), "'>",
-      "<span class='camera-live-badge camera-snapshot-badge'>SNAPSHOT</span>",
-      "<span class='camera-live-clock'>", escapeHtml(label || "SNAPSHOT"), "</span>",
+      "<div class='camera-live-shell'>",
+      "<img id='cameraNetMjpeg' alt='", escapeHtml(camera.name || "CameraNet live camera"), "' src='", escapeHtml(streamUrl), "'>",
+      "<span class='camera-live-badge'>LIVE</span>",
+      "<span class='camera-live-clock'>LIVE MJPEG</span>",
       "</div>"
     ].join("");
 
-    var initialImage = document.getElementById("cameraNetSnapshot");
-    if (initialImage) {
-      initialImage.addEventListener("error", function () {
-        disposePlayback();
-        if (frame.contains(initialImage)) {
-          frame.innerHTML = "<div class='camera-feed-message'><strong>Camera media unavailable</strong><span>The provider did not return a usable image.</span></div>";
-        }
+    var image = document.getElementById("cameraNetMjpeg");
+    if (image) {
+      image.addEventListener("error", function () {
+        renderLiveUnavailable("The provider MJPEG stream stopped responding.");
       }, { once: true });
     }
-
-    cameraNetState.snapshotRefreshTimer = window.setInterval(function () {
-      var image = document.getElementById("cameraNetSnapshot");
-      if (!image) {
-        disposePlayback();
-        return;
-      }
-      image.src = cacheBust(snapshotUrl);
-    }, 60000);
   }
 
   function playHls(camera, streamData) {
     var frame = document.getElementById("cameraFrame");
     if (!frame || !streamData || !streamData.stream_url) {
-      renderSnapshot(camera, "SNAPSHOT FALLBACK");
+      renderLiveUnavailable("The provider did not supply a playable HLS stream.");
       return;
     }
 
@@ -957,23 +961,23 @@
 
     var video = document.getElementById("cameraNetVideo");
     if (!video) {
-      renderSnapshot(camera, "SNAPSHOT FALLBACK");
+      renderLiveUnavailable("The live video player could not be created.");
       return;
     }
 
-    var fallbackStarted = false;
-    var fallback = function () {
-      if (fallbackStarted) {
+    var failureShown = false;
+    var showFailure = function () {
+      if (failureShown) {
         return;
       }
-      fallbackStarted = true;
+      failureShown = true;
       disposePlayback();
-      renderSnapshot(camera, "LIVE SNAPSHOT");
+      renderLiveUnavailable("The provider HLS stream did not start or stopped responding.");
     };
     var started = false;
     cameraNetState.startupTimer = window.setTimeout(function () {
       if (!started && video.readyState < 2) {
-        fallback();
+        showFailure();
       }
     }, 6500);
     video.addEventListener("playing", function () {
@@ -1032,7 +1036,7 @@
               return;
             }
           }
-          fallback();
+          showFailure();
         }
       });
       return;
@@ -1040,14 +1044,14 @@
 
     if (video.canPlayType("application/vnd.apple.mpegurl")) {
       video.src = streamData.stream_url;
-      video.addEventListener("error", fallback, { once: true });
+      video.addEventListener("error", showFailure, { once: true });
       video.addEventListener("loadedmetadata", function () {
         video.play().catch(function () {});
       }, { once: true });
       return;
     }
 
-    fallback();
+    showFailure();
   }
 
   function openCameraDetailPanel(camera) {
@@ -1086,20 +1090,25 @@
     ].join("");
     panel.classList.remove("hidden");
 
-    if (String(camera.stream_type || "").toLowerCase() === "embed" && camera.embed_url) {
+    var streamType = String(camera.stream_type || "").toLowerCase();
+    if (streamType === "embed" && camera.embed_url) {
       renderEmbeddedFeed(camera);
       return;
     }
 
     var directStaticStream = camera.upstream_stream_url ||
       (/^https?:\/\//i.test(camera.stream_url || "") ? camera.stream_url : "");
-    if (camera.stream_type && String(camera.stream_type).toLowerCase() === "hls" &&
-        isStaticHostMode() && directStaticStream) {
+    if (streamType === "mjpeg" && directStaticStream) {
+      renderMjpeg(camera, directStaticStream);
+      return;
+    }
+    if (streamType === "hls" && directStaticStream &&
+        (isStaticHostMode() || !camera.stream_url || /^https?:\/\//i.test(camera.stream_url))) {
       playHls(camera, { stream_url: directStaticStream });
       return;
     }
 
-    if (camera.stream_type && String(camera.stream_type).toLowerCase() === "hls" && camera.stream_url) {
+    if (streamType === "hls" && camera.stream_url) {
       var controller = typeof AbortController !== "undefined" ? new AbortController() : null;
       cameraNetState.currentResolverController = controller;
       fetch(camera.stream_url, {
@@ -1119,7 +1128,7 @@
         .then(function (streamData) {
           cameraNetState.currentResolverController = null;
           if (!streamData.ok || streamData.error || !streamData.stream_url) {
-            renderSnapshot(Object.assign({}, camera, { snapshot_url: streamData.snapshot_url || camera.snapshot_url }), "SNAPSHOT FALLBACK");
+            renderLiveUnavailable(streamData.message || "The provider could not resolve this live stream.");
             return;
           }
           playHls(camera, streamData);
@@ -1129,12 +1138,12 @@
           if (error && error.name === "AbortError") {
             return;
           }
-          renderSnapshot(camera, "SNAPSHOT FALLBACK");
+          renderLiveUnavailable("The live stream resolver did not respond.");
         });
       return;
     }
 
-    renderSnapshot(camera, "LIVE SNAPSHOT");
+    renderLiveUnavailable("This camera does not expose browser-playable live video.");
   }
 
   function onCameraNetClick(viewer, pickedObject) {

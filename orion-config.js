@@ -253,17 +253,6 @@
       refreshMs: 5 * 60 * 1000,
       color: "#ffffff"
     },
-    liveShips: {
-      label: "AIS vessels",
-      source: "Configured AIS provider",
-      type: "moving",
-      endpoint: "/live/intel?layer=liveShips",
-      controlId: "platformLiveShips",
-      maxItems: 10000,
-      refreshMs: 60 * 1000,
-      color: "#a6b7ff",
-      trail: true
-    },
     liveAircraft: {
       label: "ADSB aircraft",
       source: "OpenSky / FlightAware adapter",
@@ -379,14 +368,6 @@
       refreshMs: 10 * 60 * 1000,
       color: "#c8d2ff",
       retired: true
-    },
-    cities3d: {
-      label: "3D cities",
-      source: "Cesium OSM Buildings",
-      type: "tileset",
-      controlId: "platformCities",
-      refreshMs: 24 * 60 * 60 * 1000,
-      color: "#ffffff"
     }
   };
 
@@ -401,7 +382,6 @@
     satWeather: "Orbital",
     satScience: "Orbital",
     satIot: "Orbital",
-    liveShips: "Air / Sea",
     liveAircraft: "Air / Sea",
     airCorridors: "Air / Sea",
     weatherRadar: "Environment",
@@ -414,7 +394,6 @@
     underseaCables: "Infrastructure",
     defenseAirspace: "Airspace",
     powerGrid: "Infrastructure",
-    cities3d: "Infrastructure",
     rfHeatmap: "Heatmaps",
     emergencyIncidents: "Heatmaps"
   };
@@ -447,7 +426,6 @@
       earthquakes: false,
       cameras: false,
       weatherRadar: false,
-      liveShips: false,
       liveAircraft: false,
       wildfires: false,
       cyberNetwork: false,
@@ -458,8 +436,7 @@
       emergencyIncidents: false,
       volumetricWeather: false,
       lightning: false,
-      airCorridors: false,
-      cities3d: false
+      airCorridors: false
     },
     tracking: {
       filter: "all",
@@ -489,7 +466,6 @@
       minimumRefreshMs: 20 * 60 * 1000,
       maximumRecommendedRequestFrequencyMs: 60 * 1000,
       requiresBackendProxy: false,
-      requiresApiKey: false,
       attribution: "NASA GIBS / NASA ESDIS",
       licensingNotes: "NASA Earthdata/GIBS public visualization services."
     },
@@ -503,7 +479,6 @@
       minimumRefreshMs: 5 * 60 * 1000,
       maximumRecommendedRequestFrequencyMs: 60 * 1000,
       requiresBackendProxy: false,
-      requiresApiKey: false,
       attribution: "NOAA / National Weather Service",
       licensingNotes: "NOAA/NWS public radar map service; current service is not time enabled."
     },
@@ -517,7 +492,6 @@
       minimumRefreshMs: 10 * 60 * 1000,
       maximumRecommendedRequestFrequencyMs: 60 * 1000,
       requiresBackendProxy: false,
-      requiresApiKey: false,
       attribution: "Open-Meteo",
       licensingNotes: "Documented JSON APIs only; raster map tiles are not implemented yet."
     },
@@ -532,24 +506,8 @@
       minimumRefreshMs: 30 * 1000,
       maximumRecommendedRequestFrequencyMs: 30 * 1000,
       requiresBackendProxy: true,
-      requiresApiKey: false,
-      attribution: "OpenSky / public ADS-B providers as configured",
-      licensingNotes: "Credentials and provider-specific rate limits must stay server-side."
-    },
-    liveShips: {
-      id: "liveShips",
-      label: "AIS vessels",
-      status: "unknown",
-      supportsStaticMode: false,
-      supportsHistorical: false,
-      supportsLive: true,
-      timeCapability: "live-only",
-      minimumRefreshMs: 60 * 1000,
-      maximumRecommendedRequestFrequencyMs: 60 * 1000,
-      requiresBackendProxy: true,
-      requiresApiKey: true,
-      attribution: "Configured AIS provider",
-      licensingNotes: "No random synthetic vessels in production mode."
+      attribution: "OpenSky / public ADS-B providers",
+      licensingNotes: "Public provider rate limits apply."
     },
     cameras: {
       id: "cameras",
@@ -561,9 +519,8 @@
       minimumRefreshMs: 45 * 1000,
       maximumRecommendedRequestFrequencyMs: 45 * 1000,
       requiresBackendProxy: true,
-      requiresApiKey: false,
       attribution: "Public DOT/511/open-data camera providers",
-      licensingNotes: "Provider-specific stream and snapshot terms apply."
+      licensingNotes: "Only browser-playable live video streams and approved embeds are published."
     },
     satellites: {
       id: "satellites",
@@ -576,7 +533,6 @@
       minimumRefreshMs: 6 * 60 * 60 * 1000,
       maximumRecommendedRequestFrequencyMs: 30 * 60 * 1000,
       requiresBackendProxy: false,
-      requiresApiKey: false,
       attribution: "CelesTrak",
       licensingNotes: "Uses documented GP/TLE element sets."
     },
@@ -590,7 +546,6 @@
       minimumRefreshMs: 60 * 1000,
       maximumRecommendedRequestFrequencyMs: 60 * 1000,
       requiresBackendProxy: false,
-      requiresApiKey: false,
       attribution: "USGS Earthquake Hazards Program",
       licensingNotes: "USGS GeoJSON summary feeds."
     },
@@ -604,7 +559,6 @@
       minimumRefreshMs: 5 * 60 * 1000,
       maximumRecommendedRequestFrequencyMs: 5 * 60 * 1000,
       requiresBackendProxy: false,
-      requiresApiKey: false,
       attribution: "NASA EONET",
       licensingNotes: "Curated natural event metadata."
     },
@@ -618,7 +572,6 @@
       minimumRefreshMs: 15 * 60 * 1000,
       maximumRecommendedRequestFrequencyMs: 15 * 60 * 1000,
       requiresBackendProxy: true,
-      requiresApiKey: false,
       attribution: "Submarine Cable Map",
       licensingNotes: "Public GeoJSON route visualization; use source attribution with cached/static snapshots."
     },
@@ -632,7 +585,6 @@
       minimumRefreshMs: 5 * 60 * 1000,
       maximumRecommendedRequestFrequencyMs: 5 * 60 * 1000,
       requiresBackendProxy: true,
-      requiresApiKey: false,
       attribution: "OpenStreetMap contributors / Overpass API",
       licensingNotes: "OpenStreetMap data is available under ODbL; local mode uses bounded viewport queries only."
     }
@@ -722,42 +674,6 @@
       longitudeRate: 248,
       longitudeOffset: -128,
       height: 550000
-    },
-    {
-      id: "sea-arctic-meridian",
-      type: "sea",
-      name: "ARCTIC MERIDIAN",
-      detail: "Container vessel",
-      periodHours: 86,
-      phase: 0.13,
-      route: [[4.46, 51.95, 30], [-5.8, 49.4, 30], [-22.0, 46.8, 30], [-45.0, 42.2, 30], [-72.2, 40.1, 30]]
-    },
-    {
-      id: "sea-suez-pilot",
-      type: "sea",
-      name: "SUEZ PILOT",
-      detail: "Tanker",
-      periodHours: 64,
-      phase: 0.49,
-      route: [[32.34, 29.95, 30], [33.4, 25.7, 30], [38.9, 18.5, 30], [48.7, 14.2, 30], [56.3, 23.7, 30]]
-    },
-    {
-      id: "sea-pacific-trader",
-      type: "sea",
-      name: "PACIFIC TRADER",
-      detail: "Bulk carrier",
-      periodHours: 118,
-      phase: 0.72,
-      route: [[-122.7, 37.6, 30], [-139.0, 37.8, 30], [-162.0, 35.2, 30], [166.0, 33.8, 30], [140.4, 34.7, 30]]
-    },
-    {
-      id: "sea-gulf-watch",
-      type: "sea",
-      name: "GULF WATCH",
-      detail: "Patrol vessel",
-      periodHours: 42,
-      phase: 0.31,
-      route: [[-94.6, 28.8, 30], [-90.0, 28.4, 30], [-85.3, 27.8, 30], [-82.2, 25.2, 30], [-87.2, 23.8, 30]]
     }
   ];
 

@@ -1,5 +1,4 @@
 import unittest
-import os
 from unittest.mock import patch
 
 import camera_providers
@@ -14,29 +13,29 @@ class StubCameraProvider(camera_providers.CameraProvider):
         self.state_bbox = (-90, 20, -70, 40)
 
     def fetch_cameras(self, bbox=None):
-        return ["valid", "metadata-only", "invalid", "discarded"]
+        return ["valid", "snapshot-only", "metadata-only", "invalid", "discarded"]
 
     def normalize_camera(self, raw):
         if raw == "discarded":
             return None
         if raw == "invalid":
-            return {"id": raw, "lat": 200, "lon": -80, "snapshot_url": "https://example.test/cam.jpg"}
+            return {"id": raw, "lat": 200, "lon": -80, "stream_type": "hls", "upstream_stream_url": "https://example.test/live.m3u8"}
         if raw == "metadata-only":
             return {"id": raw, "lat": 30, "lon": -80}
-        return {"id": raw, "lat": 30, "lon": -80, "snapshot_url": "https://example.test/cam.jpg"}
+        if raw == "snapshot-only":
+            return {"id": raw, "lat": 30, "lon": -80, "stream_type": "snapshot", "snapshot_url": "https://example.test/cam.jpg"}
+        return {"id": raw, "lat": 30, "lon": -80, "stream_type": "hls", "upstream_stream_url": "https://example.test/live.m3u8"}
 
 
 class CameraProviderTests(unittest.TestCase):
     def test_registry_has_no_synthetic_state_fill(self):
         self.assertNotIn("us_fill", camera_providers.CAMERA_PROVIDERS)
         self.assertFalse(any(provider.id == "us_fill" for provider in camera_providers.CAMERA_PROVIDERS.values()))
+        self.assertNotIn("ncdot", camera_providers.CAMERA_PROVIDERS)
 
-    def test_verified_alaska_provider_is_registered(self):
-        provider = camera_providers.CAMERA_PROVIDERS["ak511"]
-
-        self.assertEqual("Alaska 511", provider.name)
-        self.assertEqual("AK", provider.state_code)
-        self.assertEqual("https://511.alaska.gov/List/GetData/Cameras", provider.api_url)
+    def test_registry_omits_snapshot_only_adapters(self):
+        for provider_id in ("ak511", "az511", "ctroads", "gdot", "id511", "ildot", "midrive", "newengland", "or511", "sdot"):
+            self.assertNotIn(provider_id, camera_providers.CAMERA_PROVIDERS)
 
     def test_curated_webcams_are_verified_embeds(self):
         provider = camera_providers.CuratedPublicWebcamProvider()
@@ -67,47 +66,46 @@ class CameraProviderTests(unittest.TestCase):
         self.assertEqual([], provider.get_cameras())
         self.assertEqual("empty", provider.health)
 
-    def test_local_proxy_without_upstream_is_not_media(self):
+    def test_local_proxy_without_verified_stream_is_not_live_video(self):
         camera = {
             "id": "metadata-only",
             "lat": 30,
             "lon": -80,
-            "snapshot_url": "/camera/snapshot?id=metadata-only",
+            "stream_type": "hls",
             "stream_url": "/camera/resolve?id=metadata-only",
         }
 
-        self.assertFalse(camera_providers.camera_has_media(camera))
+        self.assertFalse(camera_providers.camera_has_live_video(camera))
 
-    def test_drivenc_without_key_is_unavailable_not_failed(self):
-        with patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("DRIVENC_API_KEY", None)
-            provider = camera_providers.NorthCarolinaDOTProvider()
+    def test_verified_local_resolver_is_live_only_in_local_catalog(self):
+        camera = {
+            "id": "resolver-live",
+            "stream_type": "hls",
+            "stream_url": "/camera/resolve?id=resolver-live",
+            "stream_available": True,
+            "snapshot_url": "https://example.test/still.jpg",
+        }
 
-        self.assertFalse(provider.is_configured())
-        self.assertEqual([], provider.get_cameras())
-        self.assertEqual("unavailable", provider.health)
+        self.assertTrue(camera_providers.camera_has_live_video(camera))
+        self.assertFalse(camera_providers.camera_has_live_video(camera, allow_resolver=False))
+        record = camera_providers.live_camera_record(camera)
+        self.assertNotIn("snapshot_url", record)
 
-    def test_drivenc_normalizes_documented_camera_shape(self):
-        provider = camera_providers.NorthCarolinaDOTProvider()
-        camera = provider.normalize_camera({
-            "Id": 4061,
-            "Roadway": "Other",
-            "Direction": "Southbound",
-            "Latitude": 36.06909,
-            "Longitude": -79.51618,
-            "Location": "BUR-BOONE_STMARKS",
-            "Views": [{
-                "Id": 4062,
-                "Url": "https://example.test/map/Cctv/4062",
-                "Status": "Enabled",
-                "Description": "BUR-BOONE_STMARKS",
-                "VideoUrl": "",
-            }],
-        })
+    def test_snapshot_only_camera_is_never_live_video(self):
+        camera = {
+            "id": "still",
+            "stream_type": "snapshot",
+            "snapshot_url": "https://example.test/still.jpg",
+        }
 
-        self.assertEqual("ncdot-4061", camera["id"])
-        self.assertEqual("snapshot_only", camera["status"])
-        self.assertEqual("https://example.test/map/Cctv/4062", camera["upstream_snapshot_url"])
+        self.assertFalse(camera_providers.camera_has_live_video(camera))
+
+    def test_live_camera_proxy_allows_registered_stream_hosts(self):
+        allowed = orion_server.OrionHandler.is_allowed_hls_url
+
+        self.assertTrue(allowed(None, "https://video3.iowadot.gov:8888/camera/playlist.m3u8"))
+        self.assertTrue(allowed(None, "https://strmr5.sha.maryland.gov/live/playlist.m3u8"))
+        self.assertFalse(allowed(None, "https://example.test/live/playlist.m3u8"))
 
 
 class PowerGridTests(unittest.TestCase):

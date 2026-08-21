@@ -1941,10 +1941,6 @@ input[type="range"]::-ms-thumb {
   background: #05070c;
 }
 
-.camera-snapshot-badge {
-  background: rgba(5, 7, 12, 0.82);
-}
-
 .camera-live-shell {
   position: relative;
   width: 100%;

@@ -4,7 +4,7 @@
 
 # Project Orion
 
-Project Orion is a real-time planetary command map built on CesiumJS. It combines NASA GIBS satellite imagery, NOAA/NWS radar, orbital tracking, aircraft and vessel adapters, CameraNet, environmental monitoring, saved locations, live device location, and historical timeline playback in a dark glass command interface.
+Project Orion is a real-time planetary command map built on CesiumJS. It combines NASA GIBS satellite imagery, NOAA/NWS radar, orbital tracking, aircraft, CameraNet, environmental monitoring, saved locations, live device location, and historical timeline playback in a dark glass command interface.
 
 Current version: v1.1.2
 
@@ -39,7 +39,7 @@ docs/                       Audit, issues, data sources, architecture, plan
 - Weather fields: Open-Meteo current conditions sampled on a cached global grid and rendered client-side for precipitation, wind, temperature, humidity, and pressure.
 - Cameras: public DOT/511/open-data providers through CameraNet adapters.
 - Power infrastructure: OpenInfraMap global OpenStreetMap-derived vector tiles, with the official U.S. transmission-line ArcGIS service as a regional fallback.
-- Aircraft and AIS: backend adapters only; credentials must remain server-side.
+- Aircraft: public ADS-B point feeds through the local backend and generated Pages catalog.
 
 See [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md) for the source matrix and attribution notes.
 
@@ -47,7 +47,7 @@ See [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md) for the source matrix and attri
 
 Heavy live and environment layers are off on first load:
 
-- Aircraft, vessels, satellites, debris, CameraNet, wildfires, radar, volumetric weather, lightning, earthquakes, and 3D cities.
+- Aircraft, satellites, debris, CameraNet, wildfires, radar, volumetric weather, lightning, and earthquakes.
 - User layer choices persist in local storage after deliberate toggles.
 - A visible in-app Data Sources and Attribution block appears in the telemetry panel.
 
@@ -74,16 +74,10 @@ powershell -ExecutionPolicy Bypass -File .\start-orion.ps1
 
 ## Environment Variables
 
-Copy `.env.example` for local reference. Do not commit real secrets.
+The bundled integrations require no user-supplied setup secrets. Optional local settings are:
 
-Optional variables include:
-
-- `CESIUM_ION_TOKEN` for optional OSM Buildings / terrain.
-- `OPENSKY_CLIENT_ID` and `OPENSKY_CLIENT_SECRET` for OpenSky OAuth-backed aircraft access.
-- `DRIVENC_API_KEY` for North Carolina's official DriveNC camera API.
-- `AIS_PROVIDER` and `AIS_API_KEY` for licensed AIS integrations.
 - `ORION_ALLOWED_ORIGINS` for production backend CORS.
-- `ORION_SYNTHETIC_INTEL=1` only when intentionally building demo fallback intel snapshots.
+- `ORION_SYNTHETIC_INTEL=1` only when intentionally building demo fallback intel data.
 
 ## GitHub Pages
 
@@ -110,7 +104,7 @@ Supported:
 - CelesTrak satellite OMM snapshots with legacy TLE fallback.
 - USGS earthquakes.
 - NASA EONET wildfire event metadata.
-- CameraNet discovery, verified public embeds, HLS playback, and refreshed snapshots where providers allow it.
+- CameraNet discovery, verified public embeds, and browser-playable HLS/MJPEG live video.
 - Global high-voltage power lines, cables, substations, plants, generators, and local grid assets where source detail supports them.
 - Local backend mode for richer same-origin provider access.
 
@@ -118,8 +112,7 @@ Known limits:
 
 - Open-Meteo weather-field overlays are current global grids rather than provider-native raster tiles or historical animations.
 - Timelapse exports WebM plus metadata in-browser; MP4 requires a future backend ffmpeg pipeline.
-- Licensed AIS and higher-volume aircraft feeds require server-side provider credentials.
-- Some CameraNet streams are provider-limited, blocked, expired, or snapshot-only.
+- Some CameraNet live streams are provider-limited, blocked, or expire; failures are shown as unavailable and never replaced with still images.
 - No free official source provides normalized live camera media for all 50 states. Orion reports actual provider coverage and omits metadata-only/fabricated camera markers.
 - NOAA radar current service is not historical/time-enabled in this implementation.
 
@@ -144,7 +137,7 @@ npm test
 Python syntax:
 
 ```bash
-python3 -m py_compile orion_server.py camera_providers.py intel_layers_expanded.py build_pages_data.py
+python3 -m py_compile orion_server.py camera_providers.py build_pages_data.py
 ```
 
 Build Pages snapshots:
@@ -164,6 +157,5 @@ curl http://127.0.0.1:4174/live/weather/radar
 ## Troubleshooting
 
 - If the app is opened from `file://`, launch it from localhost instead.
-- If optional 3D buildings are unavailable, set a local `CESIUM_ION_TOKEN`.
-- If aircraft or AIS feeds are unavailable, verify backend credentials and provider rate limits.
+- If an aircraft feed is unavailable, check the provider status and retry after the displayed backoff period.
 - If a provider is unavailable, check the telemetry panel provider status and [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md).

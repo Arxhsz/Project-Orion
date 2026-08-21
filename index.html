@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://gibs.earthdata.nasa.gov">
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%2305070c'/%3E%3Ccircle cx='32' cy='32' r='20' fill='none' stroke='%23ffffff' stroke-width='3'/%3E%3Cpath d='M32 8v48M8 32h48' stroke='%23ffffff' stroke-width='2'/%3E%3C/svg%3E">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cesium@1.141.0/Build/Cesium/Widgets/widgets.css">
-    <link rel="stylesheet" href="styles.css?v=20260809-grid-timeline7">
+    <link rel="stylesheet" href="styles.css?v=20260821-live-video1">
     <link rel="stylesheet" href="orion-onboarding.css?v=20260809-grid-timeline7">
   </head>
   <body>
@@ -183,7 +183,6 @@
             <button class="track-filter active" id="trackFilterAll" type="button">All</button>
             <button class="track-filter" id="trackFilterAir" type="button">Aircraft</button>
             <button class="track-filter" id="trackFilterSat" type="button">Satellites</button>
-            <button class="track-filter" id="trackFilterSea" type="button">Vessels</button>
           </div>
           <div class="tracking-toggle-grid">
             <label class="toggle-row">
@@ -195,11 +194,6 @@
               <input id="trackSatellites" type="checkbox">
               <span class="switch"></span>
               <span>Satellites</span>
-            </label>
-            <label class="toggle-row">
-              <input id="trackVessels" type="checkbox">
-              <span class="switch"></span>
-              <span>Vessels</span>
             </label>
           </div>
           <label class="scan-control orbital-source-control" for="orbitalDatasetSelect">
@@ -259,11 +253,6 @@
               <span>Weather radar</span>
             </label>
             <label class="toggle-row">
-              <input id="platformLiveShips" type="checkbox">
-              <span class="switch"></span>
-              <span>AIS vessels</span>
-            </label>
-            <label class="toggle-row">
               <input id="platformAircraft" type="checkbox">
               <span class="switch"></span>
               <span>ADSB aircraft</span>
@@ -292,11 +281,6 @@
               <input id="platformLightning" type="checkbox">
               <span class="switch"></span>
               <span>Lightning</span>
-            </label>
-            <label class="toggle-row">
-              <input id="platformCities" type="checkbox">
-              <span class="switch"></span>
-              <span>3D cities</span>
             </label>
           </div>
         </div>
@@ -541,11 +525,11 @@
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/satellite.js@5.0.0/dist/satellite.min.js" defer></script>
     <script src="orion-core.js?v=20260809-grid-timeline7"></script>
-    <script src="orion-config.js?v=20260810-grid-timeline9"></script>
-    <script src="orion-provider-registry.js?v=20260809-grid-timeline7"></script>
+    <script src="orion-config.js?v=20260821-live-video1"></script>
+    <script src="orion-provider-registry.js?v=20260821-live-video1"></script>
     <script src="orion-runtime-state.js?v=20260809-grid-timeline7"></script>
     <script src="orion-performance-budget.js?v=20260809-grid-timeline7"></script>
-    <script src="orion-telemetry-health.js?v=20260809-grid-timeline7"></script>
+    <script src="orion-telemetry-health.js?v=20260821-live-video1"></script>
     <script src="orion-diagnostics.js?v=20260809-grid-timeline7"></script>
     <script src="orion-intelligence.js?v=20260809-grid-timeline7"></script>
     <script src="orion-provider-submarine-cables.js?v=20260809-grid-timeline7"></script>
@@ -560,9 +544,9 @@
     <script src="orion-session.js?v=20260809-grid-timeline7"></script>
     <script src="orion-verification.js?v=20260809-grid-timeline7"></script>
     <script src="loading_screen.js?v=20260809-grid-timeline7"></script>
-    <script src="orion-onboarding.js?v=20260809-grid-timeline8"></script>
+    <script src="orion-onboarding.js?v=20260821-live-video1"></script>
     <script src="orion-texture-manager.js?v=20260809-grid-timeline7"></script>
-    <script src="cameranet_frontend.js?v=20260809-grid-timeline9" defer></script>
-    <script src="app.js?v=20260810-grid-timeline19" defer></script>
+    <script src="cameranet_frontend.js?v=20260821-live-video1" defer></script>
+    <script src="app.js?v=20260821-live-video1" defer></script>
   </body>
 </html>

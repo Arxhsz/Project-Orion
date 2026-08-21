@@ -48,7 +48,7 @@ const OrionOnboarding = (function() {
         {
             id: 'live-tracking-filters',
             title: 'Live Tracking Filters',
-            description: 'Filter tracked objects by type: All, Aircraft, Satellites, or Vessels. Use these buttons to quickly focus on specific object categories.',
+            description: 'Filter tracked objects by type: All, Aircraft, or Satellites. Use these buttons to quickly focus on specific object categories.',
             target: '.track-filter-group',
             position: 'right',
             cameraFly: null,
@@ -58,7 +58,7 @@ const OrionOnboarding = (function() {
         {
             id: 'live-tracking-toggles',
             title: 'Live Tracking Toggles',
-            description: 'Enable or disable current aircraft, propagated satellite, and configured vessel feeds. Vessel tracking stays unavailable until a licensed AIS provider is configured.',
+            description: 'Enable or disable current aircraft and propagated satellite feeds.',
             target: '.tracking-toggle-grid',
             position: 'right',
             cameraFly: null,
@@ -89,7 +89,7 @@ const OrionOnboarding = (function() {
         {
             id: 'intel-layers',
             title: 'Intel Layers',
-            description: 'Enable real-time intelligence overlays including satellites, earthquakes, cameras, weather radar, ships, wildfires, storm volume, lightning, and 3D cities. Retired experimental layers are kept out of the production controls.',
+            description: 'Enable real-time intelligence overlays including satellites, earthquakes, cameras, weather radar, aircraft, wildfires, storm volume, lightning, power infrastructure, and submarine cables. Retired experimental layers are kept out of the production controls.',
             target: '.platform-block .section-label',
             position: 'right',
             cameraFly: null,
@@ -101,7 +101,7 @@ const OrionOnboarding = (function() {
         {
             id: 'cameranet',
             title: 'CameraNet',
-            description: 'Access verified public snapshots, HLS feeds, and publisher embeds across regional camera adapters. Enable this layer to see clustered camera markers on the globe.',
+            description: 'Access verified live HLS video and publisher embeds across regional camera adapters. Enable this layer to see clustered camera markers on the globe.',
             target: 'label:has(#platformCameras)',
             position: 'right',
             cameraFly: { lat: 28.5, lon: -81.5, height: 500000 },
@@ -112,7 +112,7 @@ const OrionOnboarding = (function() {
         {
             id: 'camera-stream',
             title: 'Camera Stream Window',
-            description: 'When you click a camera marker on the globe, this window opens showing the live feed or snapshot. Use the controls to minimize, fullscreen, pop out, or close the stream.',
+            description: 'When you click a camera marker on the globe, this window opens the live video. Use the controls to minimize, fullscreen, pop out, or close the stream.',
             target: '#cameraWindow',
             position: 'left',
             cameraFly: null,
@@ -146,7 +146,7 @@ const OrionOnboarding = (function() {
         {
             id: 'intel-list',
             title: 'Selectable Intelligence',
-            description: 'Every trackable object appears here — aircraft, satellites, vessels, cameras, and intel layers. Click a row or pick something on the globe to inspect live data.',
+            description: 'Every trackable object appears here: aircraft, satellites, cameras, and intel layers. Click a row or pick something on the globe to inspect live data.',
             target: '#intelListPanel',
             position: 'left',
             cameraFly: null,
@@ -263,13 +263,13 @@ const OrionOnboarding = (function() {
                 items: [
                     'Added a global OpenInfraMap high-voltage backbone plus detailed regional power assets',
                     'Improved submarine-cable selection and retained one renderer owner per infrastructure layer',
-                    'Kept credential-gated feeds visibly unavailable instead of reporting a failed provider'
+                    'Removed integrations that required user-supplied provider keys'
                 ]
             },
             {
                 title: 'CameraNet And Orbits',
                 items: [
-                    'Expanded verified camera snapshots and HLS handling, including Alaska and curated public embeds',
+                    'Restricted CameraNet to verified live HLS video and curated public embeds',
                     'Added screen-space camera clustering with globe occlusion and stale-request cancellation',
                     'Added selectable satellite paths, ground footprints, correct orbital periods, and element ages'
                 ]
@@ -289,7 +289,6 @@ const OrionOnboarding = (function() {
     let isActive = false;
     let viewer = null;
     let layoutRefreshTimer = null;
-    let trackingDemoRestore = null;
     let liveTrackingTutorialRestore = null;
 
     function getCommandPanelScroller() {
@@ -416,15 +415,13 @@ const OrionOnboarding = (function() {
     function disableLiveTrackingForTutorial() {
         var air = document.getElementById('trackAircraft');
         var sat = document.getElementById('trackSatellites');
-        var sea = document.getElementById('trackVessels');
 
         liveTrackingTutorialRestore = {
             air: air ? air.checked : true,
-            sat: sat ? sat.checked : true,
-            sea: sea ? sea.checked : true
+            sat: sat ? sat.checked : true
         };
 
-        [air, sat, sea].forEach(function (input) {
+        [air, sat].forEach(function (input) {
             if (!input) {
                 return;
             }
@@ -446,8 +443,7 @@ const OrionOnboarding = (function() {
 
         var map = [
             ['air', 'trackAircraft'],
-            ['sat', 'trackSatellites'],
-            ['sea', 'trackVessels']
+            ['sat', 'trackSatellites']
         ];
 
         map.forEach(function (pair) {
@@ -636,34 +632,6 @@ const OrionOnboarding = (function() {
         });
     }
 
-    function enableAisVesselsDemo() {
-        var liveShips = document.getElementById('platformLiveShips');
-
-        trackingDemoRestore = {
-            liveShips: liveShips ? liveShips.checked : false
-        };
-
-        if (liveShips && !liveShips.checked) {
-            liveShips.checked = true;
-            liveShips.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-    }
-
-    function restoreTrackingDemo() {
-        if (!trackingDemoRestore) {
-            return;
-        }
-
-        var liveShips = document.getElementById('platformLiveShips');
-
-        if (liveShips && liveShips.checked !== trackingDemoRestore.liveShips) {
-            liveShips.checked = trackingDemoRestore.liveShips;
-            liveShips.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-
-        trackingDemoRestore = null;
-    }
-
     function prepareIntelListDemo() {
         window._onboardingForceIntelList = true;
 
@@ -731,11 +699,6 @@ const OrionOnboarding = (function() {
 
         if (step.showIntelList) {
             restoreTelemetryStackView();
-            restoreTrackingDemo();
-        }
-
-        if (step.enableAisVesselsDemo || step.enableTrackingDemo) {
-            restoreTrackingDemo();
         }
 
         if (step.showCameraWindow && window._onboardingShowedCameraWindow) {
@@ -954,10 +917,6 @@ const OrionOnboarding = (function() {
         backBtn.disabled = currentStep === 0;
         nextBtn.textContent = currentStep === TUTORIAL_STEPS.length - 1 ? 'Finish' : 'Next';
 
-        if (!step.enableAisVesselsDemo) {
-            restoreTrackingDemo();
-        }
-
         if (!step.showIntelList) {
             if (window._onboardingShowedIntelList || window._onboardingForceIntelList) {
                 restoreTelemetryStackView();
@@ -966,10 +925,6 @@ const OrionOnboarding = (function() {
 
         if (step.showTelemetryStack) {
             prepareTelemetryStackView();
-        }
-
-        if (step.enableAisVesselsDemo) {
-            enableAisVesselsDemo();
         }
 
         if (step.showIntelList) {

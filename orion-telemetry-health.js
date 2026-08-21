@@ -63,7 +63,6 @@
           minimumRefreshMs: providerState.minimumRefreshMs || platformLayerDefinitions[layerId].refreshMs || 60000,
           maximumRecommendedRequestFrequencyMs: providerState.maximumRecommendedRequestFrequencyMs || platformLayerDefinitions[layerId].refreshMs || 60000,
           requiresBackendProxy: !!providerState.requiresBackendProxy,
-          requiresApiKey: !!providerState.requiresApiKey,
           attribution: providerState.attribution || platformLayerDefinitions[layerId].source || "Unspecified",
           licensingNotes: providerState.licensingNotes || ""
         };
@@ -236,7 +235,6 @@
         minimumRefreshMs: p.minimumRefreshMs,
         maximumRecommendedRequestFrequencyMs: p.maximumRecommendedRequestFrequencyMs,
         requiresBackendProxy: p.requiresBackendProxy,
-        requiresApiKey: p.requiresApiKey,
         attribution: p.attribution,
         licensingNotes: p.licensingNotes,
         lastError: p.lastError

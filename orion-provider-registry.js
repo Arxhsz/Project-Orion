@@ -24,7 +24,6 @@
       debris: "satellites",
       weatherRadar: "weatherRadar",
       liveAircraft: "liveAircraft",
-      liveShips: "liveShips",
       cameras: "cameras",
       earthquakes: "earthquakes",
       wildfires: "wildfires",
@@ -48,7 +47,6 @@
         minimumRefreshMs: 60000,
         maximumRecommendedRequestFrequencyMs: 60000,
         requiresBackendProxy: true,
-        requiresApiKey: false,
         attribution: "Unspecified",
         licensingNotes: "No provider metadata is configured."
       });
@@ -83,7 +81,6 @@
         minimumRefreshMs: provider.minimumRefreshMs || 60000,
         maximumRecommendedRequestFrequencyMs: provider.maximumRecommendedRequestFrequencyMs || provider.minimumRefreshMs || 60000,
         requiresBackendProxy: !!provider.requiresBackendProxy,
-        requiresApiKey: !!provider.requiresApiKey,
         attribution: provider.attribution || "Unspecified",
         licensingNotes: provider.licensingNotes || ""
       };

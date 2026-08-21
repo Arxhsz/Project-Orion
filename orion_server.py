@@ -225,16 +225,6 @@ def prepare_gibs_tile_for_client(target_path, payload, suffix):
 
 
 STATIC_INTEL_LAYERS = {
-    "liveShips": {
-        "source": "Configured AIS provider required",
-        "adapter": "AISStream, AISHub, MarineTraffic, or another licensed AIS source must be configured server-side",
-        "mode": "provider-unavailable",
-        "provider_health": "unavailable",
-        "requires_credentials": True,
-        "fallback": False,
-        "notice": "Live AIS is unavailable until a licensed provider is configured. Orion does not emit synthetic vessel tracks in production mode.",
-        "features": [],
-    },
     "cyberNetwork": {
         "source": "Cloudflare / RIPE / BGP adapter fallback",
         "features": [
@@ -309,14 +299,6 @@ STATIC_INTEL_LAYERS = {
             {"id": "lt-sea-01", "name": "South China Sea strikes", "kind": "event", "lat": 14.0, "lon": 113.0, "intensity": 0.68, "category": "lightning"},
         ],
     },
-    "socialEvents": {
-        "source": "Ticketmaster / events fallback",
-        "features": [
-            {"id": "event-festival-01", "name": "Global Tech Summit", "kind": "event", "category": "social", "lat": 37.7, "lon": -122.4, "radius": 18000, "intensity": 0.92},
-            {"id": "event-concert-02", "name": "Starlight Festival", "kind": "event", "category": "social", "lat": 51.5, "lon": -0.12, "radius": 24000, "intensity": 0.84},
-            {"id": "event-sports-03", "name": "World Cup Arena", "lat": 25.3, "lon": 51.5, "radius": 32000, "intensity": 0.96}
-        ],
-    },
     "airCorridors": {
         "source": "FAA / OpenSky route adapter fallback",
         "features": [
@@ -359,21 +341,6 @@ PORTS = [
     ("Sydney", 151.22, -33.86), ("Auckland", 174.76, -36.84), ("Panama", -79.90, 9.08),
     ("Santos", -46.30, -23.95), ("Buenos Aires", -58.36, -34.60), ("Vancouver", -123.12, 49.29),
     ("Busan", 129.04, 35.10), ("Manila", 120.98, 14.59), ("Jakarta", 106.80, -6.10),
-]
-
-SHIP_LANES = [
-    [[-74.01, 40.70, 12], [-62.5, 42.2, 12], [-42.0, 47.6, 12], [-18.4, 49.8, 12], [4.12, 51.95, 12]],
-    [[-118.27, 33.74, 10], [-137.5, 35.2, 10], [-164.0, 36.5, 10], [166.0, 35.4, 10], [139.78, 35.56, 10]],
-    [[121.50, 31.20, 10], [123.6, 27.5, 10], [121.3, 22.4, 10], [114.16, 22.30, 10], [103.82, 1.26, 10]],
-    [[103.82, 1.26, 10], [92.0, 5.4, 10], [80.6, 7.0, 10], [72.84, 18.95, 10], [55.05, 25.01, 10]],
-    [[55.05, 25.01, 10], [58.4, 20.1, 10], [49.5, 13.8, 10], [42.0, 12.6, 10], [32.55, 29.95, 10]],
-    [[32.55, 29.95, 10], [24.0, 33.0, 10], [12.0, 36.2, 10], [-5.35, 36.14, 10], [4.12, 51.95, 10]],
-    [[-79.90, 9.08, 8], [-80.8, 17.2, 8], [-79.2, 25.8, 8], [-74.01, 40.70, 8]],
-    [[-46.30, -23.95, 9], [-35.0, -28.0, 9], [-12.0, -31.5, 9], [18.42, -33.92, 9]],
-    [[151.22, -33.86, 10], [158.0, -36.4, 10], [168.0, -37.0, 10], [174.76, -36.84, 10]],
-    [[-122.34, 47.60, 9], [-126.7, 45.0, 9], [-124.0, 40.2, 9], [-122.31, 37.80, 9], [-118.27, 33.74, 9]],
-    [[129.04, 35.10, 10], [126.0, 33.2, 10], [121.50, 31.20, 10], [114.16, 22.30, 10]],
-    [[106.80, -6.10, 10], [110.5, -7.8, 10], [121.0, -9.4, 10], [151.22, -33.86, 10]],
 ]
 
 def generated_at():
@@ -742,7 +709,6 @@ def get_cameranet_registry(force=False):
         providers.append({
             "id": "fl511",
             "name": "FL511",
-            "requires_token": False,
             "supports_bbox": True,
             "status": "error",
             "count": 0,
@@ -755,7 +721,6 @@ def get_cameranet_registry(force=False):
         providers.append({
             "id": "fl511",
             "name": "FL511",
-            "requires_token": False,
             "supports_bbox": True,
             "status": "active",
             "count": len(normalized),
@@ -775,7 +740,6 @@ def get_cameranet_registry(force=False):
         providers.append({
             "id": "seattle",
             "name": "Seattle DOT",
-            "requires_token": False,
             "supports_bbox": True,
             "status": "active",
             "count": len(seattle_cameras),
@@ -804,7 +768,6 @@ def get_cameranet_registry(force=False):
         providers.append({
             "id": "nyc",
             "name": "NYC DOT",
-            "requires_token": False,
             "supports_bbox": True,
             "status": "active",
             "count": len(nyc_cameras),
@@ -824,7 +787,6 @@ def get_cameranet_registry(force=False):
     providers.append({
         "id": "arcgis-generic",
         "name": "ArcGISGeneric",
-        "requires_token": False,
         "supports_bbox": True,
         "status": "available",
         "count": 0,
@@ -914,7 +876,7 @@ def fl511_congestion_payload(force=False):
     rendered = [item for item in rendered if item]
     return {
         "source": "FL511 public ArcGIS congestion",
-        "mode": "public_no_token",
+        "mode": "public",
         "fallback": False,
         "cached": cached,
         "generated": generated_at(),
@@ -1074,7 +1036,7 @@ def nws_alerts_payload(force=False):
 
     payload = {
         "source": "National Weather Service active alerts",
-        "mode": "public_no_token",
+        "mode": "public",
         "fallback": False,
         "cached": False,
         "generated": generated_at(),
@@ -1148,7 +1110,7 @@ def nws_weather_volume_payload(force=False):
 
     payload = {
         "source": "National Weather Service active storm alerts",
-        "mode": "public_no_token",
+        "mode": "public",
         "fallback": False,
         "cached": False,
         "generated": generated_at(),
@@ -1220,7 +1182,7 @@ def nws_lightning_payload(force=False):
 
     payload = {
         "source": "National Weather Service active thunderstorm alerts",
-        "mode": "public_no_token",
+        "mode": "public",
         "fallback": False,
         "cached": False,
         "generated": generated_at(),
@@ -1319,7 +1281,7 @@ def submarine_cables_payload(force=False):
 
     payload = {
         "source": "Submarine Cable Map public GeoJSON",
-        "mode": "public_no_token",
+        "mode": "public",
         "fallback": False,
         "cached": False,
         "generated": generated_at(),
@@ -1622,7 +1584,7 @@ def power_grid_payload(bbox_value=None, force=False, detail=None):
 
     payload = {
         "source": "OpenStreetMap / Overpass" + (" with transmission fallback" if "lines" not in upstream_by_kind else ""),
-        "mode": "public_no_token",
+        "mode": "public",
         "fallback": False,
         "provider_health": "online",
         "cached": False,
@@ -1633,100 +1595,6 @@ def power_grid_payload(bbox_value=None, force=False, detail=None):
         "attribution": "OpenStreetMap contributors",
         "detail": detail,
         "facility_detail": "facilities" in upstream_by_kind,
-    }
-    FEED_CACHE[cache_key] = {"timestamp": time.time(), "payload": payload}
-    return payload
-
-
-def ticketmaster_events_payload(force=False):
-    cache_key = "ticketmaster:discovery-us"
-    cached = FEED_CACHE.get(cache_key)
-    if not force and cached and time.time() - cached["timestamp"] < 300:
-        payload = dict(cached["payload"])
-        payload["cached"] = True
-        return payload
-
-    api_key = os.environ.get("TICKETMASTER_API_KEY", "").strip()
-    if not api_key:
-        return {
-            "source": "Ticketmaster Discovery - set environment variable TICKETMASTER_API_KEY for live US events",
-            "mode": "no_credentials",
-            "fallback": False,
-            "cached": False,
-            "generated": generated_at(),
-            "count": 0,
-            "features": [],
-        }
-
-    query = urlencode({
-        "apikey": api_key,
-        "countryCode": "US",
-        "size": "45",
-        "sort": "date,asc",
-    })
-    url = f"https://app.ticketmaster.com/discovery/v2/events.json?{query}"
-    request = Request(url, headers={"User-Agent": "Project-Orion/1.0"})
-    with urlopen(request, timeout=22) as response:
-        data = json.loads(response.read().decode("utf-8", errors="replace"))
-
-    rendered = []
-    events = ((data.get("_embedded") or {}).get("events")) or []
-    for index, ev in enumerate(events):
-        venues = ((ev.get("_embedded") or {}).get("venues")) or []
-        venue = venues[0] if venues else {}
-        loc = venue.get("location") or {}
-        lat, lon = loc.get("latitude"), loc.get("longitude")
-        if lat is None or lon is None:
-            continue
-        try:
-            lat_f = float(lat)
-            lon_f = float(lon)
-        except (TypeError, ValueError):
-            continue
-
-        image_url = ""
-        for im in ev.get("images") or []:
-            w = im.get("width") or 0
-            if w >= 400:
-                image_url = str(im.get("url") or "")
-                break
-        if not image_url and ev.get("images"):
-            image_url = str(ev["images"][0].get("url") or "")
-
-        classifications = ev.get("classifications") or [{}]
-        segment = ((classifications[0].get("segment") or {}).get("name")) or ""
-        genre = ((classifications[0].get("genre") or {}).get("name")) or ""
-        start = ((ev.get("dates") or {}).get("start") or {})
-
-        rendered.append({
-            "id": str(ev.get("id") or f"tm-{index}"),
-            "name": str(ev.get("name") or "Event"),
-            "kind": "event",
-            "category": "cultural",
-            "source": "Ticketmaster",
-            "provider": "Ticketmaster",
-            "lat": lat_f,
-            "lon": lon_f,
-            "radius": 15000,
-            "intensity": 0.74,
-            "url": str(ev.get("url") or ""),
-            "image_url": image_url,
-            "venue": str(venue.get("name") or ""),
-            "timestamp": str(start.get("dateTime") or start.get("localDate") or ""),
-            "description": str(ev.get("pleaseNote") or ev.get("info") or ""),
-            "metadata": {"segment": segment, "genre": genre},
-        })
-        if len(rendered) >= 50:
-            break
-
-    payload = {
-        "source": "Ticketmaster Discovery API",
-        "mode": "public_api",
-        "fallback": False,
-        "cached": False,
-        "generated": generated_at(),
-        "count": len(rendered),
-        "features": rendered,
     }
     FEED_CACHE[cache_key] = {"timestamp": time.time(), "payload": payload}
     return payload
@@ -1905,28 +1773,6 @@ def build_expanded_intel_layers():
             layer_payload.setdefault("generated", generated_at())
             layer_payload["count"] = len(layer_payload.get("features") or [])
         return
-
-    ship_pairs = [(0, 1), (0, 2), (3, 6), (3, 8), (4, 20), (5, 6), (6, 7), (7, 8), (8, 10), (8, 11), (10, 12), (12, 13), (13, 1), (14, 18), (15, 16), (17, 0), (17, 18), (18, 19), (20, 3), (21, 6), (21, 7), (22, 8), (22, 9), (23, 8), (2, 12), (1, 13), (15, 23), (16, 23), (10, 11), (14, 12), (19, 14), (5, 20), (7, 21), (9, 22), (11, 23), (6, 22)]
-    def ship_factory(index):
-        lane = SHIP_LANES[index % len(SHIP_LANES)]
-        category = ["container", "tanker", "bulk", "ro-ro", "cruise"][index % 5]
-        route = [
-            [round(point[0] + ((index % 5) - 2) * 0.08, 3), round(point[1] + ((index % 7) - 3) * 0.045, 3), 8 + (index % 4) * 4]
-            for point in lane
-        ]
-        return {
-            "id": f"ais-expanded-{index + 1:02d}",
-            "name": f"{category.upper()} {300 + index}",
-            "kind": "moving",
-            "category": category,
-            "periodHours": 34 + (index % 18) * 5,
-            "phase": round((index * 0.137) % 1, 3),
-            "route": route,
-            "status": "underway",
-            "provider": "ORION_SYNTHETIC_INTEL demo vessel",
-        }
-    if STATIC_INTEL_LAYERS.get("liveShips", {}).get("provider_health") != "unavailable":
-        augment_layer("liveShips", 96, ship_factory)
 
     cyber_pairs = [(i % len(GLOBAL_HUBS), (i * 7 + 5) % len(GLOBAL_HUBS)) for i in range(50)]
     def cyber_factory(index):
@@ -3070,40 +2916,6 @@ class OrionHandler(SimpleHTTPRequestHandler):
                 }, cache_seconds=20)
                 return
 
-        if layer == "socialEvents":
-            try:
-                payload = ticketmaster_events_payload()
-                if payload.get("count"):
-                    self.store_cached_feed("intel:socialEvents", payload)
-                    self.send_json(payload, cache_seconds=45)
-                    return
-                fallback = static_intel_payload(layer, mode=payload.get("mode") or "fallback-static", error=payload.get("error") or "NoPublicCredential")
-                if fallback is not None:
-                    self.send_json(fallback, cache_seconds=120)
-                    return
-                self.send_json(payload, cache_seconds=120)
-                return
-            except Exception as error:
-                stale = self.cached_feed_stale("intel:socialEvents", 60 * 60)
-                if stale is not None:
-                    stale["error"] = type(error).__name__
-                    self.send_json(stale, cache_seconds=30)
-                    return
-                fallback = static_intel_payload(layer, error=type(error).__name__)
-                if fallback is not None:
-                    self.send_json(fallback, cache_seconds=90)
-                    return
-                self.send_json({
-                    "source": "Ticketmaster Discovery API",
-                    "error": type(error).__name__,
-                    "mode": "error",
-                    "fallback": False,
-                    "generated": int(time.time()),
-                    "count": 0,
-                    "features": [],
-                }, cache_seconds=35)
-                return
-
         if layer == "traffic":
             try:
                 payload = fl511_congestion_payload()
@@ -3468,7 +3280,7 @@ class OrionHandler(SimpleHTTPRequestHandler):
 
             payload = {
                 "source": "CameraNet",
-                "mode": "public_no_token",
+                "mode": "public",
                 "count": len(cameras),
                 "total": total_matches,
                 "cameras": cameras,
@@ -3627,6 +3439,7 @@ class OrionHandler(SimpleHTTPRequestHandler):
                 or host.endswith(".its.nv.gov")
                 or host.endswith(".navigator.dot.ga.gov")
                 or host.endswith(".maryland.gov")
+                or host.endswith(".iowadot.gov")
                 or host.endswith(".dot.wi.gov")
                 or host.endswith(".dotd.la.gov")
                 or host.endswith(".skyvdn.com")
@@ -3794,7 +3607,6 @@ class OrionHandler(SimpleHTTPRequestHandler):
                     "mode": "error",
                     "error": "Stream unavailable",
                     "message": "This provider did not expose a browser-playable HLS stream for the selected camera.",
-                    "snapshot_url": camera.get("snapshot_url") or "",
                     "generated": int(time.time()),
                 }, status=200, cache_seconds=10)
                 return
@@ -3807,7 +3619,6 @@ class OrionHandler(SimpleHTTPRequestHandler):
                 "camera_id": camera.get("id") or camera_id,
                 "upstream_stream_url": upstream_url,
                 "stream_url": "/camera/hls?url=" + quote(upstream_url, safe="") + "&cid=" + quote(camera.get("id") or camera_id, safe=""),
-                "snapshot_url": camera.get("snapshot_url") or "",
                 "generated": int(time.time()),
             }, cache_seconds=45)
             return
@@ -3830,7 +3641,6 @@ class OrionHandler(SimpleHTTPRequestHandler):
             payload["stream_url"] = "/camera/hls?id=" + quote(prefixed_id, safe="")
             payload["source"] = "CameraNet FL511 resolver"
             payload["mode"] = "live_hls"
-            payload["snapshot_url"] = f"/camera/snapshot?id={quote(prefixed_id, safe='')}"
             self.send_json(payload, cache_seconds=45)
         except HTTPError as error:
             self.send_json({
@@ -3838,8 +3648,7 @@ class OrionHandler(SimpleHTTPRequestHandler):
                 "source": "CameraNet FL511 resolver",
                 "mode": "error",
                 "error": f"HTTP {error.code}",
-                "message": "FL511 temporarily rejected the stream token request",
-                "snapshot_url": f"/camera/snapshot?id=fl511-{quote(canonical_camera_id(camera_id), safe='')}",
+                "message": "FL511 temporarily rejected the stream request",
                 "generated": int(time.time()),
             }, status=200, cache_seconds=5)
         except (URLError, TimeoutError) as error:
@@ -3849,7 +3658,6 @@ class OrionHandler(SimpleHTTPRequestHandler):
                 "mode": "error",
                 "error": type(error).__name__,
                 "message": str(error),
-                "snapshot_url": f"/camera/snapshot?id=fl511-{quote(canonical_camera_id(camera_id), safe='')}",
                 "generated": int(time.time()),
             }, status=200, cache_seconds=5)
         except Exception as error:
@@ -3859,7 +3667,6 @@ class OrionHandler(SimpleHTTPRequestHandler):
                 "mode": "error",
                 "error": type(error).__name__,
                 "message": str(error),
-                "snapshot_url": f"/camera/snapshot?id=fl511-{quote(canonical_camera_id(camera_id), safe='')}",
                 "generated": int(time.time()),
             }, status=200, cache_seconds=5)
 
@@ -3948,7 +3755,7 @@ class OrionHandler(SimpleHTTPRequestHandler):
 
         return {
             "source": f"{provider_used} public ADS-B point feeds",
-            "mode": "public_no_token",
+            "mode": "public",
             "time": generated,
             "count": len(states),
             "states": states,

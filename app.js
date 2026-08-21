@@ -51,8 +51,7 @@
   var trackFilterIds = {
     all: "trackFilterAll",
     air: "trackFilterAir",
-    sat: "trackFilterSat",
-    sea: "trackFilterSea"
+    sat: "trackFilterSat"
   };
 
   var platformLayerDefinitions = Orion.Config.PlatformLayerDefinitions;
@@ -72,16 +71,12 @@
     "starlink",
     "debris"
   ];
-  var mergedPlatformLayerIds = {
-    liveAircraft: true,
-    liveShips: true
-  };
+  var mergedPlatformLayerIds = { liveAircraft: true };
   orbitalLayerIds.forEach(function (layerId) {
     mergedPlatformLayerIds[layerId] = true;
   });
   var trackingDomainPlatformLayers = {
     air: ["liveAircraft"],
-    sea: ["liveShips"],
     sat: orbitalLayerIds
   };
 
@@ -148,7 +143,6 @@
     'earthquakes',
     'lightning',
     'cameras',
-    'liveShips',
     'liveAircraft',
     'underseaCables',
     'powerGrid'
@@ -179,14 +173,13 @@
   var weatherEffectMode = null;
   var weatherEffectStartedAt = 0;
   var weatherModeLegend = null;
-  var cityBuildingsTileset = null;
   var boundaryDataSources = { countries: null, usStates: null };
   var boundaryLoadPromise = null;
   var timelapseRecorder = null;
   var timelapseChunks = [];
   var lastIntelListRender = 0;
   var lastIntelListSignature = "";
-  var cameraFeedTimer = null;
+  var cameraHlsPlayer = null;
   var lastPlatformMotionFrame = 0;
   var lastCameraRegionKey = "";
   var lastCameraRegionFetchTime = 0;
@@ -721,7 +714,6 @@
       filter: "all",
       air: false,
       sat: false,
-      sea: false,
       live: false,
       follow: false,
       followReady: false,
@@ -821,14 +813,12 @@
       "platformEarthquakes",
       "platformCameras",
       "platformWeatherRadar",
-      "platformLiveShips",
       "platformAircraft",
       "platformCables",
       "platformPower",
       "platformWildfires",
       "platformWeatherVolume",
       "platformLightning",
-      "platformCities",
       "scanModeSelect",
       "timelapseRecord",
       "timelapseStart",
@@ -849,10 +839,8 @@
       "trackFilterAll",
       "trackFilterAir",
       "trackFilterSat",
-      "trackFilterSea",
       "trackAircraft",
       "trackSatellites",
-      "trackVessels",
       "orbitalDatasetSelect",
       "liveModeToggle",
       "unlockCamera",
@@ -1225,14 +1213,6 @@
       [[-46.47, -23.43, 10000], [-58.54, -34.82, 10600], [-70.79, -33.39, 10200], [-77.11, -12.02, 9700]],
       [[28.25, -26.13, 9800], [31.12, -29.62, 10400], [39.2, -6.88, 9900], [55.52, -4.67, 10300]]
     ];
-    var vesselRoutes = [
-      [[-72.2, 40.1, 30], [-57.5, 40.8, 30], [-34.0, 43.8, 30], [-12.8, 49.1, 30], [3.9, 51.8, 30]],
-      [[32.34, 29.95, 30], [33.4, 25.7, 30], [38.9, 18.5, 30], [48.7, 14.2, 30], [56.3, 23.7, 30]],
-      [[140.4, 34.7, 30], [160.0, 34.0, 30], [-176.0, 34.2, 30], [-149.0, 36.2, 30], [-122.7, 37.6, 30]],
-      [[103.7, 1.18, 30], [108.8, 4.2, 30], [114.3, 10.2, 30], [121.0, 18.5, 30], [128.5, 29.4, 30]],
-      [[-94.6, 28.8, 30], [-90.0, 28.4, 30], [-85.3, 27.8, 30], [-82.2, 25.2, 30], [-87.2, 23.8, 30]],
-      [[18.1, -34.2, 30], [30.5, -32.6, 30], [43.2, -19.0, 30], [55.5, -8.8, 30], [72.6, 16.9, 30]]
-    ];
     var catalog = seedDefinitions.slice();
 
     for (var airIndex = 0; airIndex < 28; airIndex++) {
@@ -1259,18 +1239,6 @@
         longitudeRate: 204 + (satIndex % 11) * 7.6,
         longitudeOffset: normalizeLongitude(-170 + satIndex * 19),
         height: 430000 + (satIndex % 10) * 42000
-      });
-    }
-
-    for (var vesselIndex = 0; vesselIndex < 24; vesselIndex++) {
-      catalog.push({
-        id: "sea-demo-" + String(vesselIndex + 1).padStart(2, "0"),
-        type: "sea",
-        name: "SEALANE " + String(300 + vesselIndex),
-        detail: "Synthetic demo vessel",
-        periodHours: 52 + (vesselIndex % 10) * 8,
-        phase: positiveModulo(vesselIndex * 0.093, 1),
-        route: vesselRoutes[vesselIndex % vesselRoutes.length]
       });
     }
 
@@ -2180,9 +2148,6 @@ void main() {
     if (layerId === "liveAircraft") {
       return "Aircraft";
     }
-    if (layerId === "liveShips") {
-      return "Vessels";
-    }
     if (orbitalLayerIds.indexOf(layerId) !== -1) {
       return "Satellites";
     }
@@ -2200,11 +2165,7 @@ void main() {
       return "air";
     }
 
-    if (layerId === "liveShips") {
-      return "sea";
-    }
-
-    return (item && item.trackType) || "sea";
+    return (item && item.trackType) || "air";
   }
 
   function platformItemDisplayName(layerId, item, definition, index) {
@@ -2228,9 +2189,6 @@ void main() {
     if (state.tracking.filter === "air") {
       return layerId === "liveAircraft";
     }
-    if (state.tracking.filter === "sea") {
-      return layerId === "liveShips";
-    }
     if (state.tracking.filter === "sat") {
       return orbitalLayerIds.indexOf(layerId) !== -1;
     }
@@ -2238,7 +2196,7 @@ void main() {
   }
 
   function isTrackingDomainLayer(layerId) {
-    return layerId === "liveAircraft" || layerId === "liveShips" || orbitalLayerIds.indexOf(layerId) !== -1;
+    return layerId === "liveAircraft" || orbitalLayerIds.indexOf(layerId) !== -1;
   }
 
   function providerTimeCapability(layerId) {
@@ -2674,33 +2632,6 @@ void main() {
         "<dl class='intel-map-callout-grid'>", grid, "</dl>",
         descBlock,
         insBlock
-      ].join("");
-    }
-
-    if (layerId === "socialEvents") {
-      var metaEv = item.metadata || {};
-      var rowsEv = [
-        ["Venue", item.venue || "-"],
-        ["Segment", metaEv.segment || "-"],
-        ["Genre", metaEv.genre || "-"],
-        ["When", item.timestamp ? String(item.timestamp) : "-"],
-        ["Source", item.source || item.provider || "Ticketmaster"]
-      ];
-      var gridEv = rowsEv.map(function (row) {
-        return "<dt>" + escapeHtml(row[0]) + "</dt><dd>" + escapeHtml(row[1]) + "</dd>";
-      }).join("");
-      var note = (item.description || "").trim();
-      var noteBlock = note ? "<p class='intel-map-callout-desc'>" + escapeHtml(note) + "</p>" : "";
-      var img = item.image_url ? "<img class='intel-map-callout-media' alt='' src='" + escapeHtml(item.image_url) + "' loading='lazy' />" : "";
-      var link = item.url ? "<a class='intel-map-callout-link' href='" + escapeHtml(item.url) + "' target='_blank' rel='noopener noreferrer'>Open on Ticketmaster</a>" : "";
-
-      return [
-        "<div class='intel-map-callout-kicker'>Live events</div>",
-        "<h3>", escapeHtml(item.name || "Event"), "</h3>",
-        "<dl class='intel-map-callout-grid'>", gridEv, "</dl>",
-        noteBlock,
-        img,
-        link
       ].join("");
     }
 
@@ -3178,8 +3109,6 @@ void main() {
       clampHeightRef = true;
     } else if (layerId === "liveAircraft") {
       height = item && item.category === "ground" ? clamp(height || 0, 0, 120) : clamp(height || 10500, 120, 16000);
-    } else if (layerId === "liveShips") {
-      height = clamp(height, 0, 30);
     } else if (definition.type === "moving") {
       height = clamp(height, 0, 30);
     } else if (layerId === "traffic") {
@@ -5181,14 +5110,6 @@ void main() {
       }
     });
 
-    if (layerId === "liveShips") {
-      items.forEach(function (item) {
-        item.kind = "moving";
-        item.trackType = "sea";
-        item.status = item.status || "underway";
-      });
-    }
-
     return items.slice(0, (definition && definition.maxItems) || 120);
   }
 
@@ -5334,16 +5255,6 @@ void main() {
       return;
     }
 
-    if (layerId === "liveShips") {
-      if (layerStateManager.isLayerEnabled(layerId)) {
-        renderWithPlatformRenderer("Maritime", [trackingFilterMatchesPlatformLayer(layerId) ? items : [], renderTime], layerId);
-      } else {
-        destroyLayerCompletely(layerId);
-      }
-      updatePlatformTelemetry();
-      return;
-    }
-
     if (layerId === "liveAircraft") {
       if (layerStateManager.isLayerEnabled(layerId)) {
         renderWithPlatformRenderer("Aviation", [trackingFilterMatchesPlatformLayer(layerId) ? items : [], renderTime], layerId);
@@ -5398,7 +5309,7 @@ void main() {
   function refreshPlatformLayersForLOD() {
     var lodSensitiveLayers = ['earthquakes', 'wildfires', 'volumetricWeather', 'lightning',
                              'cameras', 'rfHeatmap', 'socialEvents', 'traffic', 'emergencyIncidents',
-                             'liveShips', 'liveAircraft'].concat(orbitalLayerIds);
+                             'liveAircraft'].concat(orbitalLayerIds);
     
     lodSensitiveLayers.forEach(function(layerId) {
       if (layerStateManager.isLayerEnabled(layerId)) {
@@ -5406,9 +5317,7 @@ void main() {
         var items = (feed && feed.items) ? feed.items : [];
         var time = platformTime();
 
-        if (layerId === 'liveShips') {
-          renderWithPlatformRenderer("Maritime", [trackingFilterMatchesPlatformLayer(layerId) ? items : [], time], layerId);
-        } else if (layerId === 'liveAircraft') {
+        if (layerId === 'liveAircraft') {
           renderWithPlatformRenderer("Aviation", [trackingFilterMatchesPlatformLayer(layerId) ? items : [], time], layerId);
         } else if (orbitalLayerIds.indexOf(layerId) !== -1) {
           renderWithPlatformRenderer("Orbital", [trackingFilterMatchesPlatformLayer(layerId) ? items : [], layerId, time], layerId);
@@ -5488,10 +5397,6 @@ void main() {
 
   function renderOrbitalAsPrimitives(layerId, items) {
     renderWithPlatformRenderer("Orbital", [items, layerId, platformTime()], layerId);
-  }
-
-  function renderVesselsAsPrimitives(items) {
-    renderWithPlatformRenderer("Maritime", [items, platformTime()], "liveShips");
   }
 
   function renderAircraftAsPrimitives(items) {
@@ -5732,10 +5637,6 @@ void main() {
 
     if (layerId === 'liveAircraft') {
       renderWithPlatformRenderer("Aviation", [trackingFilterMatchesPlatformLayer(layerId) ? items : [], time], layerId);
-      return;
-    }
-    if (layerId === 'liveShips') {
-      renderWithPlatformRenderer("Maritime", [trackingFilterMatchesPlatformLayer(layerId) ? items : [], time], layerId);
       return;
     }
     if (orbitalLayerIds.indexOf(layerId) !== -1) {
@@ -7429,72 +7330,6 @@ void main() {
     }
   }
 
-  function setCityLayer(enabled) {
-    if (!viewer) {
-      return;
-    }
-
-    if (!enabled) {
-      if (cityBuildingsTileset) {
-        viewer.scene.primitives.remove(cityBuildingsTileset);
-        cityBuildingsTileset = null;
-      }
-
-      platformFeeds.cities3d = {
-        status: "standby",
-        loadedAt: Date.now(),
-        items: []
-      };
-      viewer.scene.requestRender();
-      return;
-    }
-
-    if (cityBuildingsTileset) {
-      platformFeeds.cities3d = {
-        status: "online",
-        loadedAt: Date.now(),
-        items: [{ name: "OSM buildings" }]
-      };
-      return;
-    }
-
-    platformFeeds.cities3d = {
-      status: "loading",
-      loadedAt: Date.now(),
-      items: []
-    };
-    updatePlatformTelemetry();
-
-    var token = window.CESIUM_ION_TOKEN || window.localStorage.getItem("orion:cesiumIonToken");
-
-    if (!token || !Cesium.createOsmBuildingsAsync) {
-      platformFeeds.cities3d.status = "unavailable";
-      platformFeeds.cities3d.error = "Cesium ion token required";
-      updatePlatformTelemetry();
-      showToast("Cesium ion token required for 3D buildings.");
-      return;
-    }
-
-    Cesium.Ion.defaultAccessToken = token;
-    Cesium.createOsmBuildingsAsync()
-      .then(function (tileset) {
-        cityBuildingsTileset = tileset;
-        viewer.scene.primitives.add(tileset);
-        platformFeeds.cities3d = {
-          status: "online",
-          loadedAt: Date.now(),
-          items: [{ name: "OSM buildings" }]
-        };
-        updatePlatformTelemetry();
-        viewer.scene.requestRender();
-      })
-      .catch(function () {
-        platformFeeds.cities3d.status = "offline";
-        updatePlatformTelemetry();
-        showToast("3D buildings could not be loaded from Cesium ion.");
-      });
-  }
-
   function setScanMode(mode) {
     if (mode === "cyber" || mode === "signal") {
       mode = "standard";
@@ -7798,9 +7633,6 @@ void main() {
     if (layerId === "liveAircraft") {
       state.tracking.air = !!state.platformLayers.liveAircraft;
       state.tracking.dirty = true;
-    } else if (layerId === "liveShips") {
-      state.tracking.sea = !!state.platformLayers.liveShips;
-      state.tracking.dirty = true;
     } else if (orbitalLayerIds.indexOf(layerId) !== -1) {
       state.tracking.sat = orbitalLayerIds.some(function (id) {
         return !!state.platformLayers[id];
@@ -7944,13 +7776,6 @@ void main() {
       return;
     }
 
-    if (layerId === "cities3d") {
-      setCityLayer(enabled);
-      syncPlatformControls();
-      updatePlatformTelemetry();
-      return;
-    }
-
     if (layerId === "cameras") {
       if (enabled && window.CameraNet) {
         CameraNet.enable(viewer);
@@ -8016,7 +7841,6 @@ void main() {
       }
     });
 
-    if (layerId === 'liveShips') renderWithPlatformRenderer("Maritime", [[], platformTime()], layerId);
     if (layerId === 'liveAircraft') renderWithPlatformRenderer("Aviation", [[], platformTime()], layerId);
     if (orbitalLayerIds.indexOf(layerId) !== -1) {
       renderWithPlatformRenderer("Orbital", [[], layerId, platformTime()], layerId);
@@ -8196,16 +8020,6 @@ void main() {
       return "Live National Weather Service CAP alerts. Plotted coordinates are centroids from the official GeoJSON feed.";
     }
 
-    if (record.layerId === "socialEvents") {
-      var feedEv = platformFeeds.socialEvents;
-
-      if (feedEv && feedEv.payload && feedEv.payload.mode === "no_credentials") {
-        return "Set TICKETMASTER_API_KEY on the Orion server to load real US events from Ticketmaster.";
-      }
-
-      return "Public events from the Ticketmaster Discovery API when a key is configured. Images and links come from Ticketmaster.";
-    }
-
     if (record.layerId === "traffic") {
       return "Congestion corridor rendered as road-level heat and animated route flow.";
     }
@@ -8215,15 +8029,11 @@ void main() {
     }
 
     if (record.definition.type === "camera") {
-      return "Camera metadata is loaded regionally. Live video or a refreshed snapshot is opened only when selected.";
+      return "Camera metadata is loaded regionally. Browser-playable live video opens only when selected.";
     }
 
     if (record.layerId === "liveAircraft" && historicalAvailabilityLabel(record.layerId, platformFeeds[record.layerId] || {}) === "latest snapshot") {
       return "Aircraft history is not available from the current public provider. Project Orion is showing the latest known aircraft snapshot while the timeline remains historical.";
-    }
-
-    if (record.layerId === "liveShips" && historicalAvailabilityLabel(record.layerId, platformFeeds[record.layerId] || {})) {
-      return "Vessel history requires a configured local AIS provider. Project Orion does not display synthetic vessel history in production mode.";
     }
 
     if (record.layerId === "underseaCables") {
@@ -8525,7 +8335,7 @@ void main() {
       return;
     }
 
-    clearCameraFeedTimer();
+    disposeCameraPlayback();
     elements.cameraWindow.classList.remove("hidden");
     elements.cameraTitle.textContent = camera.name || "Camera node";
     elements.cameraMeta.textContent = [
@@ -8536,55 +8346,46 @@ void main() {
       camera.stream_mode || "proxy"
     ].join(" / ");
 
-    var cameraId = encodeURIComponent(camera.id || "");
-    var staticMode = isStaticHostMode();
-    var snapshotUrl = camera.proxy_snapshot_url || camera.snapshot_url || (!staticMode && cameraId ? "/camera/snapshot?id=" + cameraId : "");
-    var streamUrl = camera.proxy_stream_url || camera.stream_url || (!staticMode && cameraId ? "/camera/mjpeg?id=" + cameraId : "");
-    var streamType = String(camera.stream_type || "").toUpperCase();
-    var hasUpstream = Boolean(camera.upstream_stream_url || camera.upstream_snapshot_url);
-    var alt = escapeHtml(camera.name || "Camera feed");
-
-    if (!snapshotUrl && !streamUrl) {
-      elements.cameraFrame.innerHTML = "<span>Stream proxy framework ready</span>";
+    var streamType = String(camera.stream_type || "").toLowerCase();
+    if (streamType === "embed" && /^https:\/\//i.test(camera.embed_url || "")) {
+      elements.cameraFrame.innerHTML = [
+        "<div class=\"camera-live-shell camera-embed-shell\">",
+        "<iframe title=\"", escapeHtml(camera.name || "Public live camera"), "\" src=\"", escapeHtml(camera.embed_url), "\" allow=\"autoplay; fullscreen; picture-in-picture\" allowfullscreen></iframe>",
+        "<span class=\"camera-live-badge\">LIVE</span>",
+        "<span class=\"camera-live-clock\">PUBLIC EMBED</span>",
+        "</div>"
+      ].join("");
       return;
     }
 
-    if (!hasUpstream) {
-      elements.cameraFrame.innerHTML = [
-        "<div class=\"camera-feed-message\">",
-        "<strong>Camera media unavailable</strong>",
-        "<span>This source did not provide a usable live stream or snapshot.</span>",
-        "</div>"
-      ].join("");
-    } else if (streamType === "MJPEG" && streamUrl) {
-      elements.cameraFrame.innerHTML = [
-        "<div class=\"camera-live-shell\">",
-        "<img alt=\"", alt, "\" src=\"", escapeHtml(cacheBustUrl(streamUrl)), "\" onerror=\"this.dataset.failed='1'\">",
-        "<span class=\"camera-live-badge\">LIVE</span>",
-        "<span class=\"camera-live-clock\">UPSTREAM PROXY</span>",
-        "</div>"
-      ].join("");
-    } else if (streamUrl && streamType !== "WEBRTC" && streamType !== "RTSP") {
-      elements.cameraFrame.innerHTML = [
-        "<div class=\"camera-live-shell\">",
-        "<video controls autoplay muted playsinline src=\"", escapeHtml(cacheBustUrl(streamUrl)), "\"></video>",
-        "<span class=\"camera-live-badge\">LIVE</span>",
-        "<span class=\"camera-live-clock\">UPSTREAM PROXY</span>",
-        "</div>"
-      ].join("");
-      var video = elements.cameraFrame.querySelector("video");
-      if (video) {
-        video.addEventListener("error", function () {
-          renderRefreshingCameraImage(snapshotUrl, alt, "LIVE SNAPSHOT");
-        }, { once: true });
-      }
-    } else {
-      renderRefreshingCameraImage(snapshotUrl, alt, "LIVE SNAPSHOT");
+    var directStreamUrl = camera.proxy_stream_url || camera.upstream_stream_url ||
+      (/^https?:\/\//i.test(camera.stream_url || "") ? camera.stream_url : "");
+    if (directStreamUrl) {
+      renderCameraLiveStream(camera, directStreamUrl);
+      return;
     }
+
+    if (!isStaticHostMode() && /^\/camera\/resolve/i.test(camera.stream_url || "")) {
+      fetch(camera.stream_url, { headers: { Accept: "application/json" } })
+        .then(function (response) { return response.json(); })
+        .then(function (payload) {
+          if (!payload.ok || !payload.stream_url) {
+            renderCameraUnavailable(payload.message || "The provider could not resolve this live stream.");
+            return;
+          }
+          renderCameraLiveStream(camera, payload.stream_url);
+        })
+        .catch(function () {
+          renderCameraUnavailable("The live stream resolver did not respond.");
+        });
+      return;
+    }
+
+    renderCameraUnavailable("This camera does not expose browser-playable live video.");
   }
 
   function closeCameraWindow() {
-    clearCameraFeedTimer();
+    disposeCameraPlayback();
     if (elements.cameraWindow) {
       elements.cameraWindow.classList.add("hidden");
       elements.cameraWindow.classList.remove("minimized", "fullscreen");
@@ -8600,48 +8401,78 @@ void main() {
     }
   }
 
-  function clearCameraFeedTimer() {
-    if (cameraFeedTimer) {
-      window.clearInterval(cameraFeedTimer);
-      cameraFeedTimer = null;
+  function disposeCameraPlayback() {
+    if (cameraHlsPlayer) {
+      cameraHlsPlayer.destroy();
+      cameraHlsPlayer = null;
     }
   }
 
-  function cacheBustUrl(url) {
-    if (!url) {
-      return "";
+  function renderCameraUnavailable(message) {
+    if (!elements.cameraFrame) {
+      return;
     }
-
-    return url + (url.indexOf("?") === -1 ? "?" : "&") + "t=" + Date.now();
+    elements.cameraFrame.innerHTML = [
+      "<div class=\"camera-feed-message\">",
+      "<strong>Live feed unavailable</strong>",
+      "<span>", escapeHtml(message || "The provider stream could not be played."), "</span>",
+      "</div>"
+    ].join("");
   }
 
-  function renderRefreshingCameraImage(snapshotUrl, alt, modeLabel) {
-    if (!snapshotUrl || !elements.cameraFrame) {
+  function renderCameraLiveStream(camera, streamUrl) {
+    if (!streamUrl || !elements.cameraFrame) {
+      renderCameraUnavailable("The provider did not supply a live stream URL.");
+      return;
+    }
+
+    var streamType = String(camera.stream_type || "hls").toLowerCase();
+    var alt = escapeHtml(camera.name || "Camera live feed");
+    if (streamType === "mjpeg") {
+      elements.cameraFrame.innerHTML = [
+        "<div class=\"camera-live-shell\">",
+        "<img alt=\"", alt, "\" src=\"", escapeHtml(streamUrl), "\">",
+        "<span class=\"camera-live-badge\">LIVE</span>",
+        "<span class=\"camera-live-clock\">LIVE MJPEG</span>",
+        "</div>"
+      ].join("");
+      var image = elements.cameraFrame.querySelector("img");
+      image.addEventListener("error", function () {
+        renderCameraUnavailable("The provider MJPEG stream stopped responding.");
+      }, { once: true });
       return;
     }
 
     elements.cameraFrame.innerHTML = [
-      "<div class=\"camera-live-shell generated\">",
-      "<img id=\"cameraLiveImage\" alt=\"", alt, "\" src=\"", escapeHtml(cacheBustUrl(snapshotUrl)), "\">",
+      "<div class=\"camera-live-shell\">",
+      "<video controls autoplay muted playsinline></video>",
       "<span class=\"camera-live-badge\">LIVE</span>",
-      "<span class=\"camera-live-clock\" id=\"cameraLiveClock\">", escapeHtml(modeLabel), "</span>",
+      "<span class=\"camera-live-clock\">LIVE HLS</span>",
       "</div>"
     ].join("");
 
-    cameraFeedTimer = window.setInterval(function () {
-      var image = document.getElementById("cameraLiveImage");
-      var clock = document.getElementById("cameraLiveClock");
-
-      if (!image || !document.body.contains(image)) {
-        clearCameraFeedTimer();
-        return;
-      }
-
-      image.src = cacheBustUrl(snapshotUrl);
-      if (clock) {
-        clock.textContent = modeLabel + " / " + new Date().toLocaleTimeString([], { hour12: false });
-      }
-    }, 1000);
+    var video = elements.cameraFrame.querySelector("video");
+    var fail = function () {
+      disposeCameraPlayback();
+      renderCameraUnavailable("The provider HLS stream did not start or stopped responding.");
+    };
+    if (window.Hls && Hls.isSupported()) {
+      cameraHlsPlayer = new Hls({ enableWorker: true, liveSyncDurationCount: 4 });
+      cameraHlsPlayer.loadSource(streamUrl);
+      cameraHlsPlayer.attachMedia(video);
+      cameraHlsPlayer.on(Hls.Events.MANIFEST_PARSED, function () {
+        video.play().catch(function () {});
+      });
+      cameraHlsPlayer.on(Hls.Events.ERROR, function (_event, data) {
+        if (data && data.fatal) fail();
+      });
+    } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+      video.src = streamUrl;
+      video.addEventListener("error", fail, { once: true });
+      video.play().catch(function () {});
+    } else {
+      fail();
+    }
   }
 
   function initCameraWindowControls() {
@@ -8942,7 +8773,7 @@ void main() {
 
   function activePlatformTrackingCount() {
     var count = 0;
-    ["liveAircraft", "liveShips"].concat(orbitalLayerIds).forEach(function (layerId) {
+    ["liveAircraft"].concat(orbitalLayerIds).forEach(function (layerId) {
       if (!layerStateManager.isLayerEnabled(layerId) || !trackingFilterMatchesPlatformLayer(layerId)) {
         return;
       }
@@ -8955,7 +8786,7 @@ void main() {
   function platformPrimitiveRenderLimit(layerId, items) {
     var baseLimit = orbitalLayerIds.indexOf(layerId) !== -1
       ? 12000
-      : (layerId === "liveAircraft" || layerId === "liveShips" ? 10000 : 1000);
+      : (layerId === "liveAircraft" ? 10000 : 1000);
     var lodLimit = currentLODLevel === "distant" ? 3200 : currentLODLevel === "medium" ? 7000 : baseLimit;
     var activeLayers = layerStateManager.getEnabledLayers().filter(function (id) {
       return !isRetiredPlatformLayer(id);
@@ -9625,7 +9456,6 @@ void main() {
       state.tracking.filter,
       state.tracking.air ? "air" : "noair",
       state.tracking.sat ? "sat" : "nosat",
-      state.tracking.sea ? "sea" : "nosea",
       state.tracking.selectedId || "none"
     ].join("|");
 
@@ -9784,9 +9614,9 @@ void main() {
 
   function trackingSourceLabel() {
     if (!legacyTrackingVisualsEnabled) {
-      return "OpenSky / CelesTrak / configured AIS";
+      return "OpenSky / CelesTrak";
     }
-    return liveAircraftActive ? "OpenSky aircraft + synthetic sea/orbit" : TRACK_SOURCE_LABEL;
+    return liveAircraftActive ? "OpenSky aircraft + orbital catalog" : TRACK_SOURCE_LABEL;
   }
 
   function setTrackFilter(filter) {
@@ -9813,7 +9643,7 @@ void main() {
     if (enabled) {
       setPlaying(false);
       setDate(maxDate, true);
-      ["air", "sat", "sea"].forEach(function (type) {
+      ["air", "sat"].forEach(function (type) {
         if (state.tracking[type]) {
           setTrackingDomain(type, true);
         }
@@ -10029,7 +9859,6 @@ void main() {
     installStreetDetailLayer();
     installImageryPrewarm();
     installImageryHealthMonitor();
-    tryEnableIonTerrain();
     installTrackingFollowLoop();
     
     lodManager = new LODManager(viewer);
@@ -10296,23 +10125,6 @@ void main() {
     }
 
     raiseOperationalLayers();
-  }
-
-  function tryEnableIonTerrain() {
-    var token = window.CESIUM_ION_TOKEN || window.localStorage.getItem("orion:cesiumIonToken");
-
-    if (!token || !Cesium.createWorldTerrainAsync) {
-      return;
-    }
-
-    Cesium.Ion.defaultAccessToken = token;
-    Cesium.createWorldTerrainAsync()
-      .then(function (terrainProvider) {
-        viewer.terrainProvider = terrainProvider;
-      })
-      .catch(function () {
-        showToast("Cesium ion terrain could not be enabled. Continuing with the satellite globe.");
-      });
   }
 
   function createGibsProvider(definition, date) {
@@ -11421,8 +11233,7 @@ void main() {
     [
       ["trackFilterAll", "all"],
       ["trackFilterAir", "air"],
-      ["trackFilterSat", "sat"],
-      ["trackFilterSea", "sea"]
+      ["trackFilterSat", "sat"]
     ].forEach(function (pair) {
       elements[pair[0]].addEventListener("click", function () {
         setTrackFilter(pair[1]);
@@ -11431,8 +11242,7 @@ void main() {
 
     [
       ["trackAircraft", "air"],
-      ["trackSatellites", "sat"],
-      ["trackVessels", "sea"]
+      ["trackSatellites", "sat"]
     ].forEach(function (pair) {
       function syncDomainFromToggle(event) {
         setTrackingDomain(pair[1], event.target.checked);
@@ -12851,7 +12661,6 @@ void main() {
 
     if (elements.trackAircraft) elements.trackAircraft.checked = state.tracking.air;
     if (elements.trackSatellites) elements.trackSatellites.checked = state.tracking.sat;
-    if (elements.trackVessels) elements.trackVessels.checked = state.tracking.sea;
     if (elements.orbitalDatasetSelect) elements.orbitalDatasetSelect.value = state.orbitalDataset;
     if (elements.liveModeToggle) {
       elements.liveModeToggle.classList.toggle("active", state.tracking.live);

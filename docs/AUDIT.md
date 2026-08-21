@@ -118,7 +118,7 @@ Enabled by first-run JavaScript state:
 
 - Imagery: true color, labels.
 
-HTML checked attributes still mark tracking domain toggles checked for aircraft, satellites, and vessels, even though JavaScript state overrides them to false. This is a duplicate default source and should be removed.
+HTML checked attributes still mark some controls independently from JavaScript state. This is a duplicate default source and should be removed.
 
 ## Heavy Layers and Defaults
 
@@ -147,13 +147,13 @@ The default-state source is still scattered between HTML attributes and `app.js`
 
 ## Duplicate Controls
 
-- Live tracking domain toggles mirror platform layer toggles for aircraft, vessels, and orbital layers. This is intentional as a merged workflow, but the default states are duplicated.
+- Live tracking domain toggles mirror platform layer toggles for aircraft and orbital layers. This is intentional as a merged workflow, but the default states are duplicated.
 - Orbital dataset selection also toggles orbital platform layers. This is intentional but should remain synchronized from one default-state source.
 
 ## Placeholder, Demo, or Synthetic Paths
 
 - `Orion.Config.TrackingDefinitions` is a synthetic mission feed and is labeled as such in telemetry.
-- `STATIC_INTEL_LAYERS` in `orion_server.py` keeps live ships as an explicit unavailable/credential-required provider state; other inactive or fallback layers still include synthetic/reference payloads for cyber arcs, defense airspace, RF heatmap, emergency incidents, weather volume, lightning, events, air corridors, and traffic.
+- Inactive or fallback layers still include synthetic/reference payloads for cyber arcs, defense airspace, RF heatmap, emergency incidents, weather volume, lightning, air corridors, and traffic.
 - Several backend fallback payloads set `fallback` or `mode` fields, but frontend badges do not consistently expose source/freshness/attribution to the user.
 - `orion-core.js` creates placeholder runtime modules if modules are missing.
 
@@ -218,7 +218,6 @@ The default-state source is still scattered between HTML attributes and `app.js`
 - `window.CameraNet`
 - `window.OrionTextureManager`
 - `window.CESIUM_BASE_URL`
-- `window.CESIUM_ION_TOKEN` optional
 
 ## Files Larger Than 1,000 Lines
 
