@@ -246,6 +246,8 @@ const OrionOnboarding = (function() {
         }
     ];
 
+    TUTORIAL_STEPS.push({ id: 'complete', title: 'Ready to explore', description: 'Your workspace is ready. Select Finish to close this guide. Restart it anytime from Controls.', skipHighlight: true });
+
     const CHANGELOG = {
         version: '1.1.2',
         date: 'August 2026',
@@ -678,7 +680,6 @@ const OrionOnboarding = (function() {
 
     function prepareTelemetryStackView() {
         window._onboardingForceIntelList = false;
-        restoreTrackingDemo();
 
         var intelPanel = document.getElementById('intelListPanel');
         var telemetryStack = document.getElementById('telemetryStack');
@@ -726,7 +727,7 @@ const OrionOnboarding = (function() {
     }
 
     function markOnboardingComplete() {
-        localStorage.setItem(STORAGE_KEYS.ONBOARDING_COMPLETE, 'true');
+        try { localStorage.setItem(STORAGE_KEYS.ONBOARDING_COMPLETE, 'true'); } catch (error) { console.warn('Tutorial preference could not be saved', error.name); }
     }
 
     function markChangelogSeen() {
@@ -830,7 +831,7 @@ const OrionOnboarding = (function() {
                 <div class="onboarding-controls">
                     <button class="orion-btn orion-btn-ghost" id="onboardingSkip">Skip Tutorial</button>
                     <div class="onboarding-nav">
-                        <button class="orion-btn orion-btn-ghost" id="onboardingBack" disabled>Back</button>
+                        <button class="orion-btn orion-btn-ghost" id="onboardingBack" disabled>Previous</button>
                         <button class="orion-btn orion-btn-primary" id="onboardingNext">Next</button>
                     </div>
                 </div>
@@ -847,7 +848,7 @@ const OrionOnboarding = (function() {
     }
 
     function refreshTutorialLayout(step) {
-        if (!step || step.skipHighlight) {
+        if (!isActive || step !== TUTORIAL_STEPS[currentStep] || !step || step.skipHighlight) {
             return;
         }
 
@@ -944,7 +945,12 @@ const OrionOnboarding = (function() {
             }
         }
 
+        var activeStep = currentStep;
+        var target = step.target && document.querySelector(step.target);
+        var workspace = target && target.closest('.workspace-page');
+        if (workspace) document.getElementById('workspace-tab-' + workspace.id.replace('workspace-', '')).click();
         const runLayout = function () {
+            if (!isActive || currentStep !== activeStep || !overlay.isConnected) return;
             if (!step.skipHighlight) {
                 refreshTutorialLayout(step);
                 scheduleTutorialLayoutRefresh(step);
@@ -1062,7 +1068,7 @@ const OrionOnboarding = (function() {
     }
 
     function skipOnboarding() {
-        showSkipConfirmation();
+        finishOnboarding();
     }
 
     function showSkipConfirmation() {
@@ -1110,27 +1116,22 @@ const OrionOnboarding = (function() {
     }
 
     function finishOnboarding() {
-        const overlay = document.getElementById('orionOnboarding');
-        if (!overlay) return;
-
+        // Close synchronously: delayed layout callbacks must never revive a finished guide.
+        isActive = false;
+        window.clearTimeout(layoutRefreshTimer);
+        markOnboardingComplete();
+        document.getElementById('orionOnboarding')?.remove();
+        clearTutorialHighlights();
         cleanupStepEffects(TUTORIAL_STEPS[currentStep]);
         restoreTelemetryStackView();
-        restoreTrackingDemo();
         restoreLiveTrackingAfterTutorial();
         window._onboardingForceIntelList = false;
-
-        overlay.classList.remove('active');
-        setTimeout(() => {
-            overlay.remove();
-            markOnboardingComplete();
-            isActive = false;
-            clearTutorialHighlights();
-
-            if (viewer) {
-                viewer.camera.flyHome(2.0);
-            }
-        }, 600);
+        document.getElementById('restartTutorial')?.focus();
     }
+
+    window.addEventListener('keydown', function (event) {
+        if (isActive && event.key === 'Escape') { event.preventDefault(); finishOnboarding(); }
+    });
 
     function bindTutorialResize() {
         window.addEventListener('resize', function () {
@@ -1150,7 +1151,7 @@ const OrionOnboarding = (function() {
         currentStep = 0;
 
         createOnboardingOverlay();
-        bindTutorialResize();
+        if (!startOnboarding.resizeBound) { bindTutorialResize(); startOnboarding.resizeBound = true; }
         updateStep();
     }
 

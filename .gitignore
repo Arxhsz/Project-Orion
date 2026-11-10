@@ -13,6 +13,7 @@ pages-data/
 !CHANGELOG.md
 !docs/
 !docs/*.md
+!camera-providers/README.md
 test-*.html
 reset-onboarding.html
 .zoom-*.json
@@ -33,3 +34,5 @@ node_modules/
 !.env.example
 .DS_Store
 Thumbs.db
+
+_site/

@@ -246,12 +246,17 @@
     },
     weatherRadar: {
       label: "Weather radar",
-      source: "NOAA/NWS radar_base_reflectivity",
+      source: "NOAA nowCOAST MRMS",
       type: "weatherRadar",
       endpoint: "/live/weather/radar",
       controlId: "platformWeatherRadar",
       refreshMs: 5 * 60 * 1000,
       color: "#ffffff"
+    },
+    marineTraffic: {
+      label: "Ships · Finnish waters", source: "Fintraffic Digitraffic AIS · CC BY 4.0",
+      type: "moving", endpoint: "/live/marine", controlId: "platformMarine",
+      maxItems: 2000, refreshMs: 60000, color: "#e2e6ec", trail: false
     },
     liveAircraft: {
       label: "ADSB aircraft",
@@ -263,6 +268,11 @@
       refreshMs: 30 * 1000,
       color: "#c8d2ff",
       trail: true
+    },
+    volcanoes: {
+      label: "US volcano status", source: "USGS Volcano Hazards Program", type: "intel",
+      endpoint: "/live/hazards?type=volcanoes", controlId: "platformVolcanoes",
+      maxItems: 500, refreshMs: 300000, color: "#ffbd79"
     },
     wildfires: {
       label: "Wildfires",
@@ -382,11 +392,13 @@
     satWeather: "Orbital",
     satScience: "Orbital",
     satIot: "Orbital",
+    marineTraffic: "Air / Sea",
     liveAircraft: "Air / Sea",
     airCorridors: "Air / Sea",
     weatherRadar: "Environment",
     earthquakes: "Environment",
     wildfires: "Environment",
+    volcanoes: "Environment",
     volumetricWeather: "Environment",
     lightning: "Environment",
     cameras: "Ground Cameras",
@@ -426,8 +438,10 @@
       earthquakes: false,
       cameras: false,
       weatherRadar: false,
+      marineTraffic: false,
       liveAircraft: false,
       wildfires: false,
+      volcanoes: false,
       cyberNetwork: false,
       defenseAirspace: false,
       underseaCables: false,
@@ -471,16 +485,16 @@
     },
     weatherRadar: {
       id: "weatherRadar",
-      label: "NOAA/NWS radar base reflectivity",
+      label: "NOAA nowCOAST observed radar",
       status: "unknown",
       supportsStaticMode: true,
-      supportsHistorical: false,
+      supportsHistorical: true,
       supportsLive: true,
       minimumRefreshMs: 5 * 60 * 1000,
       maximumRecommendedRequestFrequencyMs: 60 * 1000,
       requiresBackendProxy: false,
       attribution: "NOAA / National Weather Service",
-      licensingNotes: "NOAA/NWS public radar map service; current service is not time enabled."
+      licensingNotes: "NOAA/NWS public radar map service; nowCOAST exposes exact observed frame times."
     },
     weatherFields: {
       id: "weatherFields",
@@ -495,6 +509,7 @@
       attribution: "Open-Meteo",
       licensingNotes: "Documented JSON APIs only; raster map tiles are not implemented yet."
     },
+    marineTraffic: {id:"marineTraffic",label:"Ships · Finnish waters",status:"unknown",supportsStaticMode:true,supportsHistorical:false,supportsLive:true,timeCapability:"live-only",minimumRefreshMs:60000,maximumRecommendedRequestFrequencyMs:60000,requiresBackendProxy:false,attribution:"Fintraffic Digitraffic",licensingNotes:"CC BY 4.0 · Finnish waters only"},
     liveAircraft: {
       id: "liveAircraft",
       label: "ADS-B aircraft",
@@ -548,6 +563,13 @@
       requiresBackendProxy: false,
       attribution: "USGS Earthquake Hazards Program",
       licensingNotes: "USGS GeoJSON summary feeds."
+    },
+    volcanoes: {
+      id: "volcanoes", label: "USGS US volcano status", supportsStaticMode: true,
+      supportsHistorical: false, supportsLive: true, minimumRefreshMs: 300000,
+      maximumRecommendedRequestFrequencyMs: 300000, requiresBackendProxy: false,
+      attribution: "USGS Volcano Hazards Program",
+      licensingNotes: "US volcano status notices, not eruption forecasts. 3D cones are illustrative markers; alerts do not imply visible ash."
     },
     wildfires: {
       id: "wildfires",

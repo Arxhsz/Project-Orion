@@ -1,9 +1,12 @@
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from hazard_provider import hazards
+from weather_provider import forecast as weather_forecast, FIELDS as FORECAST_FIELDS
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, quote, unquote, urlencode, urljoin, urlparse, urlunparse
 from urllib.request import Request, urlopen
 import html
+import hashlib
 import http.client
 import json
 import math
@@ -120,9 +123,9 @@ CSP_HEADER = (
     "script-src-elem 'self' blob: https://cdn.jsdelivr.net 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'; "
     "script-src-attr 'unsafe-inline'; "
     "style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; "
-    "img-src 'self' data: blob: https://cdn.jsdelivr.net https://gibs.earthdata.nasa.gov https://server.arcgisonline.com https://tile.openstreetmap.org https://mapservices.weather.noaa.gov https://images-dim.divas.cloud https://*.divas.cloud https://*.divas.cloud:8200 https://images.unsplash.com; "
+    "img-src 'self' data: blob: https://cdn.jsdelivr.net https://gibs.earthdata.nasa.gov https://server.arcgisonline.com https://tile.openstreetmap.org https://mapservices.weather.noaa.gov https://nowcoast.noaa.gov https://images-dim.divas.cloud https://*.divas.cloud https://*.divas.cloud:8200 https://images.unsplash.com; "
     "media-src 'self' blob: https://divas.cloud https://*.divas.cloud https://*.divas.cloud:8200; "
-    "connect-src 'self' data: https://cdn.jsdelivr.net https://gibs.earthdata.nasa.gov https://server.arcgisonline.com https://tile.openstreetmap.org https://mapservices.weather.noaa.gov https://api.open-meteo.com https://raw.githubusercontent.com https://nominatim.openstreetmap.org https://fl511.com https://divas.cloud https://*.divas.cloud https://*.divas.cloud:8200 https://data.seattle.gov https://data.cityofnewyork.us; "
+    "connect-src 'self' data: https://cdn.jsdelivr.net https://gibs.earthdata.nasa.gov https://server.arcgisonline.com https://tile.openstreetmap.org https://mapservices.weather.noaa.gov https://api.open-meteo.com https://meri.digitraffic.fi https://nowcoast.noaa.gov https://earthquake.usgs.gov https://volcanoes.usgs.gov https://eonet.gsfc.nasa.gov https://raw.githubusercontent.com https://nominatim.openstreetmap.org https://fl511.com https://divas.cloud https://*.divas.cloud https://*.divas.cloud:8200; "
     "worker-src 'self' blob: data: https://cdn.jsdelivr.net; "
     "child-src blob:; "
     "frame-src 'self' https://g1.ipcamlive.com https://www.youtube-nocookie.com; "
@@ -1770,8 +1773,12 @@ def augment_layer(layer, target_count, factory):
 def build_expanded_intel_layers():
     if os.environ.get("ORION_SYNTHETIC_INTEL", "").lower() not in ("1", "true", "yes"):
         for layer_payload in STATIC_INTEL_LAYERS.values():
-            layer_payload.setdefault("generated", generated_at())
-            layer_payload["count"] = len(layer_payload.get("features") or [])
+            # These embedded records are demonstration geometry, not provider observations.
+            layer_payload["features"] = []
+            layer_payload["generated"] = None
+            layer_payload["count"] = 0
+            layer_payload["mode"] = "unavailable"
+            layer_payload["provider_health"] = "unavailable"
         return
 
     cyber_pairs = [(i % len(GLOBAL_HUBS), (i * 7 + 5) % len(GLOBAL_HUBS)) for i in range(50)]
@@ -2032,21 +2039,11 @@ def fallback_wildfire_features():
     ]
 
 
-def wildfire_fallback_payload(error=None, mode="fallback-reference"):
-    features = fallback_wildfire_features()
-    payload = {
-        "source": "NASA EONET fallback thermal reference",
-        "generated": int(time.time()),
-        "count": len(features),
-        "mode": mode,
-        "provider_health": "fallback",
-        "fallback": True,
-        "notice": "NASA EONET is temporarily unavailable; showing deterministic thermal-watch reference coverage.",
-        "features": features,
-    }
-    if error:
-        payload["error"] = error
-    return payload
+def wildfire_fallback_payload(error=None, mode="unavailable"):
+    return {"source": "NASA EONET", "generated": None, "count": 0,
+            "mode": "unavailable", "provider_health": "unavailable", "fallback": False,
+            "notice": "Event provider unavailable; no incidents substituted.",
+            "error": error, "features": []}
 
 
 class OrionHandler(SimpleHTTPRequestHandler):
@@ -2056,6 +2053,20 @@ class OrionHandler(SimpleHTTPRequestHandler):
         return str(ROOT / relative)
 
     def do_GET(self):
+        path_parts = Path(unquote(urlparse(self.path).path)).parts
+        if any(part.startswith('.') and part not in ('.', '..') for part in path_parts):
+            self.send_error(404)
+            return
+        if urlparse(self.path).path == "/__orion_dev/version":
+            if os.environ.get("ORION_DEV_RELOAD") != "1":
+                self.send_error(404)
+                return
+            root = Path(__file__).resolve().parent
+            stamps = [(p.name, p.stat().st_mtime_ns, p.stat().st_size) for p in sorted(root.iterdir())
+                      if p.is_file() and p.suffix in (".html", ".css", ".js", ".py")]
+            revision = hashlib.sha256(json.dumps(stamps).encode()).hexdigest()
+            self.send_json({"revision": revision}, cache_seconds=0)
+            return
         if self.path.startswith("/gibs/"):
             self.proxy_gibs()
             return
@@ -2080,8 +2091,18 @@ class OrionHandler(SimpleHTTPRequestHandler):
             self.resolve_camera_stream()
             return
 
-        if self.path.startswith("/camera/snapshot"):
-            self.proxy_camera_snapshot()
+        if self.path.startswith("/camera/health"):
+            from camera_health import check_camera
+            camera_id = (parse_qs(urlparse(self.path).query).get("id") or [""])[0]
+            camera = find_camera_record(camera_id) if camera_id.split("-", 1)[0] in CAMERA_PROVIDERS else None
+            payload = check_camera(camera) if camera else {"status": "UNKNOWN", "message": "Camera not in loaded catalog"}
+            data = json.dumps(payload).encode("utf-8")
+            self.send_response(200 if camera else 404)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.write_payload(data)
             return
 
         if self.path.startswith("/camera/hls"):
@@ -2120,8 +2141,32 @@ class OrionHandler(SimpleHTTPRequestHandler):
             self.proxy_weather_radar()
             return
 
+        if urlparse(self.path).path == "/live/weather/forecast":
+            params = parse_qs(urlparse(self.path).query)
+            mode = (params.get("mode") or ["wind"])[0]
+            model = (params.get("model") or ["best_match"])[0]
+            if mode not in FORECAST_FIELDS or model not in ("best_match", "gfs_seamless", "icon_seamless"):
+                self.send_json({"error": "Unsupported weather mode"}, status=400, cache_seconds=0)
+                return
+            try:
+                self.send_json(weather_forecast(mode, model), cache_seconds=300)
+            except (OSError, ValueError, TypeError, KeyError, http.client.HTTPException) as error:
+                self.send_json({"error": "Forecast provider unavailable", "provider": "Open-Meteo", "mode": "unavailable", "frames": []}, status=503, cache_seconds=30)
+            return
+
         if self.path.startswith("/live/weather/fields"):
             self.proxy_weather_fields()
+            return
+
+        if urlparse(self.path).path == "/live/hazards":
+            category = (parse_qs(urlparse(self.path).query).get("type") or ["volcanoes"])[0]
+            if category not in ("volcanoes", "wildfires"):
+                self.send_json({"error": "Unsupported hazard type"}, status=400, cache_seconds=0)
+                return
+            try:
+                self.send_json(hazards(category), cache_seconds=120)
+            except (OSError, ValueError, TypeError, KeyError, http.client.HTTPException):
+                self.send_json({"error": "Event provider unavailable", "features": [], "mode": "unavailable"}, status=503, cache_seconds=30)
             return
 
         if self.path.startswith("/live/wildfires"):
@@ -2143,6 +2188,8 @@ class OrionHandler(SimpleHTTPRequestHandler):
         self.end_headers()
 
     def end_headers(self):
+        if os.environ.get("ORION_DEV_RELOAD") == "1":
+            self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Security-Policy", CSP_HEADER)
 
         if self.path in ("/", "/index.html") or self.path.startswith("/app.js") or self.path.startswith("/styles.css"):
@@ -2772,57 +2819,10 @@ class OrionHandler(SimpleHTTPRequestHandler):
             }, status=503, cache_seconds=30)
 
     def proxy_wildfires(self):
-        cached = self.cached_feed("wildfires:eonet", 5 * 60)
-        if cached is not None:
-            self.send_json(cached, cache_seconds=120)
-            return
-
         try:
-            request = Request(NASA_EONET_WILDFIRES_URL, headers={
-                "User-Agent": "Project-Orion/1.0",
-                "Accept": "application/json",
-            })
-
-            with urlopen(request, timeout=12) as response:
-                upstream = json.loads(response.read().decode("utf-8"))
-
-            features = []
-            for event in upstream.get("events") or []:
-                geometry = (event.get("geometry") or [])[-1:] or []
-                if not geometry:
-                    continue
-                coords = geometry[0].get("coordinates")
-                if not isinstance(coords, list) or len(coords) < 2:
-                    continue
-                features.append({
-                    "id": event.get("id"),
-                    "name": event.get("title") or "Wildfire",
-                    "kind": "event",
-                    "category": "wildfire",
-                    "lat": coords[1],
-                    "lon": coords[0],
-                    "intensity": 0.7,
-                    "time": geometry[0].get("date"),
-                })
-
-            payload = {
-                "source": "NASA EONET",
-                "generated": int(time.time()),
-                "count": len(features[:40]),
-                "mode": "live",
-                "fallback": False,
-                "features": features[:40],
-            }
-            self.store_cached_feed("wildfires:eonet", payload)
-            self.send_json(payload, cache_seconds=120)
-        except UPSTREAM_PAYLOAD_ERRORS as error:
-            stale = self.cached_feed_stale("wildfires:eonet", 24 * 60 * 60)
-            if stale is not None:
-                stale["error"] = type(error).__name__
-                self.send_json(stale, cache_seconds=45)
-                return
-
-            self.send_json(wildfire_fallback_payload(type(error).__name__), cache_seconds=45)
+            self.send_json(hazards("wildfires"), cache_seconds=120)
+        except (OSError, ValueError, TypeError, KeyError, http.client.HTTPException):
+            self.send_json({"source": "NASA EONET", "error": "Event provider unavailable", "features": [], "mode": "unavailable", "fallback": False}, status=503, cache_seconds=30)
 
     def proxy_intel_layer(self):
         parsed = urlparse(self.path)
@@ -3360,73 +3360,6 @@ class OrionHandler(SimpleHTTPRequestHandler):
                 "generated": int(time.time()),
             }, status=500, cache_seconds=5)
 
-    def proxy_camera_snapshot(self):
-        parsed = urlparse(self.path)
-        params = parse_qs(parsed.query)
-        camera_id = (params.get("id") or [""])[0]
-        camera = find_camera_record(camera_id)
-        raw_id = canonical_camera_id(camera_id)
-        upstream = ""
-
-        if camera:
-            upstream = camera.get("upstream_snapshot_url") or camera.get("snapshot_source_url") or ""
-
-        if not upstream and CAMERANET_AVAILABLE:
-            try:
-                resolved = resolve_camera_provider_stream(camera_id)
-                if resolved:
-                    if camera:
-                        camera.update({key: value for key, value in resolved.items() if value or key == "metadata"})
-                    else:
-                        camera = resolved
-                    CAMERA_BY_ID[str(camera.get("id") or camera_id)] = camera
-                    upstream = camera.get("upstream_snapshot_url") or camera.get("snapshot_source_url") or ""
-            except Exception:
-                upstream = ""
-
-        if not upstream and raw_id and (str(camera_id).startswith("fl511-") or "-" not in str(camera_id)):
-            upstream = f"https://fl511.com/map/Cctv/{quote(raw_id, safe='')}"
-
-        if not upstream:
-            self.send_response(404)
-            self.send_header("Content-Type", "image/svg+xml")
-            payload = camera_frame_svg({"id": camera_id, "name": "Camera feed", "lat": 0, "lon": 0, "provider": "FL511", "category": "snapshot", "status": "unavailable"}, 0)
-            self.send_header("Cache-Control", "private, max-age=10")
-            self.send_header("Content-Length", str(len(payload)))
-            self.end_headers()
-            self.write_payload(payload)
-            return
-
-        try:
-            source_url = (camera or {}).get("source_url") or upstream
-            parsed_source = urlparse(source_url)
-            referer = f"{parsed_source.scheme}://{parsed_source.netloc}/" if parsed_source.scheme and parsed_source.netloc else upstream
-            if str(camera_id).startswith("fl511-"):
-                referer = "https://fl511.com/"
-            request = Request(upstream, headers={
-                "User-Agent": "Mozilla/5.0 (Project Orion CameraNet)",
-                "Referer": referer,
-                "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-            })
-            with urlopen(request, timeout=12) as response:
-                payload = response.read()
-                content_type = response.headers.get("Content-Type", "image/jpeg")
-
-            self.send_response(200)
-            self.send_header("Content-Type", content_type)
-            self.send_header("Cache-Control", "private, max-age=15")
-            self.send_header("Content-Length", str(len(payload)))
-            self.end_headers()
-            self.write_payload(payload)
-        except UPSTREAM_FETCH_ERRORS:
-            payload = camera_frame_svg(camera or {"id": camera_id, "name": "Camera feed", "lat": 0, "lon": 0, "provider": "FL511", "category": "snapshot", "status": "unavailable"}, 0)
-            self.send_response(502)
-            self.send_header("Content-Type", "image/svg+xml")
-            self.send_header("Cache-Control", "private, max-age=10")
-            self.send_header("Content-Length", str(len(payload)))
-            self.end_headers()
-            self.write_payload(payload)
-
     def is_allowed_hls_url(self, upstream_url):
         parsed = urlparse(upstream_url)
         host = (parsed.hostname or "").lower()
@@ -3864,22 +3797,21 @@ class OrionHandler(SimpleHTTPRequestHandler):
             pass
 
     def log_message(self, fmt, *args):
-        if self.path.startswith("/gibs/") or self.path.startswith("/live/") or self.path.startswith("/osm/") or self.path.startswith("/esri/") or self.path.startswith("/camera/"):
+        if self.path.startswith("/__orion_dev/") or self.path.startswith("/gibs/") or self.path.startswith("/live/") or self.path.startswith("/osm/") or self.path.startswith("/esri/") or self.path.startswith("/camera/"):
             return
 
         super().log_message(fmt, *args)
 
 
+class OrionHTTPServer(ThreadingHTTPServer):
+    request_queue_size = 128
+    daemon_threads = True
+
+
 def main():
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 4173
-    server = ThreadingHTTPServer(("127.0.0.1", port), OrionHandler)
+    server = OrionHTTPServer(("127.0.0.1", port), OrionHandler)
     print(f"Project Orion server running at http://127.0.0.1:{port}/", flush=True)
-    if CAMERANET_AVAILABLE:
-        threading.Thread(
-            target=lambda: get_all_cameras((-125.2, 24.1, -66.7, 49.6), None, None),
-            name="orion-cameranet-prewarm",
-            daemon=True,
-        ).start()
     server.serve_forever()
 
 

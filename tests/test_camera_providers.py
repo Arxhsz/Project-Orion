@@ -33,8 +33,8 @@ class CameraProviderTests(unittest.TestCase):
         self.assertFalse(any(provider.id == "us_fill" for provider in camera_providers.CAMERA_PROVIDERS.values()))
         self.assertNotIn("ncdot", camera_providers.CAMERA_PROVIDERS)
 
-    def test_registry_omits_snapshot_only_adapters(self):
-        for provider_id in ("ak511", "az511", "ctroads", "gdot", "id511", "ildot", "midrive", "newengland", "or511", "sdot"):
+    def test_registry_omits_snapshot_only_and_unverified_adapters(self):
+        for provider_id in ("ak511", "az511", "ctroads", "gdot", "id511", "ildot", "midrive", "newengland", "nycdot", "or511", "sdot"):
             self.assertNotIn(provider_id, camera_providers.CAMERA_PROVIDERS)
 
     def test_curated_webcams_are_verified_embeds(self):
@@ -55,6 +55,8 @@ class CameraProviderTests(unittest.TestCase):
 
         self.assertEqual(["stub"], providers)
         self.assertEqual(["valid"], [camera["id"] for camera in cameras])
+        self.assertEqual("stream_available", cameras[0]["status"])
+        self.assertNotIn("snapshot_url", cameras[0])
         self.assertEqual("online", provider.health)
 
     def test_empty_provider_health_is_not_reported_online(self):

@@ -5,7 +5,7 @@ import json
 import os
 import time
 
-os.environ.setdefault("ORION_SYNTHETIC_INTEL", "1")
+os.environ.setdefault("ORION_SYNTHETIC_INTEL", "0")
 
 from camera_providers import get_all_cameras, live_camera_record
 import orion_server

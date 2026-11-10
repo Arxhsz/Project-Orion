@@ -111,7 +111,7 @@
         (function(i) {
           var phase = i / smokeSheetCount;
           var layerSeed = ((String(id).length + 1) * 997 + i * 619) % 10000;
-          var windAngle = (layerSeed * 0.0007 + i * 0.61) % (Math.PI * 2);
+          var windAngle = Number.isFinite(options.windDirection) ? options.windDirection * Math.PI / 180 : ((String(id).length * 0.7) % (Math.PI * 2));
           var windLon = Math.cos(windAngle);
           var windLat = Math.sin(windAngle);
           var crossLon = -windLat;
@@ -134,8 +134,8 @@
               var windY = windLat * drift + crossLat * curl + windLat * pulse;
               
               return Cesium.Cartesian3.fromDegrees(
-                sample.lon + (windX / 111000) * age, 
-                sample.lat + (windY / 111000) * age, 
+                sample.lon + (windX / (111000 * Math.max(0.1, Math.cos(sample.lat * Math.PI / 180)))) * age,
+                Math.max(-89.9, Math.min(89.9, sample.lat + (windY / 111000) * age)),
                 heightOffset, 
                 Cesium.Ellipsoid.WGS84, 
                 result
@@ -187,7 +187,7 @@
               verticalOrigin: Cesium.VerticalOrigin.CENTER,
               horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
               distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 10000000),
-              disableDepthTestDistance: Number.POSITIVE_INFINITY
+              disableDepthTestDistance: 0
             }
           });
           effects.push(entity);

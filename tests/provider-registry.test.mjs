@@ -75,8 +75,8 @@ test("provider registry exposes prompt-required provider state metadata", () => 
   assert.equal(state.id, "weatherRadar");
   assert.equal(state.supportsStaticMode, true);
   assert.equal(state.supportsLive, true);
-  assert.equal(state.supportsHistorical, false);
-  assert.equal(state.timeCapability, "live-only");
+  assert.equal(state.supportsHistorical, true);
+  assert.equal(state.timeCapability, "historical-query");
   assert.match(state.attribution, /NOAA/);
   assert.equal(Orion.Telemetry.ProviderHealth.getTimeUntilRetry("weatherRadar"), 0);
 });
@@ -182,6 +182,8 @@ test("timeline swaps imagery once per provider frame and owns the final layer se
   assert.match(source, /requestedSignature === committedImagerySignature/);
   assert.match(source, /stagedImageryLayers = incomingLayers/);
   assert.match(source, /Imagery transaction rolled back/);
+  assert.match(source, /uploadTimeout && retainedFrameReady/);
+  assert.match(source, /keeping the last complete map while playback continues/);
   assert.doesNotMatch(source, /formatDate\(date\) \+ "T" \+ formatHour\(date\)/);
 });
 
@@ -193,34 +195,24 @@ test("transient basemap tile retries do not warn-spam the console", () => {
   assert.equal(source.includes("console.warn(\"ESRI tile error"), false);
 });
 
-test("GOES imagery uses one global WMS composite instead of sparse WMTS tiles", () => {
-  const Orion = loadBrowserModules(["orion-config.js"]);
+test("observed weather uses documented NOAA times and WMS layers instead of static GOES composites", () => {
   const source = fs.readFileSync(path.join(root, "app.js"), "utf8");
-  const definition = Orion.Config.LayerDefinitions.goesComposite;
-
-  assert.equal(definition.providerType, "wmsSnapshot");
-  assert.deepEqual(Array.from(definition.layers), [
-    "GOES-East_ABI_GeoColor_v0_NRT",
-    "GOES-West_ABI_GeoColor_v0_NRT"
-  ]);
-  assert.match(definition.root, /\/wms\/epsg4326\/nrt\/wms\.cgi$/);
-  assert.equal(definition.timed, true);
-  assert.equal(definition.cadenceHours, 3);
-  assert.equal(Orion.Config.LayerDefinitions.goesEast, undefined);
-  assert.equal(Orion.Config.LayerDefinitions.goesWest, undefined);
-  assert.match(source, /new Cesium\.SingleTileImageryProvider/);
-  assert.match(source, /function effectiveGoesFrameTime/);
-  assert.match(source, /snapshotParams\.push\("time="/);
-  assert.match(source, /layers\.push\(addLayer\("goesComposite"/);
-  assert.equal(source.includes('addLayer("goesEast"'), false);
-  assert.equal(source.includes('addLayer("goesWest"'), false);
+  const weather = fs.readFileSync(path.join(root, "orion-weather.js"), "utf8");
+  assert.match(weather, /nowcoast\.noaa\.gov/);
+  assert.match(weather, /GetCapabilities/);
+  assert.match(weather, /goes_visible_imagery/);
+  assert.match(source, /Orion\.FrameBuffer\.decode/);
+  assert.match(source, /request: "GetMap"/);
+  assert.match(source, /time: payload\.selected_time/);
+  assert.doesNotMatch(source, /layers\.push\(addLayer\("goesComposite"/);
 });
 
 test("static hosting uses WMS snapshots for sparse timed GIBS products", () => {
   const source = fs.readFileSync(path.join(root, "app.js"), "utf8");
 
   assert.match(source, /GIBS_WMS_ROOT = "https:\/\/gibs\.earthdata\.nasa\.gov\/wms\/epsg4326\/best\/wms\.cgi"/);
-  assert.match(source, /isStaticHostMode\(\) && definition\.timed/);
+  assert.match(source, /var useWmsSnapshot = definition\.providerType === "wmsSnapshot" \|\| \(definition\.timed && \(state\.playing \|\| gibsPreloadCollector\)/);
+  assert.match(source, /gibsFrameBuffer\.get\(snapshotUrl/);
   assert.match(source, /definition\.layers \|\| \[definition\.layer\]/);
   assert.match(source, /: formatDate\(effectiveGibsDate\(date\)\)/);
 });
@@ -255,12 +247,12 @@ test("platform renderers are rebound and guarded after boot recovery", () => {
 test("html asset version is bumped for updated runtime modules", () => {
   const source = fs.readFileSync(path.join(root, "index.html"), "utf8");
 
-  assert.match(source, /app\.js\?v=20260821-live-video1/);
-  assert.match(source, /orion-config\.js\?v=20260821-live-video1/);
-  assert.match(source, /orion-onboarding\.js\?v=20260821-live-video1/);
-  assert.match(source, /cameranet_frontend\.js\?v=20260821-live-video1/);
-  assert.match(source, /orion-renderer-primitive\.js\?v=20260809-grid-timeline7/);
-  assert.match(source, /orion-telemetry-health\.js\?v=20260821-live-video1/);
+  assert.match(source, /app\.js\?v=20261110-reliability1/);
+  assert.match(source, /orion-config\.js\?v=20261110-reliability1/);
+  assert.match(source, /orion-onboarding\.js\?v=20261110-reliability1/);
+  assert.match(source, /cameranet_frontend\.js\?v=20261110-reliability1/);
+  assert.match(source, /orion-renderer-primitive\.js\?v=20261110-reliability1/);
+  assert.match(source, /orion-telemetry-health\.js\?v=20261110-reliability1/);
   assert.equal(source.includes("20260701-hardening3"), false);
 });
 
@@ -325,7 +317,7 @@ test("orbital dataset switches preserve satellite tracking atomically", () => {
   assert.match(appSource, /trackingDomainSyncPaused = false;\s*state\.tracking\.sat = true/);
 });
 
-test("CameraNet publishes only live video and supports verified embeds", () => {
+test("CameraNet publishes verified live video without still-image fallback or synthetic fill", () => {
   const providersSource = fs.readFileSync(path.join(root, "camera_providers.py"), "utf8");
   const cameraSource = fs.readFileSync(path.join(root, "cameranet_frontend.js"), "utf8");
   const serverSource = fs.readFileSync(path.join(root, "orion_server.py"), "utf8");
@@ -337,7 +329,8 @@ test("CameraNet publishes only live video and supports verified embeds", () => {
   assert.match(cameraSource, /function renderEmbeddedFeed/);
   assert.match(cameraSource, /function cameraHasLiveVideo/);
   assert.match(cameraSource, /function renderLiveUnavailable/);
-  assert.equal(cameraSource.includes("renderSnapshot"), false);
+  assert.equal(cameraSource.includes("function renderSnapshot"), false);
+  assert.equal(cameraSource.includes("periodic image"), false);
   assert.equal(cameraSource.includes("SNAPSHOT FALLBACK"), false);
   assert.match(cameraSource, /isStaticHostMode\(\) \|\| !camera\.stream_url/);
   assert.match(providersSource, /def camera_has_live_video/);
@@ -345,16 +338,17 @@ test("CameraNet publishes only live video and supports verified embeds", () => {
   assert.match(pagesSource, /get_all_cameras\(None, None, None\)/);
   assert.match(serverSource, /def camera_priority\(camera\)/);
   assert.match(serverSource, /media_priority = 0 if camera\.get\("embed_url"\) else 1/);
+  assert.equal(serverSource.includes('if self.path.startswith("/camera/snapshot")'), false);
+  assert.equal(serverSource.includes("def proxy_camera_snapshot"), false);
 });
 
-test("wildfire provider falls back to usable reference features", () => {
+test("wildfire provider reports upstream failure instead of substituting fabricated incidents", () => {
   const server = fs.readFileSync(path.join(root, "orion_server.py"), "utf8");
   const pages = fs.readFileSync(path.join(root, "build_pages_data.py"), "utf8");
-
-  assert.match(server, /def wildfire_fallback_payload/);
-  assert.match(server, /provider_health": "fallback"/);
-  assert.match(server, /self\.send_json\(wildfire_fallback_payload/);
-  assert.match(pages, /orion_server\.wildfire_fallback_payload/);
+  assert.match(server, /self\.send_json\(hazards\("wildfires"\)/);
+  assert.match(server, /"Event provider unavailable"/);
+  assert.doesNotMatch(server, /self\.send_json\(wildfire_fallback_payload/);
+  assert.match(pages, /ORION_SYNTHETIC_INTEL", "0"/);
 });
 
 test("Open-Meteo field modes render a real global grid", () => {

@@ -21,6 +21,10 @@ This matrix documents the providers currently used or approved for use. It separ
 | Submarine Cable Map public GeoJSON | Global submarine cable routes | Provider dataset dependent; app cache 24 hours | Dataset snapshot dependent | Global routes in feed | Current feed snapshot | No frontend key | Static Pages uses generated snapshot; local mode proxies JSON | Yes for live/cached local mode | Provider terms for public GeoJSON reuse | Submarine Cable Map |
 | NOAA Submarine Cable Areas | U.S. and affiliated territories cable areas | Dataset dependent | Dataset dependent | U.S. waters and affiliated territories | Dataset snapshot | No | WMS/OGC/GeoJSON support varies | Optional | U.S. government/open data terms | NOAA / data.gov dataset |
 
+## Observation workspace updates (2026-10-01)
+
+The active weather timeline uses NOAA nowCOAST time-enabled WMS instead of the current-only ArcGIS radar row above. Open-Meteo now supplies hourly forecast frames with a 30-minute cache; the global sample spacing remains 20°. USGS Volcano Hazards Program supplies US status notices. See [the verified source and cadence matrix](OBSERVATION_REWORK.md#sources-researched-and-used) for endpoints, coverage, remaining limitations, and reference-product research. Snapshot-only camera adapters are excluded from CameraNet.
+
 ## Removed or Disabled Provider Paths
 
 - Zoom Earth tile/time endpoints are not approved for production use because the code used undocumented tile and JSON paths.

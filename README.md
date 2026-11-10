@@ -6,13 +6,15 @@
 
 Project Orion is a real-time planetary command map built on CesiumJS. It combines NASA GIBS satellite imagery, NOAA/NWS radar, orbital tracking, aircraft, CameraNet, environmental monitoring, saved locations, live device location, and historical timeline playback in a dark glass command interface.
 
-Current version: v1.1.2
+Current version: v1.1.2 + reliability release (2026-11-10)
+
+See [the rework report](docs/OBSERVATION_REWORK.md) for the implemented fixes, source research, verification steps, and remaining coverage limits.
 
 ## Architecture
 
 Orion has two runtime modes:
 
-- Static GitHub Pages mode serves the frontend and prebuilt `pages-data/` JSON snapshots. Static mode must not call provider tile services that require backend proxying.
+- Static GitHub Pages mode serves the frontend and prebuilt `pages-data/` JSON snapshots. Public NOAA weather, Open-Meteo forecast, USGS hazard and NASA EONET feeds are fetched directly where CORS permits. Services requiring a proxy remain local-only.
 - Local Python mode serves the same frontend through `orion_server.py` and can proxy same-origin imagery, CameraNet media, and provider workflows that require local request handling.
 
 Important files:
@@ -32,11 +34,12 @@ docs/                       Audit, issues, data sources, architecture, plan
 ## Data Sources
 
 - Imagery: NASA GIBS / NASA ESDIS WMTS.
-- Radar: NOAA/NWS `radar_base_reflectivity` ArcGIS map service.
+- Satellite animation and radar: NOAA nowCOAST timestamped regional GOES with hourly global infrared context, and CONUS MRMS WMS layers. Playback buffers decoded frames and supports looping.
 - Satellites: CelesTrak GP/TLE data.
 - Earthquakes: USGS GeoJSON summary feeds.
 - Wildfires: NASA EONET event metadata.
-- Weather fields: Open-Meteo current conditions sampled on a cached global grid and rendered client-side for precipitation, wind, temperature, humidity, and pressure.
+- Weather fields: Open-Meteo 216-frame hourly forecasts on a cached, coarse 20° global sample grid, including wind/gusts, precipitation, temperature/feels-like/wet-bulb, humidity, dew point, pressure, clouds, rain and snow.
+- Volcanoes: USGS US volcano status and notices; 3D cones are illustrative markers.
 - Cameras: public DOT/511/open-data providers through CameraNet adapters.
 - Power infrastructure: OpenInfraMap global OpenStreetMap-derived vector tiles, with the official U.S. transmission-line ArcGIS service as a regional fallback.
 - Aircraft: public ADS-B point feeds through the local backend and generated Pages catalog.
@@ -53,7 +56,13 @@ Heavy live and environment layers are off on first load:
 
 ## Run Locally
 
-Use Python directly:
+For a live preview that refreshes after source edits and restarts after Python changes:
+
+```bash
+python3 dev_server.py 4174
+```
+
+Use Python directly without development reload:
 
 ```bash
 python3 -m pip install -r requirements.txt

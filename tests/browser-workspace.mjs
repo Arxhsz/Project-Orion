@@ -1,0 +1,35 @@
+import {chromium} from 'playwright';
+import assert from 'node:assert/strict';
+const browser=await chromium.launch({headless:true,executablePath:process.env.ORION_BROWSER_EXECUTABLE||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});
+const page=await browser.newPage({viewport:{width:615,height:656}});
+const errors=[];page.on('pageerror',e=>errors.push(e.message));
+await page.route('**/__orion_dev/version',r=>r.fulfill({status:404}));
+await page.addInitScript(()=>{localStorage.setItem('orion_onboarding_complete','true');localStorage.setItem('orion_changelog_dismissed','1.1.2-map-reliability');});
+try {
+ await page.goto('http://127.0.0.1:4174/');
+ await page.waitForFunction(()=>window.viewer&&document.getElementById('restartTutorial'));
+ await page.waitForFunction(()=>!document.getElementById('orionLoadingScreen'),null,{timeout:60000});
+ const boxes=await page.evaluate(()=>{const panel=document.getElementById('telemetryPanel');if(!panel.classList.contains('collapsed'))document.getElementById('telemetryPanelToggle').click();const a=panel.getBoundingClientRect(),b=document.getElementById('telemetryPanelToggle').getBoundingClientRect();return {dx:Math.abs((a.left+a.width/2)-(b.left+b.width/2)),dy:Math.abs((a.top+a.height/2)-(b.top+b.height/2))};});
+ assert.ok(boxes.dx<2&&boxes.dy<2,JSON.stringify(boxes));
+ await page.locator('#workspace-tab-controls').click();
+ await page.locator('#orionQuality').selectOption('saving');
+ assert.equal(await page.evaluate(()=>viewer.resolutionScale),.75);
+ await page.locator('#orionQuality').selectOption('auto');
+ await page.locator('#restartTutorial').click();
+ const total=Number(await page.locator('.progress-total').textContent());
+ for(let i=1;i<total;i++) await page.locator('#onboardingNext').click();
+ await page.getByRole('button',{name:'Finish',exact:true}).click();
+ assert.equal(await page.locator('#orionOnboarding').count(),0);
+ assert.equal(await page.evaluate(()=>localStorage.getItem('orion_onboarding_complete')),'true');
+ await page.waitForTimeout(1300);assert.equal(await page.locator('.onboarding-highlight').count(),0);
+ await page.evaluate(()=>OrionOnboarding.startOnboarding(viewer));
+ await page.getByRole('button',{name:'Skip Tutorial',exact:true}).click();
+ assert.equal(await page.locator('#orionOnboarding').count(),0);
+ await page.waitForFunction(()=>document.querySelector('.weather-legend-toggle'),null,{timeout:60000});
+ const legend=page.locator('.weather-mode-legend');
+ assert.ok((await legend.boundingBox()).height<60);
+ await page.locator('.weather-legend-toggle').click();
+ assert.equal(await page.locator('.weather-legend-toggle').getAttribute('aria-expanded'),'true');
+ await page.screenshot({path:'artifacts/workspace-oct05.png'});
+ assert.deepEqual(errors,[]);console.log('Mobile centering, compact legend, quality control, tutorial Finish/Skip/restart passed');
+} finally {await browser.close();}

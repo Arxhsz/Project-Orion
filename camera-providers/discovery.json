@@ -1,0 +1,663 @@
+{
+  "source": "FHWA State Transportation Websites",
+  "source_url": "https://www.fhwa.dot.gov/about/webstate.cfm",
+  "retrieved": "2026-10-05",
+  "states": [
+    {
+      "state": "AL",
+      "name": "Alabama",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://www.dot.state.al.us"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "AK",
+      "name": "Alaska",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://www.dot.state.ak.us"
+        }
+      ],
+      "adapters": [
+        "ak511"
+      ],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "AZ",
+      "name": "Arizona",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://www.azdot.gov/"
+        }
+      ],
+      "adapters": [
+        "az511"
+      ],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "AR",
+      "name": "Arkansas",
+      "agency_links": [
+        {
+          "name": "Arkansas Department of Transportation (ARDOT)",
+          "url": "https://www.ardot.gov/"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "CA",
+      "name": "California",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://www.dot.ca.gov/"
+        },
+        {
+          "name": "PATH: Partners for Advanced Transit and Highways",
+          "url": "/exit.cfm?link=http://www.path.berkeley.edu/"
+        },
+        {
+          "name": "Division of Rail and Mass Transportation Program",
+          "url": "http://www.dot.ca.gov/hq/MassTrans/"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "CO",
+      "name": "Colorado",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "/exit.cfm?link=http://www.coloradodot.info/"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "CT",
+      "name": "Connecticut",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://www.ct.gov/dot"
+        }
+      ],
+      "adapters": [
+        "ctroads"
+      ],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "DE",
+      "name": "Delaware",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://www.deldot.gov"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "FL",
+      "name": "Florida",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://www.fdot.gov/"
+        },
+        {
+          "name": "Department of Highway Safety and Motor Vehicles",
+          "url": "https://www.flhsmv.gov/"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "GA",
+      "name": "Georgia",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://www.dot.ga.gov"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "HI",
+      "name": "Hawaii",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://hidot.hawaii.gov/"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "ID",
+      "name": "Idaho",
+      "agency_links": [
+        {
+          "name": "Idaho Transportation Department",
+          "url": "http://itd.idaho.gov/"
+        }
+      ],
+      "adapters": [
+        "id511"
+      ],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "IL",
+      "name": "Illinois",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "https://idot.illinois.gov/"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "IN",
+      "name": "Indiana",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://www.in.gov/indot/"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "IA",
+      "name": "Iowa",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://www.iowadot.gov/"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "KS",
+      "name": "Kansas",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://www.ksdot.org"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "KY",
+      "name": "Kentucky",
+      "agency_links": [
+        {
+          "name": "Transportation Cabinet",
+          "url": "http://transportation.ky.gov/"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "LA",
+      "name": "Louisiana",
+      "agency_links": [
+        {
+          "name": "Department of Transportation & Development",
+          "url": "http://wwwsp.dotd.la.gov/"
+        }
+      ],
+      "adapters": [
+        "la511"
+      ],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "ME",
+      "name": "Maine",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://www.maine.gov/mdot/"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "MD",
+      "name": "Maryland",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://www.mdot.maryland.gov/"
+        },
+        {
+          "name": "State Highway Administration",
+          "url": "http://www.roads.maryland.gov/"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "MA",
+      "name": "Massachusetts",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://www.massdot.state.ma.us/"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "MI",
+      "name": "Michigan",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://www.michigan.gov/mdot/"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "MN",
+      "name": "Minnesota",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://www.dot.state.mn.us"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "MS",
+      "name": "Mississippi",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://mdot.ms.gov/"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "MO",
+      "name": "Missouri",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://www.modot.org"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "MT",
+      "name": "Montana",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://www.mdt.mt.gov/"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "NE",
+      "name": "Nebraska",
+      "agency_links": [
+        {
+          "name": "Nebraska Department of Transportation",
+          "url": " https://dot.nebraska.gov/"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "NV",
+      "name": "Nevada",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://www.nevadadot.com/"
+        }
+      ],
+      "adapters": [
+        "nv511"
+      ],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "NH",
+      "name": "New Hampshire",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://www.nh.gov/dot/"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "NJ",
+      "name": "New Jersey",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://www.state.nj.us/transportation/"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "NM",
+      "name": "New Mexico",
+      "agency_links": [
+        {
+          "name": "Highway and Transportation Department",
+          "url": "http://dot.state.nm.us/"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "NY",
+      "name": "New York",
+      "agency_links": [
+        {
+          "name": "New York State Department of Transportation",
+          "url": "https://www.ny.gov/"
+        },
+        {
+          "name": "New York Metropolitan Transportation Council",
+          "url": "/exit.cfm?link=http://www.nymtc.org"
+        }
+      ],
+      "adapters": [
+        "ny511"
+      ],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "NC",
+      "name": "North Carolina",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://www.ncdot.gov/"
+        },
+        {
+          "name": "Division of Highways",
+          "url": "http://www.ncdot.org/doh/"
+        },
+        {
+          "name": "ITRE: UNC Institute for Transportation Research and Education",
+          "url": "/exit.cfm?link=http://itre.ncsu.edu"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "ND",
+      "name": "North Dakota",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://www.dot.nd.gov"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "OH",
+      "name": "Ohio",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://www.dot.state.oh.us"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "OK",
+      "name": "Oklahoma",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://www.okladot.state.ok.us/"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "OR",
+      "name": "Oregon",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://www.oregon.gov/odot/"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "PA",
+      "name": "Pennsylvania",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://www.penndot.gov/"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "RI",
+      "name": "Rhode Island",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://www.dot.ri.gov"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "SC",
+      "name": "South Carolina",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "https://www.scdot.org/"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "SD",
+      "name": "South Dakota",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://www.sddot.com"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "TN",
+      "name": "Tennessee",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://www.tn.gov/tdot"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "TX",
+      "name": "Texas",
+      "agency_links": [
+        {
+          "name": "Center for Transportation Research",
+          "url": "/exit.cfm?link=http://www.utexas.edu/research/ctr/"
+        },
+        {
+          "name": "Department of Transportation",
+          "url": "http://www.txdot.gov/"
+        },
+        {
+          "name": "Texas Transportation Institute",
+          "url": "/exit.cfm?link=http://tti.tamu.edu"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "UT",
+      "name": "Utah",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://www.udot.utah.gov/"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "VT",
+      "name": "Vermont",
+      "agency_links": [
+        {
+          "name": "Agency of Transportation",
+          "url": "http://vtrans.vermont.gov/"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "VA",
+      "name": "Virginia",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://www.virginiadot.org"
+        },
+        {
+          "name": "Virginia Tech Transportation Infrastructure & Systems Engineering Division",
+          "url": "/exit.cfm?link=http://www.vtti.vt.edu/"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "WA",
+      "name": "Washington",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://www.wsdot.wa.gov/"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "WV",
+      "name": "West Virginia",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://www.transportation.wv.gov"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "WI",
+      "name": "Wisconsin",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://wisconsindot.gov/"
+        }
+      ],
+      "adapters": [
+        "wi511"
+      ],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    },
+    {
+      "state": "WY",
+      "name": "Wyoming",
+      "agency_links": [
+        {
+          "name": "Department of Transportation",
+          "url": "http://www.dot.state.wy.us"
+        }
+      ],
+      "adapters": [],
+      "integration": "Agency directory; embedded camera coverage is tracked separately"
+    }
+  ]
+}

@@ -11,8 +11,9 @@
     <link rel="preconnect" href="https://gibs.earthdata.nasa.gov">
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%2305070c'/%3E%3Ccircle cx='32' cy='32' r='20' fill='none' stroke='%23ffffff' stroke-width='3'/%3E%3Cpath d='M32 8v48M8 32h48' stroke='%23ffffff' stroke-width='2'/%3E%3C/svg%3E">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cesium@1.141.0/Build/Cesium/Widgets/widgets.css">
-    <link rel="stylesheet" href="styles.css?v=20260821-live-video1">
-    <link rel="stylesheet" href="orion-onboarding.css?v=20260809-grid-timeline7">
+    <link rel="stylesheet" href="styles.css?v=20261110-reliability1">
+    <link rel="stylesheet" href="orion-onboarding.css?v=20261110-reliability1">
+    <link rel="stylesheet" href="orion-workspace.css?v=20261110-reliability1">
   </head>
   <body>
     <div class="bg" id="orionLoadingScreen">
@@ -152,21 +153,33 @@
           <label class="scan-control weather-map-control" for="weatherMapModeSelect">
             <span>Mode</span>
             <select id="weatherMapModeSelect">
-              <option value="satellite" selected>Satellite live</option>
+              <option value="satellite" selected>Satellite visible + global IR</option>
               <option value="satellite-hd">Satellite HD</option>
-              <option value="radar">Radar</option>
+              <option value="infrared">Satellite infrared + global IR</option>
+              <option value="satellite-global">Satellite infrared · Global</option>
+              <option value="radar">Radar · US</option>
               <option value="precipitation">Precipitation</option>
               <option value="wind">Wind</option>
               <option value="temperature">Temperature</option>
               <option value="humidity">Humidity</option>
               <option value="pressure">Pressure</option>
+              <option value="gusts">Wind gusts</option>
+              <option value="feels-like">Feels like</option>
+              <option value="wet-bulb">Wet-bulb temperature</option>
+              <option value="dewpoint">Dew point</option>
+              <option value="clouds">Cloud cover</option>
+              <option value="rain">Rain</option>
+              <option value="snow">Snowfall</option>
             </select>
+          </label>
+          <label class="scan-control weather-map-control" id="forecastModelControl" for="forecastModel" hidden>
+            <span>Model</span><select id="forecastModel"><option value="best_match">Best match</option><option value="gfs_seamless">NOAA GFS</option><option value="icon_seamless">DWD ICON</option></select>
           </label>
           <label class="scan-control weather-map-control" for="satelliteSourceSelect">
             <span>Source</span>
             <select id="satelliteSourceSelect">
-              <option value="public-geostat" selected>NOAA GOES live</option>
-              <option value="nasa-live">NASA live stable</option>
+              <option value="public-geostat" selected>NOAA GOES + global context</option>
+              <option value="nasa-live">NASA daily mosaic</option>
               <option value="cloud-free">Cloud-free globe</option>
             </select>
           </label>
@@ -252,6 +265,7 @@
               <span class="switch"></span>
               <span>Weather radar</span>
             </label>
+            <label class="toggle-row"><input id="platformMarine" type="checkbox"><span class="switch"></span><span>Ships · Finnish waters</span></label>
             <label class="toggle-row">
               <input id="platformAircraft" type="checkbox">
               <span class="switch"></span>
@@ -273,6 +287,10 @@
               <span>Wildfires</span>
             </label>
             <label class="toggle-row">
+              <input id="platformVolcanoes" type="checkbox">
+              <span class="switch"></span><span>US volcano status</span>
+            </label>
+            <label class="toggle-row">
               <input id="platformWeatherVolume" type="checkbox">
               <span class="switch"></span>
               <span>Storm volume</span>
@@ -288,14 +306,14 @@
         <div class="systems-block">
           <div class="section-label">Mission systems</div>
           <label class="scan-control" for="scanModeSelect">
-            <span>Scan mode</span>
+            <span>Data preset</span>
             <select id="scanModeSelect">
               <option value="standard">Standard</option>
-              <option value="thermal">Thermal</option>
-              <option value="infrared">Infrared</option>
+              <option value="thermal">Air temperature</option>
+              <option value="infrared">Infrared clouds</option>
               <option value="radar">Radar</option>
-              <option value="night">Night ops</option>
-              <option value="weather">Weather</option>
+              <option value="night">Night lights</option>
+              <option value="weather">Precipitation</option>
               <option value="orbital">Orbital</option>
             </select>
           </label>
@@ -451,10 +469,13 @@
         <div class="timeline-body">
 
         <div class="timeline-mode-row" aria-label="Timeline cadence">
+          <button class="timeline-mode" id="timelineLoop" type="button" aria-pressed="true">Loop on</button>
+          <button class="timeline-mode" id="weatherLatest" type="button">Latest</button>
           <button class="timeline-mode active" id="timelineModeHourly" type="button" data-icon="H">Hourly</button>
           <button class="timeline-mode" id="timelineModeUpdates" type="button" data-icon="U">Updates</button>
         </div>
 
+        <div id="frameBufferStatus" role="status" aria-live="polite"></div>
         <div class="range-wrap">
           <input id="timelineRange" type="range" min="0" max="720" step="1" value="720" aria-label="Imagery time">
           <div class="timeline-axis" aria-hidden="true">
@@ -523,30 +544,38 @@
 
     <script src="https://cdn.jsdelivr.net/npm/cesium@1.141.0/Build/Cesium/Cesium.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/satellite.js@5.0.0/dist/satellite.min.js" defer></script>
-    <script src="orion-core.js?v=20260809-grid-timeline7"></script>
-    <script src="orion-config.js?v=20260821-live-video1"></script>
-    <script src="orion-provider-registry.js?v=20260821-live-video1"></script>
-    <script src="orion-runtime-state.js?v=20260809-grid-timeline7"></script>
-    <script src="orion-performance-budget.js?v=20260809-grid-timeline7"></script>
-    <script src="orion-telemetry-health.js?v=20260821-live-video1"></script>
-    <script src="orion-diagnostics.js?v=20260809-grid-timeline7"></script>
-    <script src="orion-intelligence.js?v=20260809-grid-timeline7"></script>
-    <script src="orion-provider-submarine-cables.js?v=20260809-grid-timeline7"></script>
-    <script src="orion-provider-power-grid.js?v=20260809-grid-timeline7"></script>
-    <script src="orion-renderer-environment.js?v=20260809-grid-timeline7"></script>
-    <script src="orion-renderer-infrastructure.js?v=20260809-grid-timeline7"></script>
-    <script src="orion-renderer-submarine-cables.js?v=20260809-grid-timeline7"></script>
-    <script src="orion-renderer-power-grid.js?v=20260809-grid-timeline7"></script>
-    <script src="orion-renderer-imagery.js?v=20260809-grid-timeline7"></script>
-    <script src="orion-renderer-primitive.js?v=20260809-grid-timeline7"></script>
-    <script src="orion-replay.js?v=20260809-grid-timeline7"></script>
-    <script src="orion-session.js?v=20260809-grid-timeline7"></script>
-    <script src="orion-verification.js?v=20260809-grid-timeline7"></script>
-    <script src="loading_screen.js?v=20260809-grid-timeline7"></script>
-    <script src="orion-onboarding.js?v=20260821-live-video1"></script>
-    <script src="orion-texture-manager.js?v=20260809-grid-timeline7"></script>
-    <script src="cameranet_frontend.js?v=20260821-live-video1" defer></script>
-    <script src="app.js?v=20260821-live-video1" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/satellite.js@6.0.1/dist/satellite.min.js" integrity="sha384-ks/q8WwP74/nmNCaw/3Kj9Iv2xK5DsfHUJx18wEND2nHyRN7wjPfXjJF1Ejyj1lH" crossorigin="anonymous" defer></script>
+    <script src="orion-core.js?v=20261110-reliability1"></script>
+    <script src="orion-config.js?v=20261110-reliability1"></script>
+    <script src="orion-provider-registry.js?v=20261110-reliability1"></script>
+    <script src="orion-runtime-state.js?v=20261110-reliability1"></script>
+    <script src="orion-performance-budget.js?v=20261110-reliability1"></script>
+    <script src="orion-telemetry-health.js?v=20261110-reliability1"></script>
+    <script src="orion-diagnostics.js?v=20261110-reliability1"></script>
+    <script src="orion-intelligence.js?v=20261110-reliability1"></script>
+    <script src="orion-provider-submarine-cables.js?v=20261110-reliability1"></script>
+    <script src="orion-provider-power-grid.js?v=20261110-reliability1"></script>
+    <script src="orion-renderer-environment.js?v=20261110-reliability1"></script>
+    <script src="orion-renderer-infrastructure.js?v=20261110-reliability1"></script>
+    <script src="orion-renderer-submarine-cables.js?v=20261110-reliability1"></script>
+    <script src="orion-renderer-power-grid.js?v=20261110-reliability1"></script>
+    <script src="orion-renderer-imagery.js?v=20261110-reliability1"></script>
+    <script src="orion-renderer-primitive.js?v=20261110-reliability1"></script>
+    <script src="orion-replay.js?v=20261110-reliability1"></script>
+    <script src="orion-dev-reload.js?v=20261110-reliability1"></script>
+    <script src="orion-session.js?v=20261110-reliability1"></script>
+    <script src="orion-verification.js?v=20261110-reliability1"></script>
+    <script src="loading_screen.js?v=20261110-reliability1"></script>
+    <script src="orion-onboarding.js?v=20261110-reliability1"></script>
+    <script src="orion-texture-manager.js?v=20261110-reliability1"></script>
+    <script src="cameranet_frontend.js?v=20261110-reliability1" defer></script>
+    <script src="orion-wind.js?v=20261110-reliability1"></script>
+    <script src="orion-frame-buffer.js?v=20261110-reliability1"></script>
+    <script src="orion-marine.js?v=20261110-reliability1"></script>
+    <script src="orion-weather.js?v=20261110-reliability1"></script>
+    <script src="orion-hazards.js?v=20261110-reliability1"></script>
+    <script src="orion-camera.js?v=20261110-reliability1"></script>
+    <script src="app.js?v=20261110-reliability1" defer></script>
+    <script src="orion-workspace.js?v=20261110-reliability1"></script>
   </body>
 </html>

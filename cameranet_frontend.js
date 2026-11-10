@@ -733,6 +733,13 @@
         distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 920000),
         show: selected
       },
+      polyline: camera.heading != null ? {
+        positions: (function () {
+          var bearing = Cesium.Math.toRadians(camera.heading), lat = Number(camera.lat), lon = Number(camera.lon);
+          return Cesium.Cartesian3.fromDegreesArrayHeights([lon, lat, z, lon + Math.sin(bearing) * .001 / Math.max(.1,Math.cos(Cesium.Math.toRadians(lat))), lat + Math.cos(bearing) * .001, z]);
+        })(), width: 3, material: new Cesium.PolylineArrowMaterialProperty(Cesium.Color.WHITE),
+        distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 100000)
+      } : undefined,
       properties: {
         type: "camera",
         camera: camera
@@ -1054,7 +1061,7 @@
     showFailure();
   }
 
-  function openCameraDetailPanel(camera) {
+  async function openCameraDetailPanel(camera) {
     var panel = document.getElementById("cameraWindow");
     var title = document.getElementById("cameraTitle");
     var meta = document.getElementById("cameraMeta");
@@ -1065,6 +1072,7 @@
     }
 
     disposePlayback();
+    document.getElementById("cameraAvailability")?.remove();
     cameraNetState.selectedCamera = camera;
     refreshIntelList();
 
@@ -1075,6 +1083,9 @@
     if (meta) {
       meta.textContent = [
         camera.provider || "CameraNet",
+        camera.status || "UNKNOWN",
+        camera.city,
+        camera.heading != null ? "Facing " + camera.heading + "°" : "Facing direction unavailable",
         camera.road || camera.state || "traffic camera",
         camera.county || camera.district || "statewide",
         camera.stream_type || "HLS",
@@ -1089,7 +1100,41 @@
       "</div>"
     ].join("");
     panel.classList.remove("hidden");
+    document.getElementById('cameraDetailActions')?.remove();
+    var actions = document.createElement('div'); actions.id='cameraDetailActions'; actions.className='camera-detail-actions';
+    function action(text, handler) { var b=document.createElement('button');b.type='button';b.textContent=text;b.addEventListener('click',handler);actions.appendChild(b);return b; }
+    action('Copy coordinates', async function() { try { await navigator.clipboard.writeText(formatCoord(camera.lat)+', '+formatCoord(camera.lon));this.textContent='Copied'; } catch(error) { this.textContent='Copy unavailable'; } });
+    action('Center', function() { window.Orion.CameraFlight.focus(window.viewer, {lon:Number(camera.lon),lat:Number(camera.lat)}, {range:4200}); });
+    var favorites=[];try {favorites=JSON.parse(localStorage.getItem('orion_camera_favorites')||'[]');if(!Array.isArray(favorites))favorites=[];}catch(error){favorites=[];}
+    var favorite=action(favorites.includes(camera.id)?'★ Saved':'☆ Favorite',function(){
+      favorites=favorites.includes(camera.id)?favorites.filter(function(id){return id!==camera.id;}):favorites.concat(camera.id);
+      try {localStorage.setItem('orion_camera_favorites',JSON.stringify(favorites));this.textContent=favorites.includes(camera.id)?'★ Saved':'☆ Favorite';}catch(error){this.textContent='Storage unavailable';}
+    });
+    if(/^https?:\/\//.test(camera.source_url||'')) {var source=document.createElement('a');source.href=camera.source_url;source.target='_blank';source.rel='noopener noreferrer';source.textContent='Open publisher';actions.appendChild(source);}
+    action('Nearby cameras',function(){
+      var old=document.getElementById('cameraNearby');if(old){old.remove();return;}
+      var list=document.createElement('div');list.id='cameraNearby';
+      var nearest=cameraNetState.cameras.filter(function(c){return c.id!==camera.id;}).map(function(c){return {camera:c,d:Math.hypot((c.lon-camera.lon)*Math.cos(camera.lat*Math.PI/180),c.lat-camera.lat)};}).filter(function(c){return c.d<.5;}).sort(function(a,b){return a.d-b.d;}).slice(0,5);
+      if(!nearest.length)list.textContent='No nearby cameras in the loaded area';
+      nearest.forEach(function(item){var b=document.createElement('button');b.type='button';b.textContent=item.camera.name;b.addEventListener('click',function(){list.remove();openCameraDetailPanel(item.camera);});list.appendChild(b);});actions.appendChild(list);
+    });
+    meta.after(actions);
 
+    if (!isStaticHostMode()) {
+      try {
+        var healthResponse = await fetch('/camera/health?id=' + encodeURIComponent(camera.id), {signal:AbortSignal.timeout(10000)});
+        var health = await healthResponse.json();
+        if (cameraNetState.selectedCamera !== camera) return;
+        camera.status = health.status;
+        var status = document.createElement('p'); status.id='cameraAvailability'; meta.after(status);
+        status.textContent = health.status + ' · ' + (health.message || 'Feed checked') + (health.last_checked ? ' · checked ' + new Date(health.last_checked*1000).toLocaleTimeString() : '');
+        if (health.status === 'OFFLINE') { renderLiveUnavailable(health.message); return; }
+      } catch(error) {
+        if (cameraNetState.selectedCamera !== camera) return;
+        var status = document.createElement('p'); status.id='cameraAvailability';meta.after(status);
+        status.textContent='UNKNOWN · Independent availability check did not respond';
+      }
+    }
     var streamType = String(camera.stream_type || "").toLowerCase();
     if (streamType === "embed" && camera.embed_url) {
       renderEmbeddedFeed(camera);

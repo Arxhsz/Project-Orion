@@ -140,7 +140,6 @@
     'satIot',
     'starlink',
     'debris',
-    'earthquakes',
     'lightning',
     'cameras',
     'liveAircraft',
@@ -814,9 +813,11 @@
       "platformCameras",
       "platformWeatherRadar",
       "platformAircraft",
+      "platformMarine",
       "platformCables",
       "platformPower",
       "platformWildfires",
+      "platformVolcanoes",
       "platformWeatherVolume",
       "platformLightning",
       "scanModeSelect",
@@ -953,6 +954,8 @@
   }
 
   function currentUpdateIntervalMs() {
+    var frameBounds = activeTimelineBounds();
+    if (frameBounds && frameBounds.frames && frameBounds.frames.length > 1) return Orion.Weather.time(frameBounds.frames[1]) - Orion.Weather.time(frameBounds.frames[0]);
     var mode = state && state.weatherMapMode ? state.weatherMapMode : "satellite";
     var feed = platformFeeds && platformFeeds.weatherRadar;
     var payloadRefreshSeconds = feed && feed.payload ? Number(feed.payload.refresh_seconds) : 0;
@@ -1121,6 +1124,9 @@
   }
 
   function alignToUpdateStep(date) {
+    var list = activeTimelineBounds() && activeTimelineBounds().frames;
+    if (list && list.length) return new Date(list[Orion.Weather.index(list, date)].time);
+
     var min = timelineMinDate();
     var step = clamp(updateStepsBetween(min, clampTimelineDate(date)), 0, timelineUpdateRangeMax());
     return new Date(min.getTime() + step * currentUpdateIntervalMs());
@@ -1184,6 +1190,8 @@
   }
 
   function timelineRefreshKey(date) {
+    var list = activeTimelineBounds() && activeTimelineBounds().frames;
+    if (list && list.length) return state.weatherMapMode + ":" + list[Orion.Weather.index(list, date)].time;
     if (isLiveSatelliteImageryMode()) {
       var goesFrame = effectiveGoesFrameTime(date, layerDefinitions.goesComposite.cadenceHours);
       return formatDate(goesFrame) + "T" + formatHour(goesFrame);
@@ -1259,6 +1267,9 @@
   }
 
   function dateFromRange(inputValue) {
+    var list = activeTimelineBounds() && activeTimelineBounds().frames;
+    if (list && list.length) return new Date(list[clamp(Math.round(Number(inputValue)), 0, list.length - 1)].time);
+
     if (state.timelineMode === "updates") {
       return new Date(timelineMinDate().getTime() + Number(inputValue) * currentUpdateIntervalMs());
     }
@@ -1267,6 +1278,9 @@
   }
 
   function rangeFromDate(date) {
+    var list = activeTimelineBounds() && activeTimelineBounds().frames;
+    if (list && list.length) return Orion.Weather.index(list, date);
+
     if (state.timelineMode === "updates") {
       return updateStepsBetween(timelineMinDate(), date);
     }
@@ -1275,6 +1289,9 @@
   }
 
   function timelineRangeMax() {
+    var list = activeTimelineBounds() && activeTimelineBounds().frames;
+    if (list) return Math.max(0, list.length - 1);
+
     if (state.timelineMode === "updates") {
       return timelineUpdateRangeMax();
     }
@@ -1283,6 +1300,9 @@
   }
 
   function addTimelineUnits(date, amount) {
+    var list = activeTimelineBounds() && activeTimelineBounds().frames;
+    if (list && list.length) return new Date(list[clamp(Orion.Weather.index(list, date) + Math.round(amount), 0, list.length - 1)].time);
+
     if (state.timelineMode === "updates") {
       return new Date(date.getTime() + amount * currentUpdateIntervalMs());
     }
@@ -2037,8 +2057,8 @@ void main() {
 
     return svgDataUri([
       "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'>",
-      "<path d='M16 50 28 36H68L82 50 74 70H24Z' fill='", color, "' fill-opacity='.9' stroke='white' stroke-opacity='.56' stroke-width='3'/>",
-      "<path d='M34 36 40 24H58L64 36M28 56H68M38 66H58' stroke='white' stroke-opacity='.64' stroke-width='3' stroke-linecap='round'/>",
+      "<path d='M48 5 69 29 69 80 60 89H36L27 80V29Z' fill='", color, "' fill-opacity='.9' stroke='white' stroke-opacity='.56' stroke-width='3'/>",
+      "<path d='M37 35H59V70H37ZM37 49H59M48 17V29' stroke='white' stroke-opacity='.64' stroke-width='3' stroke-linecap='round'/>",
       "<circle cx='48' cy='50' r='5' fill='white' fill-opacity='.8'/>",
       "</svg>"
     ].join(""));
@@ -2484,7 +2504,7 @@ void main() {
       return false;
     }
 
-    if (layerId === "lightning" || layerId === "wildfires" || layerId === "defenseAirspace" || layerId === "volumetricWeather") {
+    if (layerId === "volcanoes" || layerId === "lightning" || layerId === "wildfires" || layerId === "defenseAirspace" || layerId === "volumetricWeather") {
       return false;
     }
 
@@ -2774,8 +2794,9 @@ void main() {
   }
 
   function parseOmmRecords(records, limit) {
-    if (!Array.isArray(records) || !window.satellite || typeof window.satellite.json2satrec !== "function") {
-      return [];
+    if (!Array.isArray(records)) return [];
+    if (!window.satellite || typeof window.satellite.json2satrec !== "function") {
+      throw new Error("Satellite orbit decoder unavailable. Reload to retry loading the orbital library.");
     }
 
     var items = [];
@@ -2817,14 +2838,14 @@ void main() {
     var lon = normalizeLongitude(window.satellite.degreesLong(geodetic.longitude));
     var height = geodetic.height * 1000;
 
-    if (!Number.isFinite(lat) || !Number.isFinite(lon) || !Number.isFinite(height)) {
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || !Number.isFinite(height) || height < 0) {
       return null;
     }
 
     return {
       lon: lon,
       lat: lat,
-      height: clamp(height, 140000, 36000000),
+      height: height,
       heading: 0,
       status: "Propagated TLE"
     };
@@ -3375,6 +3396,7 @@ void main() {
   }
 
   function suppressGenericIntelEllipse(layerId, kind) {
+    if (layerId === "volcanoes" || layerId === "wildfires") return true;
     if (isDensityOnlyIntelLayer(layerId)) {
       return true;
     }
@@ -4216,7 +4238,7 @@ void main() {
       var lodLevel = currentLODLevel;
       
       if (lodLevel === 'close') {
-        for (var waveIdx = 0; waveIdx < 3; waveIdx++) {
+        for (let waveIdx = 0; waveIdx < 3; waveIdx++) {
           effects.push(viewer.entities.add({
             name: (item.name || "Earthquake") + " wave " + waveIdx,
             position: positionProperty,
@@ -4267,6 +4289,19 @@ void main() {
       }
     }
 
+    if (layerId === "volcanoes") {
+      effects.push(viewer.entities.add({
+        name: (item.name || "Volcano") + " · illustrative 3D marker",
+        position: Cesium.Cartesian3.fromDegrees(sample.lon, sample.lat, 1400),
+        cylinder: { length: 2800, topRadius: 180, bottomRadius: 2400, slices: 48,
+          material: Cesium.Color.fromCssColorString("#66564d"), outline: false,
+          distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 1800000) }
+      }));
+      if (item.showPlume === true) effects = effects.concat(Orion.Renderer.Environment.SmokeSystem.createSmokePlume(item.id || index, sample, 0.5, {
+        layerId: "volcanoes", mode: "volcano", radius: 6000, height: 6500, baseAltitude: 2900, opacity: 0.4
+      }));
+    }
+
     if (layerId === "wildfires") {
       effects.push(viewer.entities.add({
         name: (item.name || "Wildfire") + " fire core",
@@ -4284,9 +4319,9 @@ void main() {
       var smokeEffects = Orion.Renderer.Environment.SmokeSystem.createSmokePlume(item.id || index, sample, intensity, {
         layerId: "wildfires",
         mode: "wildfire",
-        radius: clamp(featureRadius(item, 72000), 38000, 150000),
-        height: clamp(featureHeight(item, 18000), 9000, 42000),
-        opacity: 0.2
+        radius: 4500,
+        height: 5000,
+        opacity: 0.42
       });
       smokeEffects.forEach(function(e) { effects.push(e); });
     }
@@ -4543,7 +4578,7 @@ void main() {
       entityOptions.billboard = {
         image: trackIcon(movingTrackType, definition.color),
         scale: 0.34,
-        rotation: Cesium.Math.toRadians(sample.heading || 0),
+        rotation: Cesium.Math.toRadians(-(sample.heading || 0)),
         alignedAxis: Cesium.Cartesian3.UNIT_Z,
         verticalOrigin: Cesium.VerticalOrigin.CENTER,
         horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
@@ -4857,7 +4892,7 @@ void main() {
           safeAssignBillboard(record.entity.billboard, trackIcon(trackType, definition.color));
           record.trackType = trackType;
         }
-        record.entity.billboard.rotation = Cesium.Math.toRadians(sample.heading || 0);
+        record.entity.billboard.rotation = Cesium.Math.toRadians(-(sample.heading || 0));
       }
     }
 
@@ -5196,10 +5231,10 @@ void main() {
         return {
           id: aircraft.icao24 || aircraft.callsign || ("aircraft-" + index),
           name: String(aircraft.callsign || aircraft.icao24 || "OpenSky aircraft").trim(),
-          kind: "moving",
+          kind: "observation",
           trackType: "air",
           category: aircraft.onGround ? "ground" : "aircraft",
-          aircraftType: aircraft.type || aircraft.aircraft_type || aircraft.category || "",
+          aircraftType: aircraft.aircraftType || aircraft.type || aircraft.aircraft_type || aircraft.category || "",
           registration: aircraft.registration || aircraft.icao24 || "",
           lat: Number(aircraft.lat),
           lon: Number(aircraft.lon),
@@ -5209,7 +5244,7 @@ void main() {
           status: aircraft.onGround ? "Ground" : "Airborne",
           source: aircraft.source || aircraft.provider || "OpenSky Network",
           provider: aircraft.provider || aircraft.source || "OpenSky Network",
-          timestamp: payload.time ? payload.time * 1000 : Date.now()
+          timestamp: Number.isFinite(aircraft.timestamp) ? aircraft.timestamp * 1000 : (payload.time ? payload.time * 1000 : null)
         };
       }).filter(function (item) {
         return Number.isFinite(item.lat) && Number.isFinite(item.lon);
@@ -5477,6 +5512,8 @@ void main() {
   };
 
   function refreshPlatformLayer(layerId, force) {
+    // Polling must not cancel an in-flight feed every time its timer fires.
+    if (providerRequestControllers[layerId]) return;
     var definition = platformLayerDefinitions[layerId];
     var feed = platformFeeds[layerId] || { items: [], status: "offline", loadedAt: 0, retryCount: 0 };
 
@@ -6154,8 +6191,9 @@ void main() {
           var feed = platformFeeds[layerId] || {};
           
           var dynamicRefreshMs = definition.refreshMs || 60000;
-          if (height > 5000000) dynamicRefreshMs *= 2.5;
-          else if (height > 1500000) dynamicRefreshMs *= 1.5;
+          var liveTransport = state.tracking.live && (layerId === "liveAircraft" || layerId === "marineTraffic");
+          if (!liveTransport && height > 5000000) dynamicRefreshMs *= 2.5;
+          else if (!liveTransport && height > 1500000) dynamicRefreshMs *= 1.5;
           
           var ageMs = now - (feed.loadedAt || 0);
           
@@ -6238,8 +6276,8 @@ void main() {
   }
 
   function applyWeatherRadarFrame(frame) {
-    applyNoaaRadarLayer();
-    return true;
+    if (!frame) return false;
+    return applyZoomWeatherLayer(Object.assign({}, platformFeeds.weatherRadar.payload, { frames: [frame], latest: frame }), "radar");
   }
 
   function createNoaaRadarProvider() {
@@ -6379,6 +6417,15 @@ void main() {
   }
 
   function refreshWeatherRadarLayer(force) {
+    if (state.weatherMapMode !== "radar") {
+      applyWeatherMapMode("radar");
+    } else {
+      setZoomWeatherMapMode("radar", force);
+    }
+    return;
+  }
+
+  function refreshLegacyWeatherRadarLayer(force) {
     var feed = platformFeeds.weatherRadar || {};
 
     if (!force && feed.loadedAt && Date.now() - feed.loadedAt < platformLayerDefinitions.weatherRadar.refreshMs) {
@@ -6422,6 +6469,23 @@ void main() {
       });
   }
 
+  var windField = null;
+  var weatherLoadController = null;
+  var weatherLive = true;
+  var weatherFrameBuffer = new Orion.FrameBuffer(512, (window.innerWidth < 760 ? 192 : 384) * 1024 * 1024);
+  var gibsFrameBuffer = new Orion.FrameBuffer(160);
+  var gibsPreloadCollector = null;
+  var weatherRefineTimer = null;
+  var weatherPlaybackQuality = 2048;
+  var weatherFrameRegion = null;
+  var weatherFrameAbort = new AbortController();
+  var weatherRenderToken = 0;
+  var weatherFramePending = false;
+  var weatherStagedFrames = new Map();
+  var weatherStageGeneration = 0;
+  var playbackPrepareToken = 0;
+  var playbackPreparing = false;
+  var timelineLoop = true;
   var zoomWeatherModeConfig = {
     radar: {
       label: "Radar",
@@ -6505,13 +6569,29 @@ void main() {
     }
   };
 
+  Object.keys(Orion.Weather.observed).forEach(function (mode) {
+    zoomWeatherModeConfig[mode] = Object.assign({}, zoomWeatherModeConfig.radar, {
+      label: mode === "satellite" ? "Satellite visible" : mode === "satellite-global" ? "Global infrared" : mode === "infrared" ? "Satellite infrared" : "Radar",
+      sourceLabel: "NOAA nowCOAST", alpha: mode === "radar" ? 0.8 : 1,
+      refreshMs: 120000, maxLevel: 7,
+      legend: mode === "radar" ? ["5", "35", "65 dBZ"] : ["Observed satellite imagery"],
+      gradient: mode === "radar" ? "linear-gradient(90deg,#55b6ff,#39d16c,#fff460,#f24135,#cd6fff)" : "linear-gradient(90deg,#111827,#94a3b8,#fff)"
+    });
+  });
+  Object.keys(Orion.Weather.fields).forEach(function (mode) {
+    if (!zoomWeatherModeConfig[mode]) zoomWeatherModeConfig[mode] = Object.assign({}, zoomWeatherModeConfig.temperature, {
+      label: { gusts: "Wind gusts", "feels-like": "Feels like", "wet-bulb": "Wet bulb", dewpoint: "Dew point", clouds: "Cloud cover", snow: "Snowfall", rain: "Rain" }[mode], endpointMode: mode,
+      legend: ["Model field", Orion.Weather.fields[mode][1]]
+    });
+  });
+
   function isZoomWeatherMapMode(mode) {
-    return !!zoomWeatherModeConfig[mode];
+    return !!zoomWeatherModeConfig[mode] && (mode !== "satellite" || state.satelliteSource === "public-geostat");
   }
 
   function zoomWeatherLayerAlpha(mode) {
     var config = zoomWeatherModeConfig[mode] || {};
-    return Math.max(0.05, Math.min(1, (config.alpha || 0.72) * state.radarOpacity));
+    return Math.max(0.05, Math.min(1, (config.alpha || 0.72) * (mode === "satellite" || mode === "infrared" || mode === "satellite-global" ? 1 : state.radarOpacity)));
   }
 
   var weatherFieldPalettes = {
@@ -6529,6 +6609,15 @@ void main() {
     humidity: [0, 100],
     pressure: [950, 1045]
   };
+
+  ["gusts", "feels-like", "wet-bulb", "dewpoint", "clouds", "snow", "rain"].forEach(function (mode) {
+    var source = { gusts: "wind", "feels-like": "temperature", "wet-bulb": "temperature", dewpoint: "temperature", clouds: "humidity", snow: "precipitation", rain: "precipitation" }[mode];
+    weatherFieldPalettes[mode] = weatherFieldPalettes[source];
+    weatherFieldDomains[mode] = weatherFieldDomains[source];
+    zoomWeatherModeConfig[mode].gradient = zoomWeatherModeConfig[source].gradient;
+    zoomWeatherModeConfig[mode].legend = zoomWeatherModeConfig[source].legend.slice();
+    if (mode === "snow") zoomWeatherModeConfig[mode].legend = ["0", "5", "10 cm/h"];
+  });
 
   function weatherFieldColor(mode, value) {
     var palette = weatherFieldPalettes[mode] || weatherFieldPalettes.wind;
@@ -6549,7 +6638,7 @@ void main() {
     return palette[palette.length - 1][1];
   }
 
-  function buildWeatherFieldTexture(payload, mode) {
+  function buildWeatherFieldTexture(payload, mode, region) {
     var grid = payload && payload.grid;
     var gridWidth = Number(grid && grid.width);
     var gridHeight = Number(grid && grid.height);
@@ -6559,28 +6648,36 @@ void main() {
       return null;
     }
 
+    var wrapsLongitude = grid.west === -170 && grid.east === 170 && gridWidth === 18;
     var canvas = document.createElement("canvas");
-    canvas.width = 720;
-    canvas.height = 320;
+    var bounds = region && region[2] - region[0] < 160 ? region.slice() : [wrapsLongitude ? -180 : Number(grid.west), Number(grid.south), wrapsLongitude ? 180 : Number(grid.east), Number(grid.north)];
+    bounds[1] = Math.max(Number(grid.south), bounds[1]);
+    bounds[3] = Math.min(Number(grid.north), bounds[3]);
+    if (bounds[3] <= bounds[1]) return null;
+    canvas.width = bounds[2] - bounds[0] < 160 ? 1024 : 720;
+    canvas.height = Math.max(256, Math.min(1024, Math.round(canvas.width * (bounds[3] - bounds[1]) / (bounds[2] - bounds[0]))));
     var context = canvas.getContext("2d", { alpha: true });
     var image = context.createImageData(canvas.width, canvas.height);
 
     function gridValue(row, column) {
-      var value = Number(values[row * gridWidth + column]);
-      return Number.isFinite(value) ? value : null;
+      var value = values[row * gridWidth + column];
+      return typeof value === "number" && Number.isFinite(value) ? value : null;
     }
 
     for (var y = 0; y < canvas.height; y += 1) {
-      var gridY = (1 - y / (canvas.height - 1)) * (gridHeight - 1);
+      var latitude = bounds[3] - y / (canvas.height - 1) * (bounds[3] - bounds[1]);
+      var gridY = clamp((latitude - Number(grid.south)) / (Number(grid.north) - Number(grid.south)) * (gridHeight - 1), 0, gridHeight - 1);
       var y0 = Math.floor(gridY);
       var y1 = Math.min(gridHeight - 1, y0 + 1);
       var fy = gridY - y0;
 
       for (var x = 0; x < canvas.width; x += 1) {
-        var gridX = x / (canvas.width - 1) * (gridWidth - 1);
-        var x0 = Math.floor(gridX);
-        var x1 = Math.min(gridWidth - 1, x0 + 1);
-        var fx = gridX - x0;
+        var longitude = bounds[0] + x / (canvas.width - 1) * (bounds[2] - bounds[0]);
+        var gridX = wrapsLongitude ? (longitude + 180) / 360 * gridWidth - 0.5 : clamp((longitude - Number(grid.west)) / (Number(grid.east) - Number(grid.west)) * (gridWidth - 1), 0, gridWidth - 1);
+        var column = Math.floor(gridX);
+        var x0 = wrapsLongitude ? (column + gridWidth) % gridWidth : column;
+        var x1 = wrapsLongitude ? (x0 + 1) % gridWidth : Math.min(gridWidth - 1, x0 + 1);
+        var fx = gridX - column;
         var samples = [
           [gridValue(y0, x0), (1 - fx) * (1 - fy)],
           [gridValue(y0, x1), fx * (1 - fy)],
@@ -6610,13 +6707,8 @@ void main() {
 
     context.putImageData(image, 0, 0);
     return {
-      url: canvas.toDataURL("image/png"),
-      rectangle: Cesium.Rectangle.fromDegrees(
-        Number(grid.west) || -180,
-        Number(grid.south) || -80,
-        Number(grid.east) || 180,
-        Number(grid.north) || 80
-      )
+      canvas: canvas,
+      rectangle: Cesium.Rectangle.fromDegrees.apply(Cesium.Rectangle, bounds)
     };
   }
 
@@ -6749,7 +6841,7 @@ void main() {
   }
 
   function startWeatherModeEffects(mode) {
-    var config = zoomWeatherModeConfig[mode] || {};
+    var config = {};
 
     if (weatherEffectFrame) {
       window.cancelAnimationFrame(weatherEffectFrame);
@@ -6800,11 +6892,16 @@ void main() {
     weatherModeLegend.className = "weather-mode-legend hidden";
     weatherModeLegend.setAttribute("aria-live", "polite");
     weatherModeLegend.innerHTML = [
-      "<div class='weather-mode-legend-title'></div>",
+      "<button type='button' class='weather-legend-toggle' aria-expanded='false' aria-label='Expand map legend'><span class='weather-mode-legend-title'></span><span aria-hidden='true'> ⓘ</span></button>",
       "<div class='weather-mode-legend-meta'></div>",
       "<div class='weather-mode-legend-gradient'></div>",
       "<div class='weather-mode-legend-scale'></div>"
     ].join("");
+    weatherModeLegend.querySelector("button").addEventListener("click", function () {
+      var expanded = weatherModeLegend.classList.toggle("expanded");
+      this.setAttribute("aria-expanded", String(expanded));
+      this.setAttribute("aria-label", expanded ? "Collapse map legend" : "Expand map legend");
+    });
     document.body.appendChild(weatherModeLegend);
     return weatherModeLegend;
   }
@@ -6828,8 +6925,8 @@ void main() {
     var valid = latest.valid_time || latest.time || "";
     var scaleValues = config.legend || [];
 
-    title.textContent = config.label + " Live";
-    meta.textContent = (payload && payload.provider ? payload.provider : config.sourceLabel) + (valid ? " / " + valid.replace("T", " ").replace("Z", " UTC") : "");
+    title.textContent = config.label + " · " + (payload && payload.mode === "forecast" ? "Model" : "Observed");
+    meta.textContent = (payload && payload.coverage ? payload.coverage : config.sourceLabel) + (valid ? " / " + valid.replace("T", " ").replace("Z", " UTC") : "") + (payload && payload.context ? " · Global IR: " + payload.context.time.replace("T", " ").replace("Z", " UTC") : "");
     gradient.style.background = config.gradient;
     scale.innerHTML = scaleValues.map(function (label) {
       return "<span>" + escapeHtml(label) + "</span>";
@@ -6839,34 +6936,13 @@ void main() {
   }
 
   function zoomWeatherFrames(payload) {
-    var frames = payload && Array.isArray(payload.frames) ? payload.frames.slice() : [];
-
-    if (payload && payload.latest && frames.indexOf(payload.latest) === -1) {
-      frames.push(payload.latest);
-    }
-
-    return frames.filter(function (frame) {
-      return !!frame && !!frameTemplate(frame) && Number.isFinite(frameTimeMs(frame));
-    }).sort(function (a, b) {
-      return frameTimeMs(a) - frameTimeMs(b);
-    });
+    return Orion.Weather.frames(payload || {});
   }
 
   function resolveZoomWeatherPayloadForDate(payload, mode, date) {
     var frames = zoomWeatherFrames(payload);
-    var selection = selectTemporalFrame(frames, date, mode === "radar");
-    var selectedFrame = selection && selection.frame ? selection.frame : payload.latest;
-    var selectedTemplate = frameTemplate(selectedFrame) || payload.tile_template;
-
-    if (!selectedTemplate) {
-      return payload;
-    }
-
-    return Object.assign({}, payload, {
-      latest: selectedFrame || payload.latest,
-      tile_template: selectedTemplate,
-      selected_time: selectedFrame ? selectedFrame.valid_time || selectedFrame.time || null : null
-    });
+    var selected = frames[Orion.Weather.index(frames, date)];
+    return selected ? Object.assign({}, payload, selected, { latest: selected, selected_time: selected.time, context: selected.context || null }) : payload;
   }
 
   function syncTimelineBoundsFromZoomPayload(payload, mode, preferLatest) {
@@ -6882,12 +6958,16 @@ void main() {
     activeTimelineFrameBounds = {
       mode: mode,
       min: bounds.min,
-      max: bounds.max
+      max: bounds.max,
+      frames: zoomWeatherFrames(payload)
     };
 
-    if (state.date < bounds.min || state.date > bounds.max) {
-      state.date = preferLatest ? bounds.max : clampTimelineDate(state.date);
+    if (preferLatest && weatherLive) {
+      state.date = new Date((payload.latest || {}).time || bounds.max);
+    } else {
+      state.date = clampTimelineDate(state.date);
     }
+    state.timelineMode = "updates";
 
     if (state.compareDate < bounds.min || state.compareDate > bounds.max) {
       state.compareDate = bounds.min;
@@ -6902,6 +6982,17 @@ void main() {
   }
 
   function clearZoomWeatherLayer() {
+    window.clearTimeout(weatherRefineTimer);
+    weatherFrameBuffer.pin([]);
+    clearWeatherStaging();
+    ++weatherRenderToken;
+    weatherFramePending = false;
+    weatherFrameAbort.abort();
+    weatherFrameAbort = new AbortController();
+    weatherFrameRegion = null;
+    if (windField) { windField.destroy(); windField = null; }
+    ++zoomWeatherRequestToken;
+    if (weatherLoadController) weatherLoadController.abort();
     if (!viewer) {
       return;
     }
@@ -6945,84 +7036,303 @@ void main() {
     viewer.scene.requestRender();
   }
 
-  function applyZoomWeatherLayer(payload, mode) {
-    if (!viewer || !payload) {
-      return false;
+  function currentWeatherRegion() {
+    // At globe scale a viewport crop becomes a visible rectangular decal when rotating.
+    // Keep complete satellite coverage; reserve viewport crops for local inspection.
+    if (state.weatherMapMode !== "radar" && viewer.camera.positionCartographic.height >= 8000000) {
+      weatherFrameRegion = [-180, -85, 180, 85];
+      return weatherFrameRegion;
     }
+    if (weatherFrameRegion) return weatherFrameRegion;
+    var rect = viewer.camera.computeViewRectangle(viewer.scene.globe.ellipsoid);
+    var bounds = rect ? [rect.west, rect.south, rect.east, rect.north].map(Cesium.Math.toDegrees) : [-180, -85, 180, 85];
+    if (bounds[2] < bounds[0] || bounds[2] - bounds[0] > 160) bounds = [-180, -85, 180, 85];
+    var padX = Math.max(0.02, (bounds[2] - bounds[0]) * 0.2);
+    var padY = Math.max(0.02, (bounds[3] - bounds[1]) * 0.2);
+    bounds = [Math.max(-180, Math.floor((bounds[0] - padX) * 100) / 100), Math.max(-85, Math.floor((bounds[1] - padY) * 100) / 100), Math.min(180, Math.ceil((bounds[2] + padX) * 100) / 100), Math.min(85, Math.ceil((bounds[3] + padY) * 100) / 100)];
+    weatherFrameRegion = bounds;
+    return bounds;
+  }
 
+  function bufferedWeatherKey(payload, mode, quality) {
+    return [mode, payload.coverage || payload.provider || "", payload.selected_time || payload.time || payload.generated,
+      payload.wms ? (quality || 1024) + ":" + currentWeatherRegion().join(",") + ":" + (payload.context ? payload.context.time : "regional") : "grid:" + (payload.generated || "") + ":" + currentWeatherRegion().join(",")].join(":");
+  }
+
+  async function decodeWeatherFrame(payload, mode, quality, region) {
+    if (payload.grid) {
+      // Yield between rasterizations so buffering does not freeze the controls.
+      await new Promise(function (resolve) { window.setTimeout(resolve, 0); });
+      var texture = buildWeatherFieldTexture(payload, mode, region || currentWeatherRegion());
+      if (!texture) throw new Error("No usable forecast grid");
+      return { image: texture.canvas, rectangle: texture.rectangle };
+    }
+    if (!payload.wms) throw new Error("No timestamped imagery for this mode");
+    var bounds = region || currentWeatherRegion().slice();
+    var width = quality || 1024;
+    var height = Math.max(256, Math.min(width / 2, Math.round(width * (bounds[3] - bounds[1]) / (bounds[2] - bounds[0]))));
+    var params = new URLSearchParams({ service: "WMS", version: "1.1.1", request: "GetMap", layers: payload.wms.layers,
+      styles: "", srs: "EPSG:4326", bbox: bounds.join(","), width: width, height: height, format: "image/png", transparent: "true",
+      time: payload.selected_time || payload.time });
+    var image = await Orion.FrameBuffer.decode(payload.wms.url + "?" + params, weatherFrameAbort.signal);
+    if (payload.context) {
+      var contextParams = new URLSearchParams(params);
+      contextParams.set("layers", payload.context.layers);
+      contextParams.set("time", payload.context.time);
+      var contextUrl = payload.context.url + "?" + contextParams;
+      var contextImage = await weatherFrameBuffer.get("context:" + contextUrl, function () {
+        return Orion.FrameBuffer.decode(contextUrl, weatherFrameAbort.signal);
+      });
+      var canvas = document.createElement("canvas"); canvas.width = width; canvas.height = height;
+      var ctx = canvas.getContext("2d");
+      ctx.drawImage(contextImage, 0, 0, width, height);
+      if (mode === "satellite" || mode === "infrared") {
+        // Visible imagery cannot observe nighttime clouds. Use the explicitly labeled
+        // infrared context there instead of covering the globe with a dark sector.
+        var visible = document.createElement("canvas"); visible.width = width; visible.height = height;
+        var vc = visible.getContext("2d"); vc.drawImage(image, 0, 0, width, height);
+        var pixels = vc.getImageData(0, 0, width, height);
+        var coverage = new Uint8Array(width * height);
+        for (var i = 0; i < coverage.length; i++) coverage[i] = pixels.data[i * 4 + 3];
+        var time = new Date(payload.selected_time || payload.time);
+        var day = Math.floor((+time - Date.UTC(time.getUTCFullYear(), 0, 0)) / MS_PER_DAY);
+        var declination = 23.44 * Math.PI / 180 * Math.sin(2 * Math.PI * (284 + day) / 365);
+        var utcHours = time.getUTCHours() + time.getUTCMinutes() / 60;
+        for (var y = 0; y < height; y++) {
+          var lat = (bounds[3] - y / height * (bounds[3] - bounds[1])) * Math.PI / 180;
+          for (var x = 0; x < width; x++) {
+            var lon = bounds[0] + x / width * (bounds[2] - bounds[0]);
+            var hourAngle = (utcHours * 15 + lon - 180) * Math.PI / 180;
+            var elevation = Math.sin(lat) * Math.sin(declination) + Math.cos(lat) * Math.cos(declination) * Math.cos(hourAngle);
+            var edge = 1;
+            // Feather only source-coverage edges, retaining measured values in the interior.
+            for (var d = 1; d <= 8; d *= 2) {
+              if ((x >= d && coverage[y * width + x - d] === 0) || (x + d < width && coverage[y * width + x + d] === 0) ||
+                  (y >= d && coverage[(y - d) * width + x] === 0) || (y + d < height && coverage[(y + d) * width + x] === 0)) edge = Math.min(edge, d / 8);
+            }
+            pixels.data[(y * width + x) * 4 + 3] *= edge * (mode === "satellite" ? Math.max(0, Math.min(1, elevation / 0.15)) : 1);
+          }
+        }
+        vc.putImageData(pixels, 0, 0);
+        ctx.drawImage(visible, 0, 0);
+      } else { ctx.drawImage(image, 0, 0, width, height); }
+      image = canvas;
+    }
+    return { image: image, rectangle: Cesium.Rectangle.fromDegrees.apply(Cesium.Rectangle, bounds) };
+  }
+
+  function clearWeatherStaging() {
+    weatherStageGeneration++;
+    weatherStagedFrames.forEach(function (entry) {
+      if (entry.layer && imageryLayerExists(entry.layer)) viewer.imageryLayers.remove(entry.layer, true);
+    });
+    weatherStagedFrames.clear();
+  }
+
+  function stageWeatherFrame(payload, mode, key, quality) {
+    if (weatherStagedFrames.has(key)) return weatherStagedFrames.get(key).promise;
+    var generation = weatherStageGeneration;
+    var entry = { layer: null, promise: null };
+    var region = currentWeatherRegion().slice();
+    entry.promise = weatherFrameBuffer.get(key, function () { return decodeWeatherFrame(payload, mode, quality, region); }).then(function (frame) {
+      if (generation !== weatherStageGeneration || entry.cancelled) return null;
+      var layer = viewer.imageryLayers.addImageryProvider(Orion.FrameBuffer.provider(frame.image, frame.rectangle, payload.provider || "NOAA nowCOAST"));
+      layer.orionKey = "zoomWeatherBuffered";
+      layer.alpha = 0.000001;
+      entry.layer = layer;
+      viewer.scene.requestRender();
+      return layer;
+    }).catch(function (error) { weatherStagedFrames.delete(key); throw error; });
+    weatherStagedFrames.set(key, entry);
+    return entry.promise;
+  }
+
+  function stageNextWeatherFrames(payload, mode) {
+    var frames = zoomWeatherFrames(payload), position = Orion.Weather.index(frames, state.date);
+    if (position < 0) return;
+    var keys = [];
+    var offsets = state.playing ? [1, 2] : [-1, 1, -2, 2];
+    for (var step of offsets) {
+      var next = position + step;
+      if (next < 0 || next >= frames.length) { if (!timelineLoop) continue; next = (next + frames.length) % frames.length; }
+      var sample = Object.assign({}, payload, frames[next], { selected_time: frames[next].time, context: frames[next].context || null });
+      var tier = sample.wms ? (state.playing ? weatherPlaybackQuality : state.qualityMode === "saving" ? 1024 : 2048) : undefined;
+      var key = bufferedWeatherKey(sample, mode, tier);
+      keys.push(key);
+      stageWeatherFrame(sample, mode, key, tier).catch(function () { /* Foreground playback reports a failed frame if selected. */ });
+    }
+    weatherStagedFrames.forEach(function (entry, key) {
+      if (keys.indexOf(key) !== -1) return;
+      if (entry.layer && entry.layer.orionRenderToken === weatherRenderToken && weatherFramePending) return;
+      entry.cancelled = true;
+      if (entry.layer && imageryLayerExists(entry.layer)) viewer.imageryLayers.remove(entry.layer, true);
+      weatherStagedFrames.delete(key);
+    });
+  }
+
+  function waitForWeatherUpload(layer, token) {
+    if (!state.cameraMoving && Orion.FrameBuffer.visibleReady(layer, viewer.scene.globe)) return Promise.resolve(token === weatherRenderToken);
+    return new Promise(function (resolve, reject) {
+      var started = performance.now(), renders = 0;
+      var remove = viewer.scene.postRender.addEventListener(function () {
+        if (token !== weatherRenderToken || !imageryLayerExists(layer)) { remove(); resolve(false); return; }
+        if (state.cameraMoving) { started = performance.now(); viewer.scene.requestRender(); return; }
+        // The decoded frame is staged at a nonzero alpha so Cesium uploads its texture.
+        // Keep the preceding frame visible until the globe has finished that upload.
+        if (++renders > 1 && Orion.FrameBuffer.visibleReady(layer, viewer.scene.globe)) { remove(); resolve(true); return; }
+        if (performance.now() - started > 30000) { remove(); reject(new Error("Map texture upload timed out")); return; }
+        viewer.scene.requestRender();
+      });
+      viewer.scene.requestRender();
+    });
+  }
+
+  function scheduleWeatherRefinement(payload, mode, quality) {
+    if (payload.wms && !state.playing && !playbackPreparing && !state.cameraMoving && state.qualityMode !== "saving" && quality !== 4096) {
+      var selectedTime = +state.date;
+      weatherRefineTimer = window.setTimeout(function () {
+        if (!state.playing && !state.cameraMoving && selectedTime === +state.date && mode === state.weatherMapMode) {
+          applyZoomWeatherLayer(payload, mode, quality === 2048 ? 4096 : 2048);
+        }
+      }, 650);
+    }
+  }
+
+  function applyZoomWeatherLayer(payload, mode, quality) {
+    window.clearTimeout(weatherRefineTimer);
+    if (!viewer || !payload) return Promise.resolve(false);
     payload = resolveZoomWeatherPayloadForDate(payload, mode, state.date);
-
-    var fieldTexture = payload.grid ? buildWeatherFieldTexture(payload, mode) : null;
-    if (!payload.tile_template && !fieldTexture) {
-      return false;
+    if (!quality && payload.wms) quality = state.playing ? weatherPlaybackQuality : state.qualityMode === "saving" ? 1024 : 2048;
+    var key = bufferedWeatherKey(payload, mode, quality);
+    // Refreshes of the same observation must not replace an already sharp view
+    // with its smaller preview. Different viewports still request their own image.
+    if (payload.wms && zoomWeatherLayer && zoomWeatherMode === mode && zoomWeatherLayer.orionFrameTime === payload.selected_time &&
+        zoomWeatherLayer.orionFrameResolution > quality && state.qualityMode !== "saving" &&
+        Cesium.Rectangle.equals(zoomWeatherLayer.imageryProvider.rectangle, Cesium.Rectangle.fromDegrees.apply(Cesium.Rectangle, currentWeatherRegion()))) {
+      quality = zoomWeatherLayer.orionFrameResolution;
+      key = bufferedWeatherKey(payload, mode, quality);
     }
-
-    var config = zoomWeatherModeConfig[mode] || zoomWeatherModeConfig.wind;
-    var frameKey = payload.tile_template || ["grid", mode, payload.generated || "current"].join(":");
-
-    if (zoomWeatherLayer && imageryLayerExists(zoomWeatherLayer) && zoomWeatherLayer.orionFrameKey === frameKey) {
-      zoomWeatherLayer.alpha = zoomWeatherLayerAlpha(mode);
-      zoomWeatherLayer.brightness = config.brightness || 1;
-      zoomWeatherLayer.contrast = config.contrast || 1;
-      zoomWeatherLayer.saturation = config.saturation || 1;
-      zoomWeatherMode = mode;
-      raiseOperationalLayers();
-      startWeatherModeEffects(mode);
+    if (zoomWeatherLayer && zoomWeatherLayer.orionFrameKey === key) {
+      ++weatherRenderToken;
+      weatherFramePending = false;
+      platformFeeds.weatherRadar.status = "online";
       updateWeatherModeLegend(mode, payload);
+      scheduleWeatherRefinement(payload, mode, quality);
+      return Promise.resolve(true);
+    }
+    var token = ++weatherRenderToken;
+    weatherFramePending = true;
+    var incoming = null;
+    var task = stageWeatherFrame(payload, mode, key, quality).then(async function (layer) {
+      if (!layer || token !== weatherRenderToken) return false;
+      incoming = layer;
+      incoming.orionRenderToken = token;
+      if (!await waitForWeatherUpload(incoming, token)) return false;
+      weatherStagedFrames.delete(key);
+      var outgoing = zoomWeatherLayer;
+      var loopBoundary = state.playing && timelineLoop && outgoing && Date.parse(outgoing.orionFrameTime) > Date.parse(payload.selected_time);
+      if (loopBoundary) {
+        // Blend the first complete frame over the last one. Never fade both toward the base.
+        viewer.imageryLayers.raiseToTop(incoming);
+        var held = incoming, started = performance.now(), targetAlpha = zoomWeatherLayerAlpha(mode);
+        await new Promise(function (resolve) {
+          function blend(now) {
+            if (token !== weatherRenderToken || !imageryLayerExists(held)) { resolve(); return; }
+            var t = Math.min(1, (now - started) / 220);
+            held.alpha = Math.max(0.000001, targetAlpha * t);
+            viewer.scene.requestRender();
+            if (t < 1) window.requestAnimationFrame(blend); else resolve();
+          }
+          window.requestAnimationFrame(blend);
+        });
+        if (token !== weatherRenderToken) return false;
+      }
+      incoming.orionKey = "zoomWeather";
+      incoming.orionFrameKey = key;
+      incoming.orionFrameTime = payload.selected_time;
+      incoming.orionFrameResolution = quality || 0;
+      incoming.alpha = zoomWeatherLayerAlpha(mode);
+      incoming.brightness = 1; incoming.contrast = 1; incoming.saturation = 1;
+      zoomWeatherLayer = incoming;
+      incoming = null;
+      zoomWeatherMode = mode;
+      if (outgoing && imageryLayerExists(outgoing)) viewer.imageryLayers.remove(outgoing, true);
+      if (mode === "wind" && payload.winds) {
+        if (!windField) windField = new Orion.WindField(viewer);
+        windField.setFrame(payload.winds);
+      } else if (windField) { windField.destroy(); windField = null; }
+      if (platformFeeds.weatherRadar.payload && platformFeeds.weatherRadar.payload.weather_mode === mode) platformFeeds.weatherRadar.status = "online";
+      updateWeatherModeLegend(mode, payload);
+      syncTimelineModeControls();
+      updateTelemetry();
+      raiseOperationalLayers();
+      if (quality !== 4096 || state.playing) stageNextWeatherFrames(payload, mode);
+      scheduleWeatherRefinement(payload, mode, quality);
       viewer.scene.requestRender();
       return true;
-    }
+    }).catch(function (error) {
+      if (token === weatherRenderToken) {
+        var retainedFrameReady = zoomWeatherLayer && imageryLayerExists(zoomWeatherLayer) &&
+          Orion.FrameBuffer.visibleReady(zoomWeatherLayer, viewer.scene.globe);
+        var uploadTimeout = error && error.message === "Map texture upload timed out";
 
-    if (zoomWeatherLayer && imageryLayerExists(zoomWeatherLayer)) {
-      var outgoingWeatherLayer = zoomWeatherLayer;
-      outgoingWeatherLayer.alpha = Math.max(0.04, outgoingWeatherLayer.alpha * 0.42);
-      zoomWeatherPreviousLayers.push(outgoingWeatherLayer);
-      window.setTimeout(function () {
-        if (outgoingWeatherLayer && imageryLayerExists(outgoingWeatherLayer)) {
-          viewer.imageryLayers.remove(outgoingWeatherLayer, true);
-          viewer.scene.requestRender();
+        if (uploadTimeout && retainedFrameReady) {
+          platformFeeds.weatherRadar.status = "online";
+          delete platformFeeds.weatherRadar.error;
+          document.getElementById("frameBufferStatus").textContent = "Next frame delayed — keeping the last complete map while playback continues.";
+        } else {
+          platformFeeds.weatherRadar.status = "unavailable";
+          platformFeeds.weatherRadar.error = error.message;
+          document.getElementById("frameBufferStatus").textContent = "Frame unavailable — keeping the last loaded image. Retry Play or choose another time.";
+          setPlaying(false);
         }
-        zoomWeatherPreviousLayers = zoomWeatherPreviousLayers.filter(function (layer) {
-          return layer !== outgoingWeatherLayer;
+      }
+      return false;
+    }).finally(function () {
+      // A repeated request can adopt this staged layer while the cancelled task
+      // unwinds. Only its current owner may dispose it.
+      if (incoming && incoming !== zoomWeatherLayer && incoming.orionRenderToken === token) {
+        if (imageryLayerExists(incoming)) viewer.imageryLayers.remove(incoming, true);
+        if (weatherStagedFrames.get(key) && weatherStagedFrames.get(key).layer === incoming) weatherStagedFrames.delete(key);
+      }
+      if (token === weatherRenderToken) weatherFramePending = false;
+    });
+    return task;
+  }
+
+  async function prepareGibsPlayback(token) {
+    var urls = new Set();
+    gibsPreloadCollector = urls;
+    try {
+      for (var t = +timelineMinDate(); t <= +timelineMaxDate(); t += MS_PER_DAY) {
+        Object.keys(layerDefinitions).forEach(function (key) {
+          if (state.layers[key] && layerDefinitions[key].timed && key !== "goesComposite") createGibsProvider(layerDefinitions[key], new Date(t));
         });
-      }, 450);
-      zoomWeatherLayer = null;
-    }
+      }
+    } finally { gibsPreloadCollector = null; }
+    var status = document.getElementById("frameBufferStatus");
+    status.textContent = "Preparing " + urls.size + " daily images…";
+    await gibsFrameBuffer.prime(Array.from(urls), function (url) { return Orion.FrameBuffer.decode(url); },
+      function (done, total) { status.textContent = "Buffered " + done + " / " + total + " daily images"; },
+      function () { return token !== playbackPrepareToken; });
+  }
 
-    var weatherProvider = fieldTexture
-      ? new Cesium.SingleTileImageryProvider({
-          url: fieldTexture.url,
-          rectangle: fieldTexture.rectangle,
-          credit: payload.provider || config.sourceLabel || "Weather provider"
-        })
-      : new Cesium.UrlTemplateImageryProvider({
-          url: payload.tile_template,
-          tilingScheme: new Cesium.WebMercatorTilingScheme(),
-          minimumLevel: 0,
-          maximumLevel: config.maxLevel || 8,
-          credit: payload.provider || config.sourceLabel || "Weather provider"
-        });
-    zoomWeatherLayer = viewer.imageryLayers.addImageryProvider(weatherProvider);
-    zoomWeatherLayer.orionKey = "zoomWeather";
-    zoomWeatherLayer.orionFrameKey = frameKey;
-    zoomWeatherLayer.orionFrameTime = payload.selected_time || (payload.latest ? payload.latest.valid_time || payload.latest.time : null);
-
-    if (zoomWeatherLayer.imageryProvider && zoomWeatherLayer.imageryProvider.errorEvent) {
-      zoomWeatherLayer.imageryProvider.errorEvent.addEventListener(function (tileProviderError) {
-        tileProviderError.retry = tileProviderError.timesRetried < 1;
-      });
-    }
-
-    zoomWeatherLayer.alpha = zoomWeatherLayerAlpha(mode);
-    zoomWeatherLayer.brightness = config.brightness || 1;
-    zoomWeatherLayer.contrast = config.contrast || 1;
-    zoomWeatherLayer.saturation = config.saturation || 1;
-    zoomWeatherMode = mode;
-    raiseOperationalLayers();
-    startWeatherModeEffects(mode);
-    updateWeatherModeLegend(mode, payload);
-    viewer.scene.requestRender();
-    return true;
+  async function prepareWeatherPlayback(token) {
+    var feed = platformFeeds.weatherRadar.payload, mode = state.weatherMapMode;
+    if (!feed || !isZoomWeatherMapMode(mode)) return;
+    weatherPlaybackQuality = state.qualityMode === "saving" ? 1024 : state.qualityMode === "detail" ? 4096 : 2048;
+    var lookup = new Map();
+    var region = currentWeatherRegion().slice();
+    zoomWeatherFrames(feed).forEach(function (frame) {
+      var payload = Object.assign({}, feed, frame, { selected_time: frame.time, context: frame.context || null });
+      lookup.set(bufferedWeatherKey(payload, mode, payload.wms ? weatherPlaybackQuality : undefined), payload);
+    });
+    weatherFrameBuffer.pin(Array.from(lookup.keys()).slice(0, 2));
+    var status = document.getElementById("frameBufferStatus");
+    status.textContent = "Preparing " + lookup.size + " frames…";
+    await weatherFrameBuffer.prime(Array.from(lookup.keys()), function (key) { return decodeWeatherFrame(lookup.get(key), mode, lookup.get(key).wms ? weatherPlaybackQuality : undefined, region); },
+      function (done, total) { status.textContent = "Buffered " + done + " / " + total + " frames"; },
+      function () { return token !== playbackPrepareToken; });
   }
 
   function refreshZoomWeatherTimelineFrame() {
@@ -7121,16 +7431,31 @@ void main() {
 
   function fetchJsonEndpoint(endpoint, options) {
     options = options || {};
-    var fetchOptions = { headers: { Accept: "application/json" } };
-    if (options.signal) {
-      fetchOptions.signal = options.signal;
+    if (endpoint === "/live/marine") return Orion.Marine.load();
+    var directCategory = null;
+    if (isStaticHostMode()) {
+      var parsedEndpoint = new URL(endpoint, window.location.origin);
+      if (parsedEndpoint.pathname === "/live/earthquakes") {
+        var requestedFeed = parsedEndpoint.searchParams.get("feed") || "2.5_day";
+        if (!/^(all|2\.5|4\.5)_(day|week)$/.test(requestedFeed)) requestedFeed = "2.5_day";
+        endpoint = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/" + requestedFeed + ".geojson";
+      } else if (parsedEndpoint.pathname === "/live/hazards" || parsedEndpoint.pathname === "/live/wildfires") {
+        directCategory = parsedEndpoint.pathname === "/live/wildfires" ? "wildfires" : "volcanoes";
+        endpoint = directCategory === "volcanoes" ? "https://volcanoes.usgs.gov/vsc/api/volcanoApi/geojson" : "https://eonet.gsfc.nasa.gov/api/v3/events?category=wildfires&days=30&status=open&limit=200";
+      }
     }
+    var fetchOptions = { headers: { Accept: "application/json" } };
+    fetchOptions.signal = options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(60000)]) : AbortSignal.timeout(60000);
     return fetch(staticDataUrlForEndpoint(endpoint), fetchOptions)
       .then(function (response) {
         if (!response.ok) {
           throw new Error("HTTP " + response.status);
         }
         return response.json();
+      }).then(function (payload) {
+        if (directCategory) return directCategory === "volcanoes" ? Orion.Hazards.volcanoes(payload) : Orion.Hazards.normalize(payload, directCategory);
+        if (endpoint.indexOf("https://earthquake.usgs.gov/") === 0) return Object.assign({}, payload, { source: "USGS", generated: payload.metadata && payload.metadata.generated, mode: "live", fallback: false });
+        return payload;
       });
   }
 
@@ -7216,31 +7541,9 @@ void main() {
   }
 
   function fetchZoomEarthWeatherPayload(mode) {
-    var config = zoomWeatherModeConfig[mode];
-
-    if (!isStaticHostMode()) {
-      return fetch("/live/weather/fields?mode=" + encodeURIComponent(config.endpointMode), { headers: { Accept: "application/json" } })
-        .then(function (response) {
-          if (!response.ok) {
-            throw new Error("Weather field provider unavailable");
-          }
-          return response.json();
-        });
-    }
-
-    return fetch("pages-data/live/weather/field-" + encodeURIComponent(mode) + ".json", { headers: { Accept: "application/json" } })
-      .then(function (response) {
-        if (!response.ok) {
-          throw new Error("Weather field pages snapshot unavailable");
-        }
-        return response.json();
-      })
-      .then(function (payload) {
-        if (!payload || (!payload.tile_template && !payload.grid)) {
-          throw new Error((payload && payload.message) || "Weather field map unavailable");
-        }
-        return payload;
-      });
+    if (weatherLoadController) weatherLoadController.abort();
+    weatherLoadController = new AbortController();
+    return Orion.Weather.load(mode, weatherLoadController.signal, isStaticHostMode(), document.getElementById("forecastModel").value);
   }
 
   function zoomWeatherRefreshInterval(mode, payload) {
@@ -7261,7 +7564,7 @@ void main() {
     }
 
     zoomWeatherTimer = window.setInterval(function () {
-      if (isZoomWeatherMapMode(state.weatherMapMode)) {
+      if (isZoomWeatherMapMode(state.weatherMapMode) && !state.playing && !playbackPreparing) {
         setZoomWeatherMapMode(state.weatherMapMode, true);
       }
     }, zoomWeatherRefreshInterval(mode, payload));
@@ -7277,44 +7580,35 @@ void main() {
     var token = ++zoomWeatherRequestToken;
     restartZoomWeatherTimer(mode);
 
-    platformFeeds.weatherRadar = {
-      status: "loading",
-      loadedAt: Date.now(),
-      items: []
-    };
+    platformFeeds.weatherRadar = Object.assign({}, platformFeeds.weatherRadar, { status: "loading" });
     updatePlatformTelemetry();
 
     fetchZoomEarthWeatherPayload(mode)
-      .then(function (payload) {
+      .then(async function (payload) {
         if (token !== zoomWeatherRequestToken || state.weatherMapMode !== mode) {
           return;
         }
 
         platformFeeds.weatherRadar = {
-          status: "online",
+          status: "loading",
           loadedAt: Date.now(),
           items: payload.frames || [],
           payload: payload
         };
         syncTimelineBoundsFromZoomPayload(payload, mode, true);
 
-        if (!applyZoomWeatherLayer(payload, mode)) {
-          throw new Error((payload && payload.message) || "No approved weather tile provider");
-        }
+        // A camera move or newer frame may supersede this render without a provider failure.
+        if (!await applyZoomWeatherLayer(payload, mode)) return;
 
         restartZoomWeatherTimer(mode, payload);
         syncTimelineRangeControls();
         syncTimelineModeControls();
-        updateTimelineLabels();
+        updateTelemetry();
         updatePlatformTelemetry();
       })
       .catch(function (error) {
         if (token !== zoomWeatherRequestToken) {
           return;
-        }
-        if (zoomWeatherTimer) {
-          window.clearInterval(zoomWeatherTimer);
-          zoomWeatherTimer = null;
         }
         platformFeeds.weatherRadar = Object.assign({}, platformFeeds.weatherRadar, {
           status: "unavailable",
@@ -7322,6 +7616,10 @@ void main() {
           loadedAt: Date.now()
         });
         updatePlatformTelemetry();
+        var legend = ensureWeatherModeLegend();
+        legend.classList.remove("hidden");
+        legend.querySelector(".weather-mode-legend-title").textContent = config.label + " · Unavailable";
+        legend.querySelector(".weather-mode-legend-meta").textContent = "Could not refresh provider data. Retrying automatically.";
       });
 
     if (force && zoomWeatherLayer && zoomWeatherMode === mode) {
@@ -7340,16 +7638,10 @@ void main() {
     
     cognitiveGovernanceManager.recordInteraction();
 
-    var shaderVisualModes = {
-      thermal: "thermal",
-      infrared: "thermal",
-      night: "night",
-      weather: "weather",
-      radar: "weather",
-      signal: "night"
-    };
-    var shaderMode = shaderVisualModes[state.scanMode] || "standard";
-    switchImageryMode(shaderMode);
+    // Environmental modes select measured data, never recolor ordinary imagery as heat.
+    switchImageryMode("standard");
+    var dataModes = {thermal:"temperature",infrared:"infrared",radar:"radar",weather:"precipitation",standard:"satellite",night:"satellite-hd"};
+    if (dataModes[state.scanMode]) applyWeatherMapMode(dataModes[state.scanMode]);
 
     var presets = {
       weather: {
@@ -7641,53 +7933,33 @@ void main() {
     }
   }
 
-  function applyWeatherMapMode(mode) {
+  function applyWeatherMapMode(mode, preserveSource) {
+    if (mode === "satellite" && !preserveSource) state.satelliteSource = "public-geostat";
     state.weatherMapMode = mode || "satellite";
     document.body.dataset.weatherMap = state.weatherMapMode;
+    document.getElementById("forecastModelControl").hidden = !Orion.Weather.fields[state.weatherMapMode];
+    elements.satelliteSourceSelect.closest("label").hidden = !/^satellite(?:-hd)?$/.test(state.weatherMapMode);
     if (elements.weatherMapModeSelect) {
       elements.weatherMapModeSelect.value = state.weatherMapMode;
     }
 
-    if (state.weatherMapMode === "satellite") {
-      clearZoomWeatherLayer();
-      setPlatformLayer("weatherRadar", false);
-      state.layers.clouds = false;
-      state.layers.infrared = false;
-      scheduleImageryRefresh();
-    } else if (state.weatherMapMode === "satellite-hd") {
-      clearZoomWeatherLayer();
-      state.cleanEarth = true;
-      state.layers.clouds = false;
-      state.layers.infrared = false;
-      scheduleImageryRefresh();
-    } else if (state.weatherMapMode === "radar") {
-      state.scanMode = "weather";
-      document.body.dataset.scanMode = "weather";
-      switchImageryMode("weather");
-      if (elements.scanModeSelect) {
-        elements.scanModeSelect.value = "weather";
-      }
-      clearZoomWeatherLayer();
-      state.radarOpacity = Math.max(state.radarOpacity, 0.58);
-      setPlatformLayer("weatherRadar", true);
+    setPlaying(false);
+    clearZoomWeatherLayer();
+    weatherLive = true;
+    setPlatformLayer("weatherRadar", false);
+    state.layers.clouds = false;
+    state.layers.infrared = false;
+    if (state.weatherMapMode === "satellite-hd") {
+      state.satelliteSource = "nasa-live";
+      state.cleanEarth = false;
+      state.layers.trueColor = true;
     } else if (isZoomWeatherMapMode(state.weatherMapMode)) {
-      state.scanMode = "weather";
-      document.body.dataset.scanMode = "weather";
-      switchImageryMode("weather");
-      if (elements.scanModeSelect) {
-        elements.scanModeSelect.value = "weather";
-      }
-      setPlatformLayer("weatherRadar", false);
-      if (state.weatherMapMode === "radar" || state.weatherMapMode === "precipitation") {
-        state.radarOpacity = Math.max(state.radarOpacity, 0.58);
-      }
+      state.cleanEarth = true;
+      state.layers.trueColor = true;
+      state.radarOpacity = Math.max(state.radarOpacity, 0.75);
       setZoomWeatherMapMode(state.weatherMapMode, true);
     }
-
-    if (state.timelineMode === "updates" && !isZoomWeatherMapMode(state.weatherMapMode)) {
-      state.date = alignToUpdateStep(state.date);
-      state.compareDate = alignToUpdateStep(state.compareDate);
-    }
+    scheduleImageryRefresh();
 
     syncControlState();
     updateTelemetry();
@@ -7714,7 +7986,7 @@ void main() {
       state.layers.trueColor = true;
     }
 
-    scheduleImageryRefresh();
+    applyWeatherMapMode(source === "nasa-live" ? "satellite-hd" : "satellite", true);
     syncControlState();
     updateTelemetry();
     persistUserState();
@@ -7897,7 +8169,7 @@ void main() {
   function platformDetailTimestamp(record) {
     var item = record.item || {};
     var payload = platformFeeds[record.layerId] && platformFeeds[record.layerId].payload;
-    var raw = item.timestamp || item.time || item.updated || item.generated || (payload && payload.generated);
+    var raw = item.timestamp || item.time || (item.feature && item.feature.properties && item.feature.properties.time) || item.updated || item.generated || (payload && payload.generated);
 
     if (typeof raw === "number") {
       return new Date(raw < 10000000000 ? raw * 1000 : raw);
@@ -8059,15 +8331,16 @@ void main() {
     var type = item.type || item.category || record.definition.label;
     var recordFeed = platformFeeds[record.layerId] || {};
     var status = platformDisplayStatus(record.layerId, item, record.sample, recordFeed);
-    var confidence = visualCohesionManager.getConfidenceScore(record.layerId);
-    var ageMin = platformFeeds[record.layerId] ? Math.round((Date.now() - platformFeeds[record.layerId].loadedAt) / 60000) : 0;
+
+    var hasObservationTime = !!(item.timestamp || item.time || item.updated || (item.feature && item.feature.properties && item.feature.properties.time));
+    var ageMin = Math.max(0, Math.round((Date.now() - timestamp.getTime()) / 60000));
 
     var rows = [
       ["Type", type],
       ["Severity", typeof severity === "number" ? Number(severity).toFixed(2) : severity],
       ["Status", status],
-      ["Confidence", (confidence * 100).toFixed(0) + "%"],
-      ["Feed Age", ageMin > 0 ? ageMin + "m ago" : "LIVE"]
+      ["Data quality", item.confidence != null ? String(item.confidence) : "Not supplied by source"],
+      ["Source age", !hasObservationTime ? "Observation time not supplied" : ageMin > 0 ? ageMin + "m ago" : "Less than one minute"]
     ];
 
     var infraRows = infrastructureDetailRows(record);
@@ -8075,7 +8348,7 @@ void main() {
       rows.splice.apply(rows, [1, 0].concat(infraRows));
     }
 
-    if (record.sample && record.sample.heading) {
+    if (record.sample && Number.isFinite(record.sample.heading) && (record.definition.type === "moving" || record.definition.type === "satellite") && (record.layerId !== "marineTraffic" || item.heading != null)) {
       rows.push(["Heading", record.sample.heading.toFixed(0) + " deg (" + getCompassDirection(record.sample.heading) + ")"]);
     }
     if (record.sample && record.sample.height) {
@@ -8084,10 +8357,18 @@ void main() {
     
     rows.push(
       ["Location", record.sample.lat.toFixed(4) + ", " + record.sample.lon.toFixed(4)],
-      ["Timestamp", readableDateTime(timestamp)],
-      ["Source", item.source || item.provider || record.definition.source]
+      [hasObservationTime ? "Timestamp" : "Retrieved", readableDateTime(timestamp)],
+      ["Source", item.source || item.provider || record.definition.source],
+      ["Observed", item.time ? String(item.time) : (record.sample.time ? new Date(record.sample.time).toISOString() : "Not provided")],
+      ["Visual", ["wildfires", "volcanoes", "earthquakes"].indexOf(record.layerId) !== -1 ? "Illustrative effect; not measured plume, terrain or shaking extent" : "Source geometry"]
     );
 
+    if (record.layerId === "marineTraffic") {
+      rows.push(["MMSI", item.mmsi], ["Vessel type (AIS)", item.vesselType == null ? "Not supplied" : String(item.vesselType)],
+        ["Callsign", item.callsign || "Not supplied"], ["Speed", item.speed == null ? "Not supplied" : item.speed + " knots"],
+        ["Bearing", item.heading == null ? "Not supplied" : item.heading + "° · " + item.headingSource],
+        ["Coverage", "Finnish waters · latest AIS observations"]);
+    }
     if (record.definition.type === "satellite") {
       var orbitPeriodMinutes = satelliteOrbitPeriodMinutes(item.satrec);
       rows.splice(1, 0,
@@ -8696,6 +8977,11 @@ void main() {
         label.appendChild(count);
       }
 
+      var sourceLine = document.createElement("span");
+      sourceLine.className = "layer-source-line";
+      sourceLine.textContent = definition.source;
+      label.appendChild(sourceLine);
+
       if (!groups[definition.category]) {
         var group = document.createElement("div");
         group.className = "platform-category";
@@ -8725,6 +9011,8 @@ void main() {
       var itemCount = Array.isArray(feed.items) ? feed.items.length : 0;
       var statusText = state.platformLayers[layerId] ? (feed.renderError ? "renderer unavailable" : historicalAvailabilityLabel(layerId, feed) || feed.status || "loading") : "standby";
 
+      var sourceLine = label && label.querySelector(".layer-source-line");
+      if (sourceLine) sourceLine.textContent = definition.source + " · " + statusText;
       if (count) {
         count.textContent = String(itemCount);
       }
@@ -9436,6 +9724,9 @@ void main() {
     var time = getTrackingTime();
 
     if (!legacyTrackingVisualsEnabled) {
+      if (Orion.Renderer.Orbital && Orion.Renderer.Orbital.updatePositions) {
+        Orion.Renderer.Orbital.updatePositions(platformTime());
+      }
       if (Object.keys(trackingEntities).length) {
         clearLegacyTrackingEntities();
       }
@@ -9642,7 +9933,13 @@ void main() {
 
     if (enabled) {
       setPlaying(false);
-      setDate(maxDate, true);
+      setDate(timelineMaxDate(), true);
+      weatherLive = true;
+      var weatherFeed = platformFeeds.weatherRadar;
+      if (weatherFeed && weatherFeed.payload && isZoomWeatherMapMode(state.weatherMapMode)) {
+        syncTimelineBoundsFromZoomPayload(weatherFeed.payload, state.weatherMapMode, true);
+        refreshZoomWeatherTimelineFrame();
+      }
       ["air", "sat"].forEach(function (type) {
         if (state.tracking[type]) {
           setTrackingDomain(type, true);
@@ -9975,6 +10272,9 @@ void main() {
         if (frameNow - lastPlatformMotionFrame > 240) {
           lastPlatformMotionFrame = frameNow;
           refreshPlatformMotionTargets();
+          if (Orion.Renderer.Aviation && Orion.Renderer.Aviation.updatePositions) {
+            Orion.Renderer.Aviation.updatePositions();
+          }
         }
 
         var LERP = visualCohesionManager.getInterpolationFactor();
@@ -10128,7 +10428,7 @@ void main() {
   }
 
   function createGibsProvider(definition, date) {
-    var useWmsSnapshot = definition.providerType === "wmsSnapshot" || (isStaticHostMode() && definition.timed);
+    var useWmsSnapshot = definition.providerType === "wmsSnapshot" || (definition.timed && (state.playing || gibsPreloadCollector));
 
     if (useWmsSnapshot) {
       var snapshotRectangle = definition.rectangle || [-180, -85, 180, 85];
@@ -10157,11 +10457,11 @@ void main() {
       var snapshotRoot = definition.providerType === "wmsSnapshot" ? definition.root : GIBS_WMS_ROOT;
       var snapshotUrl = snapshotRoot + "?" + snapshotParams.join("&");
 
-      return new Cesium.SingleTileImageryProvider({
-        url: snapshotUrl,
-        rectangle: Cesium.Rectangle.fromDegrees.apply(Cesium.Rectangle, snapshotRectangle),
-        credit: definition.providerType === "wmsSnapshot" ? "NASA GIBS / NOAA GOES" : "NASA GIBS"
-      });
+      if (gibsPreloadCollector) { gibsPreloadCollector.add(snapshotUrl); return null; }
+      var image = gibsFrameBuffer.get(snapshotUrl, function () { return Orion.FrameBuffer.decode(snapshotUrl); });
+      return Orion.FrameBuffer.provider(image,
+        Cesium.Rectangle.fromDegrees.apply(Cesium.Rectangle, snapshotRectangle),
+        definition.providerType === "wmsSnapshot" ? "NASA GIBS / NOAA GOES" : "NASA GIBS");
     }
 
     var tileDate = definition.timed ? effectiveGibsDate(date) : date;
@@ -10223,7 +10523,7 @@ void main() {
       return effectiveGoesFrameTime(date, definition.cadenceHours).toISOString();
     }
     if (definition.timed) {
-      return formatDate(effectiveGibsDate(date));
+      return formatDate(effectiveGibsDate(date)) + (state.playing ? ":buffered" : ":native");
     }
     return "static";
   }
@@ -10335,7 +10635,7 @@ void main() {
     }
 
     if (state.layers.trueColor || state.compareMode) {
-      if (state.cleanEarth) {
+      if (state.cleanEarth || isZoomWeatherMapMode(state.weatherMapMode)) {
         layers.push(addLayer("cleanEarth", state.date, rightSplit, fullAlpha));
       } else {
         layers.push(addLayer("trueColor", state.date, rightSplit, fullAlpha));
@@ -10346,12 +10646,9 @@ void main() {
       layers.push(addLayer("sentinel", state.date, rightSplit, fullAlpha));
     }
 
-    if (state.satelliteSource === "public-geostat") {
-      layers.push(addLayer("goesComposite", state.date, rightSplit, fullAlpha));
-    }
 
     ["clouds", "infrared", "night"].forEach(function (key) {
-      if (state.cleanEarth && (key === "clouds" || key === "infrared")) {
+      if ((state.cleanEarth || isZoomWeatherMapMode(state.weatherMapMode)) && (key === "clouds" || key === "infrared")) {
         return;
       }
       if (state.layers[key]) {
@@ -10402,7 +10699,7 @@ void main() {
       if (!layer || !layer.orionKey) {
         continue;
       }
-      if (layer === streetDetailLayer || layer === streetRoadsLayer || layer === fallbackBaseLayer || layer === weatherRadarLayer || layer === zoomWeatherLayer) {
+      if (layer === streetDetailLayer || layer === streetRoadsLayer || layer === fallbackBaseLayer || layer === weatherRadarLayer || layer === zoomWeatherLayer || layer.orionKey === "zoomWeatherBuffered") {
         continue;
       }
       if (keep.indexOf(layer) !== -1) {
@@ -10598,8 +10895,17 @@ void main() {
         return;
       }
 
-      if (!start && now >= holdUntil) {
+      if (!start && now >= holdUntil && incomingLayers.every(function (layer) { return layer.imageryProvider.orionBufferedImage ? Orion.FrameBuffer.uploaded(layer) : viewer.scene.globe.tilesLoaded; })) {
         start = now;
+      }
+      if (!start && now > holdUntil + 30000) {
+        incomingLayers.forEach(function (layer) { if (imageryLayerExists(layer)) viewer.imageryLayers.remove(layer, true); });
+        stagedImageryLayers = [];
+        outgoingLayers.forEach(function (layer) { layer.orionFadeAlpha = 1; applyLayerDisplayAlpha(layer); });
+        imageryTransitionActive = false;
+        setPlaying(false);
+        document.getElementById("frameBufferStatus").textContent = "New imagery could not finish loading. Previous map retained.";
+        return;
       }
 
       var progress = start ? clamp((now - start) / duration, 0, 1) : 0;
@@ -10616,7 +10922,7 @@ void main() {
 
       outgoingLayers.forEach(function (layer) {
         if (imageryLayerExists(layer)) {
-          layer.orionFadeAlpha = clamp(1 - eased, 0, 1);
+          layer.orionFadeAlpha = 1;
           applyLayerDisplayAlpha(layer);
         }
       });
@@ -10715,14 +11021,34 @@ void main() {
       return;
     }
 
+    window.addEventListener("orion-quality-change", function () {
+      weatherPlaybackQuality = state.qualityMode === "saving" ? 1024 : state.qualityMode === "detail" ? 4096 : 2048;
+      clearWeatherStaging();
+      var feed = platformFeeds.weatherRadar;
+      if (feed && feed.payload && feed.payload.weather_mode === state.weatherMapMode) {
+        applyZoomWeatherLayer(feed.payload, state.weatherMapMode, weatherPlaybackQuality);
+      }
+      scheduleImageryRefresh();
+    });
+
     var lastPrewarmAt = 0;
 
     viewer.camera.moveStart.addEventListener(function () {
       state.cameraMoving = true;
+      if (state.qualityMode !== "detail") viewer.scene.globe.maximumScreenSpaceError = 3;
     });
 
     viewer.camera.moveEnd.addEventListener(function () {
       state.cameraMoving = false;
+      if (isZoomWeatherMapMode(state.weatherMapMode)) {
+        clearWeatherStaging();
+        weatherFrameRegion = null;
+        var weatherFeed = platformFeeds.weatherRadar;
+        if (weatherFeed && weatherFeed.payload && weatherFeed.payload.weather_mode === state.weatherMapMode) {
+          applyZoomWeatherLayer(weatherFeed.payload, state.weatherMapMode);
+        }
+      }
+      viewer.scene.globe.maximumScreenSpaceError = state.qualityMode === "saving" ? 3 : state.qualityMode === "detail" ? 0.7 : (viewer.camera.positionCartographic.height < 165000 ? 0.28 : viewer.camera.positionCartographic.height < 650000 ? 0.38 : 1.05);
       state.cameraMovingFast = false;
       lastCameraCartesian = null;
       var endHeight = viewer.camera.positionCartographic.height;
@@ -10871,6 +11197,20 @@ void main() {
       elements.saveLocationButton.addEventListener("click", saveCurrentLocation);
     }
 
+    document.getElementById("timelineLoop").addEventListener("click", function () {
+      timelineLoop = !timelineLoop;
+      this.setAttribute("aria-pressed", String(timelineLoop));
+      this.textContent = timelineLoop ? "Loop on" : "Loop off";
+    });
+    document.getElementById("forecastModel").addEventListener("change", function () {
+      if (Orion.Weather.fields[state.weatherMapMode]) setZoomWeatherMapMode(state.weatherMapMode, true);
+    });
+    document.getElementById("weatherLatest").addEventListener("click", function () {
+      setPlaying(false);
+      weatherLive = true;
+      if (isZoomWeatherMapMode(state.weatherMapMode)) setZoomWeatherMapMode(state.weatherMapMode, true);
+      else setDate(maxDate, true);
+    });
     if (elements.liveLocationToggle) {
       elements.liveLocationToggle.addEventListener("click", toggleLiveLocationTracking);
     }
@@ -10885,10 +11225,16 @@ void main() {
       ["layerBoundaries", "boundaries"]
     ].forEach(function (pair) {
       elements[pair[0]].addEventListener("change", function (event) {
-        state.layers[pair[1]] = event.target.checked;
-        if ((pair[1] === "clouds" || pair[1] === "infrared") && event.target.checked) {
+        var enabled = event.target.checked;
+        if (enabled && ["clouds", "infrared", "sentinel", "night"].indexOf(pair[1]) !== -1 && isZoomWeatherMapMode(state.weatherMapMode)) {
+          // These controls select NASA products; make their daily timeline active.
+          applyWeatherMapMode("satellite-hd");
+        }
+        state.layers[pair[1]] = enabled;
+        if ((pair[1] === "clouds" || pair[1] === "infrared") && enabled) {
           state.cleanEarth = false;
         }
+        syncControlState();
         if (pair[1] === "boundaries") {
           updateBoundaryLayer();
           syncControlState();
@@ -11537,15 +11883,10 @@ void main() {
     setTarget(location);
     dropTargetMarker(location.lat, location.lon);
 
-    viewer.camera.flyTo({
-      destination: Cesium.Cartesian3.fromDegrees(location.lon, location.lat, location.height || 650000),
+    Orion.CameraFlight.focus(viewer, location, {
+      range: location.height || 650000,
       duration: 2.35,
-      easingFunction: Cesium.EasingFunction.CUBIC_IN_OUT,
-      orientation: {
-        heading: Cesium.Math.toRadians(0),
-        pitch: Cesium.Math.toRadians(-58),
-        roll: 0
-      },
+      pitch: -58,
       complete: function () {
         refreshViewportBoundPlatformLayers(true);
         queueViewportBoundLayerRefresh("powerGrid", 0);
@@ -11785,16 +12126,7 @@ void main() {
     var accuracy = Number.isFinite(fix.accuracy) ? fix.accuracy : 250;
     var height = clamp(Math.max(2200, accuracy * 10), 2200, 82000);
 
-    viewer.camera.flyTo({
-      destination: Cesium.Cartesian3.fromDegrees(fix.lon, fix.lat, height),
-      duration: 1.6,
-      easingFunction: Cesium.EasingFunction.CUBIC_IN_OUT,
-      orientation: {
-        heading: Cesium.Math.toRadians(0),
-        pitch: Cesium.Math.toRadians(-62),
-        roll: 0
-      }
-    });
+    Orion.CameraFlight.focus(viewer, fix, { range: height, pitch: -62 });
   }
 
   function applyLiveLocationPosition(position, options) {
@@ -11914,6 +12246,7 @@ void main() {
   function setDate(date, refresh) {
     var previousTileKey = timelineRefreshKey(state.date);
     state.date = clampTimelineDate(date);
+    weatherLive = false;
     syncSimulationClock(state.playing ? "playback" : "historical");
     elements.timelineRange.value = String(rangeFromDate(state.date));
     updateTimelineLabels();
@@ -11921,7 +12254,7 @@ void main() {
     updatePlatformSystems(false);
 
     if (refresh && timelineRefreshKey(state.date) !== previousTileKey) {
-      scheduleImageryRefresh();
+      if (!activeTimelineBounds()) scheduleImageryRefresh();
       refreshTemporalMapLayers();
     }
   }
@@ -11958,7 +12291,27 @@ void main() {
     }
   }
 
-  function setPlaying(isPlaying) {
+  function setPlaying(isPlaying, prepared) {
+    if (playbackPreparing && isPlaying && !prepared) { setPlaying(false); return; }
+    if (!isPlaying) { ++playbackPrepareToken; playbackPreparing = false; window.clearTimeout(weatherRefineTimer); }
+    if (isPlaying && !prepared) {
+      weatherLive = false;
+      var token = ++playbackPrepareToken;
+      playbackPreparing = true;
+      setCommandButton(elements.playPause, "CANCEL", "×");
+      elements.playPause.setAttribute("aria-label", "Cancel frame buffering");
+      (isZoomWeatherMapMode(state.weatherMapMode) ? prepareWeatherPlayback(token) : prepareGibsPlayback(token)).then(function () {
+        if (token !== playbackPrepareToken) return;
+        playbackPreparing = false;
+        setPlaying(true, true);
+      }).catch(function (error) {
+        if (token !== playbackPrepareToken) return;
+        setPlaying(false);
+        document.getElementById("frameBufferStatus").textContent = "Could not buffer all frames (" + error.message + "). Last image retained; press Play to retry.";
+      });
+      return;
+    }
+    if (isPlaying) weatherLive = false;
     state.playing = isPlaying;
     syncSimulationClock(isPlaying ? "playback" : (state.tracking.live ? "live" : "historical"));
     setCommandButton(elements.playPause, isPlaying ? "PAUSE" : "PLAY", isPlaying ? "||" : ">");
@@ -11969,6 +12322,14 @@ void main() {
     updatePlaybackAccumulator = 0;
 
     if (!isPlaying) {
+      if (!isZoomWeatherMapMode(state.weatherMapMode)) scheduleImageryRefresh();
+      var feed = platformFeeds.weatherRadar;
+      if (feed && feed.payload && Orion.Weather.observed[state.weatherMapMode]) {
+        var pausedMode = state.weatherMapMode;
+        weatherRefineTimer = window.setTimeout(function () {
+          if (!state.playing && !state.cameraMoving && state.qualityMode !== "saving" && state.weatherMapMode === pausedMode && feed.payload.weather_mode === pausedMode) applyZoomWeatherLayer(feed.payload, pausedMode, 2048);
+        }, 800);
+      }
       return;
     }
 
@@ -11988,6 +12349,11 @@ void main() {
       lastPlaybackTimestamp = timestamp;
     }
 
+    if (weatherFramePending || imageryTransitionActive || state.cameraMoving) {
+      lastPlaybackTimestamp = timestamp;
+      playbackFrame = window.requestAnimationFrame(playbackStep);
+      return;
+    }
     var elapsedSeconds = Math.min((timestamp - lastPlaybackTimestamp) / 1000, 0.2);
 
     lastPlaybackTimestamp = timestamp;
@@ -11996,13 +12362,13 @@ void main() {
       updatePlaybackAccumulator += elapsedSeconds * state.speed;
 
       if (updatePlaybackAccumulator >= 1) {
-        var wholeUpdates = Math.floor(updatePlaybackAccumulator);
-        updatePlaybackAccumulator -= wholeUpdates;
-        advanceDate(wholeUpdates, false);
-
+        // Never skip unloaded observations to catch up with wall-clock time.
+        updatePlaybackAccumulator = 0;
         if (state.date.getTime() >= timelineMaxDate().getTime()) {
-          setPlaying(false);
-          return;
+          if (!timelineLoop) { setPlaying(false); return; }
+          setDate(timelineMinDate(), true);
+        } else {
+          advanceDate(1, false);
         }
       }
 
@@ -12013,8 +12379,13 @@ void main() {
     var nextTime = state.date.getTime() + elapsedSeconds * state.speed * MS_PER_HOUR;
 
     if (nextTime > timelineMaxDate().getTime()) {
-      setDate(timelineMaxDate(), true);
-      setPlaying(false);
+      if (timelineLoop) {
+        setDate(timelineMinDate(), true);
+        playbackFrame = window.requestAnimationFrame(playbackStep);
+      } else {
+        setDate(timelineMaxDate(), true);
+        setPlaying(false);
+      }
       return;
     }
 
@@ -12023,6 +12394,7 @@ void main() {
   }
 
   function setTimelineMode(mode) {
+    if (activeTimelineBounds() && mode !== "updates") return;
     if (state.timelineMode === mode) {
       return;
     }
@@ -12050,7 +12422,8 @@ void main() {
     }
 
     var updatesMode = state.timelineMode === "updates";
-    var cadence = updateCadenceParts();
+    var cadence = activeTimelineBounds() ? { shortLabel: "FRAME", longLabel: "available", speedLabel: "frames/s" } : updateCadenceParts();
+    elements.timelineModeHourly.disabled = !!activeTimelineBounds();
     elements.timelineModeHourly.classList.toggle("active", !updatesMode);
     elements.timelineModeUpdates.classList.toggle("active", updatesMode);
     elements.timelineRange.step = "1";
@@ -12100,6 +12473,23 @@ void main() {
     elements.timelineStartLabel.textContent = readableDate(timelineMinDate());
     elements.timelineCursorLabel.textContent = state.tracking.live ? "LIVE" : updatesMode ? "UPD " + formatHour(cursorDate) : "T+" + String(cursorUnits).padStart(3, "0") + "H";
     elements.timelineEndLabel.textContent = readableDate(timelineMaxDate());
+
+    var bounds = activeTimelineBounds();
+    if (bounds && bounds.frames && bounds.frames.length) {
+      var frameIndex = Orion.Weather.index(bounds.frames, state.date);
+      var frameDate = new Date(bounds.frames[frameIndex].time);
+      var payload = platformFeeds.weatherRadar.payload || {};
+      var ageMinutes = Math.max(0, Math.round((Date.now() - +frameDate) / 60000));
+      var kind = payload.mode === "forecast" ? (+frameDate > Date.now() ? "FORECAST" : "MODEL") : (weatherLive ? "LATEST" : "REPLAY");
+      elements.currentDateLabel.textContent = kind + " · " + readableDateTime(frameDate);
+      elements.imageDate.textContent = readableDateTime(frameDate);
+      elements.timelineCursorLabel.textContent = (frameIndex + 1) + " / " + bounds.frames.length;
+      elements.timelineStartLabel.textContent = formatHour(bounds.min) + " UTC";
+      elements.timelineEndLabel.textContent = formatHour(bounds.max) + " UTC";
+      elements.feedMeta.textContent = (payload.coverage || payload.provider) + (payload.mode === "observed" ? " · " + ageMinutes + " min old" : " · hourly frames");
+      elements.timelineRange.setAttribute("aria-valuetext", readableDateTime(frameDate));
+      return;
+    }
 
     var ageHours = Math.max(0, Math.round(hoursBetween(state.date, timelineMaxDate())));
     var ageDays = Math.floor(ageHours / 24);
@@ -12172,9 +12562,17 @@ void main() {
     updateTimelineLabels();
     updateCameraAltitude();
 
-    elements.providerLabel.textContent = activeProviderLabel();
+    var weatherPayload = platformFeeds.weatherRadar && platformFeeds.weatherRadar.payload;
+    if (activeTimelineBounds() && weatherPayload) {
+      elements.providerLabel.textContent = weatherPayload.provider + " · " + (weatherPayload.mode === "forecast" ? "Model" : "Observed");
+      elements.providerLabel.title = weatherPayload.coverage;
+      elements.updateAge.textContent = Math.max(0, Math.round((Date.now() - state.date.getTime()) / 60000)) + " min from source time";
+      elements.cloudCoverage.textContent = weatherPayload.coverage;
+    } else {
+      elements.providerLabel.textContent = activeProviderLabel();
     elements.updateAge.textContent = updateAgeLabel();
     elements.cloudCoverage.textContent = isLiveSatelliteImageryMode() ? "NOAA GOES GeoColor active" : state.cleanEarth ? "Cloud-free globe active" : (state.layers.clouds ? "Optical thickness layer active" : "Visual layer standby");
+    }
     elements.mapDetailLabel.textContent = mapDetailLabel();
     updateTrackingTelemetry(null, getTrackingTime());
     updatePlatformTelemetry();
@@ -12184,7 +12582,7 @@ void main() {
     var activeNames = [];
 
     ["trueColor", "sentinel", "clouds", "infrared", "night"].forEach(function (key) {
-      if (state.cleanEarth && (key === "clouds" || key === "infrared")) {
+      if ((state.cleanEarth || isZoomWeatherMapMode(state.weatherMapMode)) && (key === "clouds" || key === "infrared")) {
         return;
       }
       if (state.layers[key]) {
@@ -12266,7 +12664,7 @@ void main() {
 
         state.detailTier = nextTier;
         state.autoDetailActive = nextTier !== "orbital";
-        viewer.scene.globe.maximumScreenSpaceError = nextError;
+        viewer.scene.globe.maximumScreenSpaceError = state.qualityMode === "saving" ? 3 : state.cameraMoving ? 3 : nextError;
         if (wasOrbital !== (nextTier === "orbital") || height >= ORBITAL_ALTITUDE_CUTOFF) syncImagerySplitMode();
         if (typeof viewer.scene.globe.tileCacheSize === "number") {
           viewer.scene.globe.tileCacheSize = nextTier === "target" ? 1300 : nextTier === "local" ? 1000 : 700;

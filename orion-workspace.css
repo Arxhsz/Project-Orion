@@ -1,0 +1,133 @@
+/* Orion command workspace: map first, accessible controls, source-aware layers. */
+:root { --panel-bg: rgba(8,8,8,.96); --panel-strong: #191919; --panel-line: rgba(190,190,190,.19); --cyan: #d2d2d2; --muted: #b5b5b5; --dim: #8a8a8a; --glass: blur(20px); }
+.hud-panel, .timeline-hud, .brand-hud { border-color: var(--panel-line); box-shadow: 0 12px 45px #0006; }
+.brand-hud { left: 18px; right: 18px; width: auto; transform: none; height: 65px; border-radius: 12px; background: var(--panel-bg); }
+.brand-hud h1 { font-size: 20px; letter-spacing: -.4px; }
+.brand-hud .eyebrow { color: var(--cyan); font-size: 9px; letter-spacing: 2px; }
+.hud-panel { top: 98px; max-height: calc(100dvh - 335px); width: 306px; border-radius: 12px; }
+.telemetry-panel { width: 300px; }
+.panel-kicker { font-size: 10px; color: var(--cyan); letter-spacing: 1.8px; text-transform: uppercase; }
+.workspace-tabs { display: flex; gap: 4px; margin: 0 0 18px; border-bottom: 1px solid var(--panel-line); padding-bottom: 10px; position: sticky; top: 0; background: var(--panel-bg); z-index: 2; }
+.workspace-tabs button { flex: 1; padding: 10px 5px; border: 1px solid transparent; border-radius: 7px; color: var(--muted); background: transparent; cursor: pointer; font-size: 12px; }
+.workspace-tabs button[aria-selected="true"] { color: #f5f5f5; background: #353535; border-color: #626262; }
+.workspace-page[hidden], [data-layer-id][hidden], .platform-category[hidden] { display: none !important; }
+.workspace-page > div { margin-top: 18px; }
+.workspace-page .weather-map-block { padding: 14px; border: 1px solid #4e4e4e; background: #272727; border-radius: 9px; }
+.scan-control select, .search-form input, .intel-search, .layer-search { min-height: 38px; background: #0e0e0e; border: 1px solid #3c3c3c; border-radius: 6px; color: #f3f3f3; }
+.layer-search { width: 100%; padding: 10px; margin-bottom: 10px; }
+.platform-category { border: 1px solid #383838; border-radius: 8px; overflow: hidden; margin: 10px 0; background: #161616; }
+.platform-category-toggle { color: #c9c9c9; font-size: 10px; letter-spacing: 1.4px; padding: 12px; }
+.platform-category-body { gap: 0; padding: 0 10px 8px; }
+.platform-category-body .toggle-row { flex-wrap: wrap; padding: 10px 0; border-bottom: 1px solid #ffffff0a; min-height: 56px; gap: 7px; }
+.layer-source-line { flex-basis: 100%; padding-left: 38px; font-size: 9px; line-height: 1.5; color: #a4a4a4; white-space: normal; }
+.layer-count-badge { font-variant-numeric: tabular-nums; color: var(--cyan); }
+.layer-note { color: #a5a5a5; line-height: 1.7; font-size: 11px; padding: 12px 2px; }
+.timeline-hud { width: min(920px,calc(100vw - 36px)); bottom: 22px; background: var(--panel-bg); padding: 15px 20px; border-top: 2px solid #969696; }
+.timeline-topline strong { font-variant-numeric: tabular-nums; font-size: 15px; }
+.timeline-mode { border: 1px solid #4c4c4c; background: #1e1e1e; border-radius: 5px; min-height: 30px; }
+.timeline-mode:disabled { opacity: .4; cursor: not-allowed; }
+#weatherLatest { color: #e2e2e2; border-color: #666666; }
+#timelineRange { accent-color: #cacaca; }
+.feed-meta { max-width: 380px; color: #b0b0b0; line-height: 1.5; }
+.weather-mode-legend { left: 50%; transform: translateX(-50%); bottom: 245px; width: min(400px,calc(100vw - 36px)); padding: 10px 14px; background: #151515eb; border-color: #4c4c4c; }
+.weather-mode-legend.hidden { display: none; }
+.weather-mode-legend-title { color: #ececec; }
+.weather-mode-legend-meta { max-width: none; white-space: normal; line-height: 1.5; }
+.intel-entity-row { border-radius: 7px; background: #1d1d1d; border-color: #3b3b3b; padding: 12px; }
+.intel-entity-row:hover, .intel-entity-row.selected { border-color: #b4b4b4; background: #2d2d2d; }
+.intel-detail-card { border: 1px solid #5d5d5d; background: #1c1c1c; border-radius: 8px; }
+.intel-detail-placeholder { display: none; }
+.center-reticle { opacity: .28; }
+.hud-grid { opacity: .1; }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid #dfdfdf; outline-offset: 3px; }
+@media (max-width: 1080px) { .hud-panel { width: 270px; } .telemetry-panel { width: 250px; } .weather-mode-legend { bottom: 245px; max-width: 320px; } }
+@media (max-width: 760px) {
+  .brand-hud { left: 10px; right: 10px; top: 10px; height: 58px; }
+  .mission-status > span { display: none; }
+  .hud-panel { top: 80px; width: min(310px,calc(100vw - 20px)); max-height: calc(100dvh - 355px); }
+  .command-panel { left: 10px; }
+  .telemetry-panel { right: 10px; top: 80px; }
+  .telemetry-panel:not(.collapsed) { z-index: 12; }
+  .timeline-hud { width: calc(100vw - 20px); bottom: 23px; padding: 12px; }
+  .timeline-topline { flex-wrap: wrap; gap: 8px; }
+  .timeline-topline strong { font-size: 12px; }
+  .feed-meta { font-size: 10px; }
+  .weather-mode-legend { bottom: 265px; max-width: calc(100vw - 24px); font-size: 10px; }
+  .workspace-tabs button { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; } }
+[hidden] { display: none !important; }
+.workspace-tabs { background: #111111; }
+.workspace-page .search-form { margin-top: 2px; }
+
+.platform-category-body { display: flex; flex-direction: column; }
+.platform-category-body .toggle-row { width: 100%; min-width: 0; }
+.weather-mode-legend { bottom: 270px; }
+body:has(#timelineHud.collapsed) .weather-mode-legend { bottom: 90px; }
+@media (max-width: 760px) {
+  .command-panel { width: calc(100vw - 76px); }
+  .telemetry-panel.collapsed { width: 44px; min-width: 44px; padding: 8px; }
+  .telemetry-panel.collapsed .panel-kicker { display: none; }
+  .telemetry-panel.collapsed .panel-header { margin: 0; justify-content: center; }
+  .telemetry-panel:not(.collapsed) { top: 130px; width: calc(100vw - 20px); }
+  .weather-mode-legend { max-height: 105px; overflow: auto; }
+}
+
+.platform-category-body .layer-source-line { grid-column: 2 / -1; padding-left: 0; }
+@media (max-width: 760px) {
+  .weather-map-control { grid-template-columns: 1fr; gap: 5px; }
+  .weather-map-control select { width: 100%; }
+}
+
+.weather-map-control { grid-template-columns: 1fr; gap: 5px; }
+.weather-map-control select { width: 100%; }
+
+:root { --panel-bg: rgba(8,8,8,.96); --panel-strong: #101010; --cyan: #eeeeee; --muted: #aaaaaa; --dim: #777777; }
+.hud-panel, .brand-hud, .timeline-hud, .workspace-tabs { background: var(--panel-bg); }
+.workspace-page .weather-map-block, .intel-detail-card, .intel-entity-row, .platform-category { background: #101010; border-color: #333333; }
+.workspace-tabs button[aria-selected="true"], .intel-entity-row.selected { background: #272727; border-color: #686868; }
+.timeline-mode[aria-pressed="true"] { background: #333333; color: #ffffff; border-color: #999999; }
+#frameBufferStatus { color: #bbbbbb; font-size: 11px; min-height: 16px; margin: 8px 0; }
+
+.weather-mode-legend { bottom: 290px; }
+.weather-mode-legend { width: auto; max-width: min(400px,calc(100vw - 24px)); padding: 6px 10px; pointer-events: auto; }
+.weather-legend-toggle { display: flex; align-items: center; gap: 8px; background: none; color: #eee; border: 0; cursor: pointer; padding: 4px; text-align: left; }
+.weather-mode-legend:not(.expanded) > :not(.weather-legend-toggle) { display: none; }
+.weather-mode-legend.expanded { width: min(400px,calc(100vw - 24px)); }
+.weather-mode-legend-title { font-size: 11px; }
+@media (max-width: 760px) {
+  #telemetryPanel.collapsed { height: 44px; padding: 0; }
+  #telemetryPanel.collapsed .panel-header { height: 100%; width: 100%; padding: 0; display: grid; place-items: center; }
+  #telemetryPanel.collapsed #telemetryPanelToggle { position: static; margin: 0; transform: none; width: 42px; height: 42px; display: grid; place-items: center; padding: 0; }
+}
+.orion-control-group { border: 1px solid #333; border-radius: 8px; margin: 0 0 16px; padding: 12px; display: grid; gap: 9px; }
+.orion-control-group legend { font-size: 11px; color: #aaa; text-transform: uppercase; letter-spacing: 1px; padding: 0 6px; }
+.orion-control-row { display: flex; align-items: center; gap: 9px; font-size: 12px; }
+.orion-control-row input { accent-color: #ddd; }
+.orion-control-row select { min-width: 0; background: #141414; color: white; padding: 8px; border: 1px solid #555; }
+.onboarding-card { max-height: calc(100dvh - 24px); overflow: auto; background: #101010; transition: opacity .15s; }
+.camera-detail-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 12px; }
+.camera-detail-actions button, .camera-detail-actions a { padding: 7px 9px; color: #eee; background: #151515; border: 1px solid #444; border-radius: 5px; font-size: 11px; cursor: pointer; text-decoration: none; }
+#cameraNearby { display: grid; gap: 4px; width: 100%; }
+#cameraAvailability { font-size: 11px; color: #ccc; padding: 4px 12px; }
+.camera-source-directory { font-size: 12px; border: 1px solid #444; padding: 12px; border-radius: 7px; margin-top: 16px; }
+.camera-source-directory summary { cursor: pointer; }
+.camera-source-directory select { background: #111; color: #eee; border: 1px solid #555; padding: 8px; width: 100%; }
+.camera-source-directory a { display: block; color: #ddd; margin-top: 10px; }
+
+/* Keep navigation outside the scrolling content: no controls can slide above it. */
+#commandPanel { display: flex; flex-direction: column; overflow: hidden; }
+#commandPanel > .panel-header, #commandPanel > .workspace-tabs { flex: 0 0 auto; }
+#commandPanel > .panel-body { min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; }
+#commandPanel > .workspace-tabs { position: static; background: #080808; }
+#commandPanel.collapsed > .workspace-tabs { display: none; }
+.orion-control-row { flex-wrap: wrap; }
+.orion-control-group { min-width: 0; }
+.tracking-toggle-grid { grid-template-columns: 1fr; }
+.scan-control select { max-width: 100%; min-width: 0; }
+.hud-panel { max-height: max(80px, calc(100dvh - 136px - var(--orion-timeline-height, 260px))); transition: opacity 220ms ease, transform 220ms ease; }
+.weather-mode-legend, body:has(#timelineHud.collapsed) .weather-mode-legend { bottom: calc(var(--orion-timeline-height, 260px) + 36px); }
+@media (max-width: 760px) {
+  .hud-panel { max-height: max(80px, calc(100dvh - 170px - var(--orion-timeline-height, 260px))); }
+  .telemetry-panel:not(.collapsed) { max-height: max(80px, calc(100dvh - 220px - var(--orion-timeline-height, 260px))); }
+}

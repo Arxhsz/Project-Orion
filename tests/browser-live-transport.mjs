@@ -1,0 +1,17 @@
+import {chromium} from 'playwright';import assert from 'node:assert/strict';
+const browser=await chromium.launch({headless:true,executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});
+const p=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];p.on('pageerror',e=>errors.push(e.message));
+await p.route('**/__orion_dev/version',r=>r.fulfill({status:404}));await p.addInitScript(()=>{localStorage.setItem('orion_onboarding_complete','true');localStorage.setItem('orion_changelog_dismissed','1.1.2-map-reliability');});
+try{
+ await p.goto('http://127.0.0.1:4174/');await p.waitForFunction(()=>window.orionSystems&&!document.getElementById('orionLoadingScreen'),null,{timeout:90000});
+ await p.locator('#workspace-tab-layers').click();await p.locator('label').filter({has:p.locator('#trackAircraft')}).click();await p.locator('label').filter({has:p.locator('#platformMarine')}).click();
+ await p.evaluate(()=>{if(!appState.tracking.live)document.getElementById('liveModeToggle').click();});
+ await p.waitForFunction(()=>platformFeeds.liveAircraft?.items?.length&&platformFeeds.marineTraffic?.items?.length,null,{timeout:90000});
+ console.log('Live source reports loaded',await p.evaluate(()=>({air:platformFeeds.liveAircraft.items.length,ships:platformFeeds.marineTraffic.items.length,airMarkers:Orion.Renderer.Aviation.collection.length,live:appState.tracking.live})));
+ await p.evaluate(()=>{window.transportAudit={airLoaded:platformFeeds.liveAircraft.loadedAt,seaLoaded:platformFeeds.marineTraffic.loadedAt,air:{},sea:{}};const a=Orion.Renderer.Aviation;for(const id of Object.keys(a.billboardsById))transportAudit.air[id]=Cesium.Cartesian3.clone(a.billboardsById[id].position);for(const [id,r] of Object.entries(orionSystems.entities))if(r.layerId==='marineTraffic')transportAudit.sea[id]=Cesium.Cartesian3.clone(r.currentPosition);});
+ // Observe ordinary polling at orbital zoom, with no forced refresh or camera movement.
+ await p.waitForFunction(()=>platformFeeds.liveAircraft.loadedAt>transportAudit.airLoaded&&platformFeeds.marineTraffic.loadedAt>transportAudit.seaLoaded,null,{timeout:85000});
+ await p.waitForFunction(()=>{const a=Orion.Renderer.Aviation;return Object.entries(transportAudit.air).some(([id,old])=>a.billboardsById[id]&&Cesium.Cartesian3.distance(old,a.billboardsById[id].position)>10);},null,{timeout:65000});
+ const moved=await p.evaluate(()=>{let air=0,sea=0;const a=Orion.Renderer.Aviation;for(const [id,old] of Object.entries(transportAudit.air))if(a.billboardsById[id]&&Cesium.Cartesian3.distance(old,a.billboardsById[id].position)>10)air++;for(const [id,old] of Object.entries(transportAudit.sea)){const r=orionSystems.entities[id];if(r?.currentPosition&&Cesium.Cartesian3.distance(old,r.currentPosition)>2)sea++;}return {air,sea};});
+ assert.ok(moved.air>0,'Aircraft must move with refreshed source reports');assert.ok(moved.sea>0,'AIS vessel positions must update from refreshed reports');assert.deepEqual(errors,[]);console.log('Live movement without camera interaction',moved);
+}catch(e){console.log(await p.evaluate(()=>({live:appState.tracking.live,clock:Orion.SimulationClock.mode,airCount:Orion.Renderer.Aviation.collection.length,airStatus:platformFeeds.liveAircraft.status,seaStatus:platformFeeds.marineTraffic.status,errors:platformFeeds.liveAircraft.error,first:Object.values(Orion.Renderer.Aviation.aircraftById)[0]})));throw e;}finally{await browser.close();}

@@ -29,6 +29,13 @@ jobs:
       - name: Build Pages data snapshots
         timeout-minutes: 15
         run: python build_pages_data.py
+      - name: Assemble public assets only
+        run: |
+          mkdir -p _site/camera-providers
+          cp index.html .nojekyll *.js *.css _site/
+          cp -R assets loading_images pages-data _site/
+          cp camera-providers/discovery.json _site/camera-providers/
+          find _site -name .DS_Store -delete
       - name: Configure Pages
         uses: actions/configure-pages@v6
         with:
@@ -36,7 +43,7 @@ jobs:
       - name: Upload static site
         uses: actions/upload-pages-artifact@v5
         with:
-          path: .
+          path: _site
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v5

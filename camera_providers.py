@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as
 
 
 STATE_NAME_TO_CODE = {
-    "Alabama": "AL", "Alaska": "AK", "Arizona": "AZ", "Arkansas": "AR", "California": "CA",
+    "Hawaii": "HI", "Alabama": "AL", "Alaska": "AK", "Arizona": "AZ", "Arkansas": "AR", "California": "CA",
     "Colorado": "CO", "Connecticut": "CT", "Delaware": "DE", "Florida": "FL", "Georgia": "GA",
     "Idaho": "ID", "Illinois": "IL", "Indiana": "IN", "Iowa": "IA", "Kansas": "KS",
     "Kentucky": "KY", "Louisiana": "LA", "Maine": "ME", "Maryland": "MD", "Massachusetts": "MA",
@@ -254,28 +254,9 @@ class NYCDOTProvider(CameraProvider):
         self.api_url = "https://webcams.nyctmc.org/api/cameras"
     
     def fetch_cameras(self, bbox=None):
-        try:
-            request = Request(self.api_url, headers={"User-Agent": "Project-Orion/1.0"})
-            with urlopen(request, timeout=15) as response:
-                data = json.loads(response.read().decode("utf-8"))
-            return data.get("cameras", []) if isinstance(data, dict) else []
-        except:
-            return self._get_fallback_nyc_cameras()
-    
-    def _get_fallback_nyc_cameras(self):
-        return [
-            {"id": "1", "name": "Brooklyn Bridge", "lat": 40.7061, "lon": -73.9969},
-            {"id": "2", "name": "Manhattan Bridge", "lat": 40.7072, "lon": -73.9904},
-            {"id": "3", "name": "Williamsburg Bridge", "lat": 40.7134, "lon": -73.9728},
-            {"id": "4", "name": "FDR Drive @ 23rd St", "lat": 40.7390, "lon": -73.9738},
-            {"id": "5", "name": "West Side Hwy @ 42nd", "lat": 40.7614, "lon": -73.9976},
-            {"id": "6", "name": "Queens Midtown Tunnel", "lat": 40.7434, "lon": -73.9531},
-            {"id": "7", "name": "Lincoln Tunnel", "lat": 40.7625, "lon": -74.0054},
-            {"id": "8", "name": "Holland Tunnel", "lat": 40.7267, "lon": -74.0093},
-            {"id": "9", "name": "GW Bridge", "lat": 40.8517, "lon": -73.9527},
-            {"id": "10", "name": "Triborough Bridge", "lat": 40.7826, "lon": -73.9296},
-        ]
-    
+        data = fetch_json(self.api_url, timeout=15)
+        return data if isinstance(data, list) else data.get("cameras", [])
+
     def normalize_camera(self, raw):
         try:
             return {
@@ -284,13 +265,16 @@ class NYCDOTProvider(CameraProvider):
                 "provider": "NYC DOT",
                 "state": "NY",
                 "country": "US",
-                "lat": float(raw.get("lat", raw.get("latitude", 0))),
-                "lon": float(raw.get("lon", raw.get("longitude", 0))),
+                "lat": float(raw.get("lat", raw.get("latitude"))),
+                "lon": float(raw.get("lon", raw.get("longitude"))),
                 "category": "traffic",
                 "road": raw.get("road", ""),
                 "direction": "",
+                "city": "New York City",
+                "county": raw.get("area"),
                 "status": "snapshot_only",
-                "snapshot_url": raw.get("url", ""),
+                "snapshot_url": raw.get("imageUrl", ""),
+                "upstream_snapshot_url": raw.get("imageUrl", ""),
                 "stream_url": "",
                 "stream_type": "snapshot",
                 "last_updated": int(time.time()),
@@ -1143,7 +1127,7 @@ class SeattleDOTProvider(CameraProvider):
             attrs = raw.get("attributes") or {}
             geom = raw.get("geometry") or {}
             camera_id = str(attrs.get("OBJECTID") or attrs.get("UNITID") or "unknown")
-            snapshot_url, upstream_snapshot_url = proxied_snapshot(f"sdot-{camera_id}", attrs.get("URL") or "")
+            snapshot_url, upstream_snapshot_url = proxied_snapshot(f"sdot-{camera_id}", (attrs.get("URL") or "").replace("http://www.seattle.gov/", "https://www.seattle.gov/"))
             return {
                 "id": f"sdot-{camera_id}",
                 "name": attrs.get("LOCATION") or attrs.get("NAME") or f"Seattle Camera {camera_id}",
@@ -1344,6 +1328,7 @@ def camera_has_live_video(camera, allow_resolver=True):
 
 
 def live_camera_record(camera, allow_resolver=True):
+    """Return a browser-playable live-video record with all still-image fields removed."""
     if not camera_has_live_video(camera, allow_resolver=allow_resolver):
         return None
 
@@ -1351,6 +1336,15 @@ def live_camera_record(camera, allow_resolver=True):
     for key in ("snapshot_url", "proxy_snapshot_url", "upstream_snapshot_url", "snapshot_source_url"):
         record.pop(key, None)
     record["status"] = "stream_available"
+    record["last_checked"] = None
+    record["camera_type"] = record.get("category") or "public"
+    record["attribution"] = record.get("provider")
+    # Road direction is not necessarily the direction the lens faces.
+    heading = record.get("heading")
+    try:
+        record["heading"] = float(heading) % 360 if heading is not None and math.isfinite(float(heading)) else None
+    except (ValueError, TypeError):
+        record["heading"] = None
     return record
 
 

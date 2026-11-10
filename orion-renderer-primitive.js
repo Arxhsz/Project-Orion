@@ -139,7 +139,8 @@
       }
 
       if (record.key !== key) {
-        record.previous = record.current || sample;
+        if (this.timestampMs(item) < record.sourceTimestamp) return record;
+        record.previous = this.interpolateRecord(record) || record.current || sample;
         record.current = sample;
         record.key = key;
         record.updatedAt = now;
@@ -160,7 +161,7 @@
 
       var amount = Math.min(Math.max((Date.now() - record.updatedAt) / this.interpolationMs, 0), 1);
       return {
-        lon: start.lon + (end.lon - start.lon) * amount,
+        lon: ((start.lon + (((end.lon - start.lon + 540) % 360) - 180) * amount + 540) % 360) - 180,
         lat: start.lat + (end.lat - start.lat) * amount,
         height: (Number(start.height) || 0) + ((Number(end.height) || 0) - (Number(start.height) || 0)) * amount,
         heading: Number(end.heading || record.item.heading || 0)
@@ -203,7 +204,7 @@
         var isStale = now - record.sourceTimestamp > self.staleMs;
         var billboard = self.billboardsById[record.id];
         var pickId = primitivePickId('liveAircraft', item, index);
-        var position = Cesium.Cartesian3.fromDegrees(sample.lon, sample.lat, sample.height || 10000);
+        var position = Cesium.Cartesian3.fromDegrees(sample.lon, sample.lat, Number.isFinite(sample.height) ? sample.height : 0);
 
         lodVisible++;
         if (!billboard) {
@@ -212,7 +213,7 @@
             position: position,
             image: window.trackIcon ? window.trackIcon("air", "#dfe6ff") : (window.markerIcon ? window.markerIcon("soft-dot") : 'loading_images/earth1.jpg'),
             scale: height > 1500000 ? 0.2 : 0.26,
-            rotation: Cesium.Math.toRadians(sample.heading || item.heading || 0),
+            rotation: Cesium.Math.toRadians(-(sample.heading || item.heading || 0)),
             color: Cesium.Color.WHITE.withAlpha(isStale ? 0.42 : 0.95),
             disableDepthTestDistance: 0
           });
@@ -221,7 +222,7 @@
           billboard.id = pickId;
           billboard.position = position;
           billboard.scale = height > 1500000 ? 0.2 : 0.26;
-          billboard.rotation = Cesium.Math.toRadians(sample.heading || item.heading || 0);
+          billboard.rotation = Cesium.Math.toRadians(-(sample.heading || item.heading || 0));
           billboard.color = Cesium.Color.WHITE.withAlpha(isStale ? 0.42 : 0.95);
         }
       });
@@ -241,6 +242,21 @@
       if (Orion.Diagnostics && Orion.Diagnostics.SystemMonitor.active) {
         console.log('[Aviation] Provider:', providerCount, 'LOD Visible:', lodVisible, 'Allocated:', this.collection.length);
       }
+    },
+
+    updatePositions: function() {
+      if (!this.collection || !Orion.Runtime.StateManager.isLayerEnabled('liveAircraft') ||
+          !Orion.SimulationClock || Orion.SimulationClock.mode !== 'live') return;
+      var self = this, now = Date.now();
+      Object.keys(this.billboardsById).forEach(function(id) {
+        var record = self.aircraftById[id], billboard = self.billboardsById[id];
+        if (!record || !billboard) return;
+        var sample = self.interpolateRecord(record);
+        if (!sample) return;
+        billboard.position = Cesium.Cartesian3.fromDegrees(sample.lon, sample.lat, sample.height);
+        billboard.rotation = Cesium.Math.toRadians(-sample.heading);
+        billboard.color = Cesium.Color.WHITE.withAlpha(now - record.sourceTimestamp > self.staleMs ? 0.42 : 0.95);
+      });
     }
   };
 
@@ -299,7 +315,7 @@
           var pos = Cesium.Cartesian3.fromDegrees(sample.lon, sample.lat, sample.height || 450000);
           var pixelSize = height > 10000000 ? 1.7 : (height > 2000000 ? 2.5 : 3.8);
           
-          self.collection.add({
+          var point = self.collection.add({
             id: primitivePickId(src, item, index),
             position: pos,
             pixelSize: pixelSize,
@@ -308,6 +324,7 @@
             outlineWidth: 0,
             disableDepthTestDistance: 0
           });
+          point.orionOrbitalItem = item;
 
           if (selectedId && selectedId === platformEntityKey(src, item.id || item.name || index)) {
             self.renderTrajectory(item);
@@ -318,6 +335,19 @@
       if (Orion.Diagnostics && Orion.Diagnostics.SystemMonitor.active) {
         console.log('[Orbital] Provider (Source):', providerCount, 'LOD Visible (Total):', lodVisible, 'Allocated:', this.collection.length);
       }
+    },
+
+    updatePositions: function(time) {
+      if (!this.collection || !this.collection.length || +time === this.lastMotionTime) return;
+      this.lastMotionTime = +time;
+      this.renderTime = time;
+      for (var i = 0; i < this.collection.length; i++) {
+        var point = this.collection.get(i);
+        var sample = Orion.Telemetry.Samplers.satellite(point.orionOrbitalItem, time);
+        point.show = !!sample;
+        if (sample) point.position = Cesium.Cartesian3.fromDegrees(sample.lon, sample.lat, sample.height);
+      }
+      this.viewer.scene.requestRender();
     },
 
     renderTrajectory: function(item) {
