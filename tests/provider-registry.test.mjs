@@ -247,10 +247,12 @@ test("platform renderers are rebound and guarded after boot recovery", () => {
 test("html asset version is bumped for updated runtime modules", () => {
   const source = fs.readFileSync(path.join(root, "index.html"), "utf8");
 
-  assert.match(source, /app\.js\?v=20261111-context6/);
+  assert.match(source, /app\.js\?v=20261111-runtime2/);
   assert.match(source, /orion-config\.js\?v=20261110-reliability1/);
   assert.match(source, /orion-onboarding\.js\?v=20261110-reliability1/);
-  assert.match(source, /cameranet_frontend\.js\?v=20261111-spatial1/);
+  assert.match(source, /cameranet_frontend\.js\?v=20261111-runtime2/);
+  assert.match(source, /orion-frame-buffer\.js\?v=20261111-runtime2/);
+  assert.match(source, /styles\.css\?v=20261111-runtime2/);
   assert.match(source, /orion-renderer-primitive\.js\?v=20261110-reliability1/);
   assert.match(source, /orion-telemetry-health\.js\?v=20261110-reliability1/);
   assert.equal(source.includes("20260701-hardening3"), false);
@@ -262,6 +264,7 @@ test("camera and orbital layers have a single viewport and control owner", () =>
   const cameraSource = fs.readFileSync(path.join(root, "cameranet_frontend.js"), "utf8");
 
   assert.match(appSource, /viewportBoundPlatformLayers = \["powerGrid"\]/);
+  assert.match(appSource, /definition\.type !== "camera"/);
   assert.match(appSource, /state\.orbitalDataset === "all" \? \["realtimeSatellites"\]/);
   assert.match(appSource, /if \(!viewer \|\| imageryTransitionActive\)/);
   assert.equal(cameraSource.includes("prefetchContinentalUS"), false);

@@ -49,7 +49,7 @@ try {
  assert.ok(audit.frames.length>8,'Loop should repeat the real frame sequence');
  assert.ok(audit.wraps>=1,'At least one last-to-first transition must render');
  assert.ok(audit.widths.slice(1).every(width=>width>=2048),'Restart and all playback frames must retain playback resolution');
- await page.screenshot({path:'artifacts/buffered-satellite.png'});
+ await page.screenshot({path:'artifacts/buffered-satellite.png',animations:'disabled',timeout:60000});
  console.log('24 fps requested: no blank or cropped frames across loop',audit.frames.length);
  await page.locator('#timelineLoop').click();
  await page.locator('#playPause').click();
@@ -64,7 +64,7 @@ try {
  await page.evaluate(()=>{const p=platformFeeds.weatherRadar.payload;p.frames=p.frames.slice(0,12);p.latest=p.frames[0];});
  await page.locator('#playPause').click();await page.waitForFunction(()=>appState.playing,null,{timeout:60000});
  await page.waitForFunction(()=>!appState.playing,null,{timeout:60000});
- await page.screenshot({path:'artifacts/buffered-precipitation.png'});
+ await page.screenshot({path:'artifacts/buffered-precipitation.png',animations:'disabled',timeout:60000});
  console.log('Precipitation raster buffering passed;',count,'available forecast frames');
  assert.deepEqual(errors,[]);
 } finally {await browser.close();}

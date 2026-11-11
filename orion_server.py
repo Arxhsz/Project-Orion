@@ -3407,6 +3407,24 @@ class OrionHandler(SimpleHTTPRequestHandler):
 
         return ("\n".join(rewritten) + "\n").encode("utf-8")
 
+    @staticmethod
+    def camera_hls_is_fl511(camera_id, upstream_url):
+        host = (urlparse(upstream_url or "").hostname or "").lower()
+        return str(camera_id or "").startswith("fl511-") or host == "divas.cloud" or host.endswith(".divas.cloud")
+
+    @classmethod
+    def camera_hls_request_headers(cls, camera_id, upstream_url):
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Project Orion CameraNet)",
+            "Accept": "*/*",
+        }
+        if cls.camera_hls_is_fl511(camera_id, upstream_url):
+            headers.update({
+                "Referer": "https://fl511.com/",
+                "Origin": "https://fl511.com",
+            })
+        return headers
+
     def proxy_camera_hls(self):
         parsed = urlparse(self.path)
         params = parse_qs(parsed.query)
@@ -3427,20 +3445,17 @@ class OrionHandler(SimpleHTTPRequestHandler):
                 self.write_payload(payload)
                 return
 
+            is_fl511 = self.camera_hls_is_fl511(camera_id, upstream_url)
+
             def fetch_hls(url):
-                request = Request(url, headers={
-                    "User-Agent": "Mozilla/5.0 (Project Orion CameraNet)",
-                    "Referer": "https://fl511.com/",
-                    "Origin": "https://fl511.com",
-                    "Accept": "*/*",
-                })
+                request = Request(url, headers=self.camera_hls_request_headers(camera_id, url))
                 with urlopen(request, timeout=18) as response:
                     return response.read(), response.headers.get("Content-Type", "")
 
             try:
                 payload, content_type = fetch_hls(upstream_url)
             except HTTPError as error:
-                if error.code not in (401, 403, 404, 410, 429, 500, 502, 503, 504) or not camera_id:
+                if error.code not in (401, 403, 404, 410, 429, 500, 502, 503, 504) or not camera_id or not is_fl511:
                     raise
 
                 fresh = resolve_fl511_hls(camera_id)["stream_url"]
@@ -3454,7 +3469,7 @@ class OrionHandler(SimpleHTTPRequestHandler):
                 upstream_url = urlunparse(parsed_upstream._replace(query=urlencode(query, doseq=True)))
                 payload, content_type = fetch_hls(upstream_url)
             except (URLError, TimeoutError):
-                if not camera_id:
+                if not camera_id or not is_fl511:
                     raise
                 fresh = resolve_fl511_hls(camera_id)["stream_url"]
                 fresh_token = (parse_qs(urlparse(fresh).query).get("token") or [""])[0]
@@ -3488,19 +3503,12 @@ class OrionHandler(SimpleHTTPRequestHandler):
             self.end_headers()
             self.write_payload(payload)
         except Exception as error:
-            path = urlparse(upstream_url).path if upstream_url else ""
-            is_playlist = self.path.startswith("/camera/hls?id=") or path.endswith(".m3u8")
-            if is_playlist:
-                payload = b"#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:10\n#EXT-X-ENDLIST\n"
-                self.send_response(200)
-                self.send_header("Content-Type", "application/vnd.apple.mpegurl")
-                self.send_header("X-Orion-HLS-Fallback", type(error).__name__)
-            else:
-                payload = b""
-                self.send_response(204)
-                self.send_header("Content-Type", "video/mp2t")
-                self.send_header("X-Orion-HLS-Fallback", type(error).__name__)
+            payload = b"CameraNet upstream stream unavailable"
+            self.send_response(502)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("X-Orion-HLS-Fallback", type(error).__name__)
             self.send_header("Cache-Control", "no-store")
+            self.send_header("Access-Control-Allow-Origin", "*")
             self.send_header("Content-Length", str(len(payload)))
             self.end_headers()
             self.write_payload(payload)

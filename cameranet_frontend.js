@@ -18,10 +18,15 @@
     removeMoveEndListener: null,
     currentHls: null,
     currentResolverController: null,
+    currentHealthController: null,
     providerStatus: "standby",
     providerCount: 0,
     lastError: "",
     startupTimer: null,
+    stallTimer: null,
+    playbackPhase: "idle",
+    playbackMessage: "",
+    playbackVersion: 0,
     bboxCache: [],
     cacheLimit: 40,
     activeFetchKey: "",
@@ -95,6 +100,11 @@
       cameraNetState.currentResolverController = null;
     }
 
+    if (cameraNetState.currentHealthController) {
+      cameraNetState.currentHealthController.abort();
+      cameraNetState.currentHealthController = null;
+    }
+
     if (cameraNetState.currentHls) {
       try {
         cameraNetState.currentHls.destroy();
@@ -107,6 +117,44 @@
       window.clearTimeout(cameraNetState.startupTimer);
       cameraNetState.startupTimer = null;
     }
+
+    if (cameraNetState.stallTimer) {
+      window.clearTimeout(cameraNetState.stallTimer);
+      cameraNetState.stallTimer = null;
+    }
+  }
+
+  function isCurrentPlayback(camera, version) {
+    return cameraNetState.selectedCamera === camera && cameraNetState.playbackVersion === version;
+  }
+
+  function setPlaybackPhase(phase, message, camera, version) {
+    if (camera && version != null && !isCurrentPlayback(camera, version)) {
+      return;
+    }
+
+    cameraNetState.playbackPhase = phase;
+    cameraNetState.playbackMessage = message || "";
+    var status = document.querySelector("#cameraFrame .camera-playback-status");
+    if (status) {
+      status.dataset.state = phase;
+      status.textContent = message || "";
+      status.hidden = phase === "playing" || !message;
+    }
+    window.dispatchEvent(new CustomEvent("orion:camera-playback-state", {
+      detail: {
+        cameraId: camera && camera.id ? camera.id : null,
+        phase: phase,
+        message: message || ""
+      }
+    }));
+  }
+
+  function closePlayback() {
+    cameraNetState.playbackVersion += 1;
+    disposePlayback();
+    cameraNetState.playbackPhase = "idle";
+    cameraNetState.playbackMessage = "";
   }
 
   function bboxFromRectangle(rectangle) {
@@ -982,7 +1030,7 @@
     }, force ? 0 : CAMERA_CONFIG.fetchDebounceMs);
   }
 
-  function renderEmbeddedFeed(camera) {
+  function renderEmbeddedFeed(camera, version) {
     var frame = document.getElementById("cameraFrame");
     if (!frame || !camera.embed_url) {
       return false;
@@ -993,29 +1041,76 @@
       "<iframe title='", escapeHtml(camera.name || "Public live camera"), "' src='", escapeHtml(camera.embed_url), "' allow='autoplay; fullscreen; picture-in-picture' allowfullscreen loading='eager' referrerpolicy='no-referrer-when-downgrade'></iframe>",
       "<span class='camera-live-badge'>LIVE</span>",
       "<span class='camera-live-clock'>PUBLIC EMBED</span>",
+      "<span class='camera-playback-status' role='status' data-state='connecting'>Connecting to publisher player</span>",
       "</div>"
     ].join("");
+    setPlaybackPhase("connecting", "Connecting to publisher player", camera, version);
+    var iframe = frame.querySelector("iframe");
+    if (iframe) {
+      iframe.addEventListener("load", function () {
+        setPlaybackPhase("playing", "", camera, version);
+      }, { once: true });
+    }
     return true;
   }
 
-  function renderLiveUnavailable(message) {
+  function nearestPlayableCamera(camera) {
+    return cameraNetState.cameras
+      .filter(function (candidate) {
+        return candidate !== camera && candidate.id !== camera.id && cameraHasLiveVideo(candidate);
+      })
+      .map(function (candidate) {
+        var scale = Math.cos(Number(camera.lat || 0) * Math.PI / 180);
+        return {
+          camera: candidate,
+          distance: Math.hypot((Number(candidate.lon) - Number(camera.lon)) * scale, Number(candidate.lat) - Number(camera.lat))
+        };
+      })
+      .sort(function (left, right) { return left.distance - right.distance; })[0]?.camera || null;
+  }
+
+  function renderLiveUnavailable(message, camera, version) {
+    if (camera && version != null && !isCurrentPlayback(camera, version)) {
+      return;
+    }
     var frame = document.getElementById("cameraFrame");
     if (!frame) {
       return;
     }
 
+    disposePlayback();
     frame.innerHTML = [
       "<div class='camera-feed-message'>",
       "<strong>Live feed unavailable</strong>",
       "<span>", escapeHtml(message || "The provider stream could not be played."), "</span>",
+      "<div class='camera-feed-recovery'></div>",
       "</div>"
     ].join("");
+    setPlaybackPhase("error", message || "The provider stream could not be played.", camera, version);
+
+    if (!camera) {
+      return;
+    }
+    var recovery = frame.querySelector(".camera-feed-recovery");
+    var retry = document.createElement("button");
+    retry.type = "button";
+    retry.textContent = "Retry feed";
+    retry.addEventListener("click", function () { openCameraDetailPanel(camera); });
+    recovery.appendChild(retry);
+    var nearby = nearestPlayableCamera(camera);
+    if (nearby) {
+      var next = document.createElement("button");
+      next.type = "button";
+      next.textContent = "Try nearby";
+      next.addEventListener("click", function () { openCameraDetailPanel(nearby); });
+      recovery.appendChild(next);
+    }
   }
 
-  function renderMjpeg(camera, streamUrl) {
+  function renderMjpeg(camera, streamUrl, version) {
     var frame = document.getElementById("cameraFrame");
     if (!frame || !streamUrl) {
-      renderLiveUnavailable("The provider did not supply a playable MJPEG stream.");
+      renderLiveUnavailable("The provider did not supply a playable MJPEG stream.", camera, version);
       return;
     }
 
@@ -1024,21 +1119,31 @@
       "<img id='cameraNetMjpeg' alt='", escapeHtml(camera.name || "CameraNet live camera"), "' src='", escapeHtml(streamUrl), "'>",
       "<span class='camera-live-badge'>LIVE</span>",
       "<span class='camera-live-clock'>LIVE MJPEG</span>",
+      "<span class='camera-playback-status' role='status' data-state='connecting'>Connecting to live feed</span>",
       "</div>"
     ].join("");
 
+    setPlaybackPhase("connecting", "Connecting to live feed", camera, version);
     var image = document.getElementById("cameraNetMjpeg");
     if (image) {
+      cameraNetState.startupTimer = window.setTimeout(function () {
+        renderLiveUnavailable("The provider MJPEG stream did not start responding.", camera, version);
+      }, 18000);
+      image.addEventListener("load", function () {
+        window.clearTimeout(cameraNetState.startupTimer);
+        cameraNetState.startupTimer = null;
+        setPlaybackPhase("playing", "", camera, version);
+      }, { once: true });
       image.addEventListener("error", function () {
-        renderLiveUnavailable("The provider MJPEG stream stopped responding.");
+        renderLiveUnavailable("The provider MJPEG stream stopped responding.", camera, version);
       }, { once: true });
     }
   }
 
-  function playHls(camera, streamData) {
+  function playHls(camera, streamData, version) {
     var frame = document.getElementById("cameraFrame");
     if (!frame || !streamData || !streamData.stream_url) {
-      renderLiveUnavailable("The provider did not supply a playable HLS stream.");
+      renderLiveUnavailable("The provider did not supply a playable HLS stream.", camera, version);
       return;
     }
 
@@ -1047,45 +1152,86 @@
       "<video id='cameraNetVideo' controls autoplay muted playsinline></video>",
       "<span class='camera-live-badge'>LIVE</span>",
       "<span class='camera-live-clock'>LIVE HLS</span>",
+      "<span class='camera-playback-status' role='status' data-state='connecting'>Connecting to live feed</span>",
       "</div>"
     ].join("");
 
     var video = document.getElementById("cameraNetVideo");
     if (!video) {
-      renderLiveUnavailable("The live video player could not be created.");
+      renderLiveUnavailable("The live video player could not be created.", camera, version);
       return;
     }
 
     var failureShown = false;
-    var showFailure = function () {
-      if (failureShown) {
+    var started = false;
+    var networkRecoveries = 0;
+    var mediaRecoveries = 0;
+    var stallRecoveries = 0;
+    var hls = null;
+    var clearStallTimer = function () {
+      if (cameraNetState.stallTimer) {
+        window.clearTimeout(cameraNetState.stallTimer);
+        cameraNetState.stallTimer = null;
+      }
+    };
+    var showFailure = function (reason) {
+      if (failureShown || !isCurrentPlayback(camera, version)) {
         return;
       }
       failureShown = true;
-      disposePlayback();
-      renderLiveUnavailable("The provider HLS stream did not start or stopped responding.");
+      renderLiveUnavailable(reason || "The provider HLS stream did not start or stopped responding.", camera, version);
     };
-    var started = false;
+    var scheduleStallRecovery = function () {
+      clearStallTimer();
+      cameraNetState.stallTimer = window.setTimeout(function () {
+        if (!isCurrentPlayback(camera, version) || video.readyState >= 3) {
+          return;
+        }
+        stallRecoveries += 1;
+        if (hls && stallRecoveries <= 2) {
+          setPlaybackPhase("reconnecting", "Reconnecting to live feed", camera, version);
+          hls.startLoad(-1);
+          video.play().catch(function () {});
+          scheduleStallRecovery();
+          return;
+        }
+        showFailure("The live stream stalled and did not recover.");
+      }, 12000);
+    };
+    var markPlaying = function () {
+      if (!isCurrentPlayback(camera, version)) {
+        return;
+      }
+      started = true;
+      networkRecoveries = 0;
+      stallRecoveries = 0;
+      window.clearTimeout(cameraNetState.startupTimer);
+      cameraNetState.startupTimer = null;
+      clearStallTimer();
+      setPlaybackPhase("playing", "", camera, version);
+    };
+    var markBuffering = function () {
+      if (!isCurrentPlayback(camera, version)) {
+        return;
+      }
+      setPlaybackPhase(started ? "buffering" : "connecting", started ? "Buffering live feed" : "Connecting to live feed", camera, version);
+      scheduleStallRecovery();
+    };
+
+    setPlaybackPhase("connecting", "Connecting to live feed", camera, version);
     cameraNetState.startupTimer = window.setTimeout(function () {
       if (!started && video.readyState < 2) {
-        showFailure();
+        showFailure("The provider live stream did not start in time.");
       }
-    }, 6500);
-    video.addEventListener("playing", function () {
-      started = true;
-      window.clearTimeout(cameraNetState.startupTimer);
-      cameraNetState.startupTimer = null;
-    }, { once: true });
-    video.addEventListener("loadeddata", function () {
-      started = true;
-      window.clearTimeout(cameraNetState.startupTimer);
-      cameraNetState.startupTimer = null;
-    }, { once: true });
+    }, 18000);
+    video.addEventListener("playing", markPlaying);
+    video.addEventListener("loadeddata", markPlaying);
+    video.addEventListener("canplay", markPlaying);
+    video.addEventListener("waiting", markBuffering);
+    video.addEventListener("stalled", markBuffering);
 
     if (window.Hls && Hls.isSupported()) {
-      var networkRecoveries = 0;
-      var mediaRecoveries = 0;
-      var hls = new Hls({
+      hls = new Hls({
         enableWorker: true,
         lowLatencyMode: false,
         maxBufferLength: 45,
@@ -1111,12 +1257,26 @@
       hls.on(Hls.Events.MEDIA_ATTACHED, function () {
         video.play().catch(function () {});
       });
+      hls.on(Hls.Events.FRAG_LOADED, function () {
+        networkRecoveries = 0;
+      });
       hls.on(Hls.Events.ERROR, function (_event, data) {
+        if (!data || !isCurrentPlayback(camera, version)) {
+          return;
+        }
+        if (!data.fatal) {
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+            markBuffering();
+          }
+          return;
+        }
         if (data && data.fatal) {
           if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
             networkRecoveries += 1;
-            if (networkRecoveries <= 2) {
-              hls.startLoad();
+            if (networkRecoveries <= 3) {
+              setPlaybackPhase("reconnecting", "Reconnecting to live feed", camera, version);
+              hls.startLoad(-1);
+              scheduleStallRecovery();
               return;
             }
           }
@@ -1127,7 +1287,7 @@
               return;
             }
           }
-          showFailure();
+          showFailure("The provider HLS stream stopped responding.");
         }
       });
       return;
@@ -1135,17 +1295,79 @@
 
     if (video.canPlayType("application/vnd.apple.mpegurl")) {
       video.src = streamData.stream_url;
-      video.addEventListener("error", showFailure, { once: true });
+      video.addEventListener("error", function () {
+        showFailure("The browser could not play the provider HLS stream.");
+      }, { once: true });
       video.addEventListener("loadedmetadata", function () {
         video.play().catch(function () {});
       }, { once: true });
       return;
     }
 
-    showFailure();
+    showFailure("This browser does not support HLS live video.");
   }
 
-  async function openCameraDetailPanel(camera) {
+  function updateAvailability(camera, version, text) {
+    if (!isCurrentPlayback(camera, version)) {
+      return;
+    }
+    var status = document.getElementById("cameraAvailability");
+    if (!status) {
+      status = document.createElement("p");
+      status.id = "cameraAvailability";
+      var actions = document.getElementById("cameraDetailActions");
+      var meta = document.getElementById("cameraMeta");
+      if (actions) {
+        actions.after(status);
+      } else if (meta) {
+        meta.after(status);
+      }
+    }
+    status.textContent = text;
+  }
+
+  function checkCameraHealth(camera, version) {
+    if (isStaticHostMode() || typeof AbortController === "undefined") {
+      return;
+    }
+    var controller = new AbortController();
+    var timedOut = false;
+    cameraNetState.currentHealthController = controller;
+    var timeout = window.setTimeout(function () {
+      timedOut = true;
+      controller.abort();
+    }, 10000);
+
+    fetch("/camera/health?id=" + encodeURIComponent(camera.id), { signal: controller.signal })
+      .then(function (response) {
+        if (!response.ok) {
+          throw new Error("Health probe returned " + response.status);
+        }
+        return response.json();
+      })
+      .then(function (health) {
+        if (!isCurrentPlayback(camera, version)) {
+          return;
+        }
+        camera.status = health.status || "UNKNOWN";
+        updateAvailability(camera, version, camera.status + " · " + (health.message || "Feed checked") +
+          (health.last_checked ? " · checked " + new Date(health.last_checked * 1000).toLocaleTimeString() : ""));
+      })
+      .catch(function (error) {
+        if (!isCurrentPlayback(camera, version) || (error && error.name === "AbortError" && !timedOut)) {
+          return;
+        }
+        updateAvailability(camera, version, "UNKNOWN · Independent availability check did not respond");
+      })
+      .finally(function () {
+        window.clearTimeout(timeout);
+        if (cameraNetState.currentHealthController === controller) {
+          cameraNetState.currentHealthController = null;
+        }
+      });
+  }
+
+  function openCameraDetailPanel(camera) {
     var panel = document.getElementById("cameraWindow");
     var title = document.getElementById("cameraTitle");
     var meta = document.getElementById("cameraMeta");
@@ -1156,6 +1378,8 @@
     }
 
     disposePlayback();
+    cameraNetState.playbackVersion += 1;
+    var playbackVersion = cameraNetState.playbackVersion;
     document.getElementById("cameraAvailability")?.remove();
     cameraNetState.selectedCamera = camera;
     refreshIntelList();
@@ -1183,6 +1407,7 @@
       "<span>Camera feed loads on demand</span>",
       "</div>"
     ].join("");
+    setPlaybackPhase("connecting", "Resolving live stream", camera, playbackVersion);
     panel.classList.remove("hidden");
     document.getElementById('cameraDetailActions')?.remove();
     var actions = document.createElement('div'); actions.id='cameraDetailActions'; actions.className='camera-detail-actions';
@@ -1204,42 +1429,35 @@
     });
     meta.after(actions);
 
-    if (!isStaticHostMode()) {
-      try {
-        var healthResponse = await fetch('/camera/health?id=' + encodeURIComponent(camera.id), {signal:AbortSignal.timeout(10000)});
-        var health = await healthResponse.json();
-        if (cameraNetState.selectedCamera !== camera) return;
-        camera.status = health.status;
-        var status = document.createElement('p'); status.id='cameraAvailability'; meta.after(status);
-        status.textContent = health.status + ' · ' + (health.message || 'Feed checked') + (health.last_checked ? ' · checked ' + new Date(health.last_checked*1000).toLocaleTimeString() : '');
-        if (health.status === 'OFFLINE') { renderLiveUnavailable(health.message); return; }
-      } catch(error) {
-        if (cameraNetState.selectedCamera !== camera) return;
-        var status = document.createElement('p'); status.id='cameraAvailability';meta.after(status);
-        status.textContent='UNKNOWN · Independent availability check did not respond';
-      }
-    }
+    checkCameraHealth(camera, playbackVersion);
     var streamType = String(camera.stream_type || "").toLowerCase();
     if (streamType === "embed" && camera.embed_url) {
-      renderEmbeddedFeed(camera);
+      renderEmbeddedFeed(camera, playbackVersion);
       return;
     }
 
     var directStaticStream = camera.upstream_stream_url ||
       (/^https?:\/\//i.test(camera.stream_url || "") ? camera.stream_url : "");
     if (streamType === "mjpeg" && directStaticStream) {
-      renderMjpeg(camera, directStaticStream);
+      renderMjpeg(camera, directStaticStream, playbackVersion);
       return;
     }
     if (streamType === "hls" && directStaticStream &&
         (isStaticHostMode() || !camera.stream_url || /^https?:\/\//i.test(camera.stream_url))) {
-      playHls(camera, { stream_url: directStaticStream });
+      playHls(camera, { stream_url: directStaticStream }, playbackVersion);
       return;
     }
 
     if (streamType === "hls" && camera.stream_url) {
       var controller = typeof AbortController !== "undefined" ? new AbortController() : null;
       cameraNetState.currentResolverController = controller;
+      var resolverTimedOut = false;
+      var resolverTimer = window.setTimeout(function () {
+        resolverTimedOut = true;
+        if (controller) {
+          controller.abort();
+        }
+      }, 12000);
       fetch(camera.stream_url, {
         headers: { Accept: "application/json" },
         signal: controller ? controller.signal : undefined
@@ -1255,24 +1473,33 @@
           });
         })
         .then(function (streamData) {
-          cameraNetState.currentResolverController = null;
-          if (!streamData.ok || streamData.error || !streamData.stream_url) {
-            renderLiveUnavailable(streamData.message || "The provider could not resolve this live stream.");
+          window.clearTimeout(resolverTimer);
+          if (cameraNetState.currentResolverController === controller) {
+            cameraNetState.currentResolverController = null;
+          }
+          if (!isCurrentPlayback(camera, playbackVersion)) {
             return;
           }
-          playHls(camera, streamData);
+          if (!streamData.ok || streamData.error || !streamData.stream_url) {
+            renderLiveUnavailable(streamData.message || "The provider could not resolve this live stream.", camera, playbackVersion);
+            return;
+          }
+          playHls(camera, streamData, playbackVersion);
         })
         .catch(function (error) {
-          cameraNetState.currentResolverController = null;
-          if (error && error.name === "AbortError") {
+          window.clearTimeout(resolverTimer);
+          if (cameraNetState.currentResolverController === controller) {
+            cameraNetState.currentResolverController = null;
+          }
+          if (!isCurrentPlayback(camera, playbackVersion) || (error && error.name === "AbortError" && !resolverTimedOut)) {
             return;
           }
-          renderLiveUnavailable("The live stream resolver did not respond.");
+          renderLiveUnavailable(resolverTimedOut ? "The live stream resolver timed out." : "The live stream resolver did not respond.", camera, playbackVersion);
         });
       return;
     }
 
-    renderLiveUnavailable("This camera does not expose browser-playable live video.");
+    renderLiveUnavailable("This camera does not expose browser-playable live video.", camera, playbackVersion);
   }
 
   function onCameraNetClick(viewer, pickedObject) {
@@ -1369,7 +1596,7 @@
     }
     cameraNetState.activeFetchKey = "";
     cameraNetState.activeFetchPromise = null;
-    disposePlayback();
+    closePlayback();
 
     if (cameraNetState.removeMoveEndListener) {
       cameraNetState.removeMoveEndListener();
@@ -1395,6 +1622,7 @@
       disable: disableCameraNet,
       onClick: onCameraNetClick,
       selectCameraById: selectCameraById,
+      closePlayback: closePlayback,
       getSelectableCameras: getSelectableCameras,
       update: updateCameraNet,
       getDebugStats: getDebugStats,
@@ -1407,6 +1635,7 @@
     disable: disableCameraNet,
     onClick: onCameraNetClick,
     selectCameraById: selectCameraById,
+    closePlayback: closePlayback,
     getSelectableCameras: getSelectableCameras,
     update: updateCameraNet,
     getDebugStats: getDebugStats,

@@ -80,18 +80,26 @@
     var tiles = globe._surface && globe._surface._tilesToRender;
     if (!tiles || !tiles.length) return false;
     var rectangle = layer.imageryProvider.rectangle;
-    return tiles.every(function (tile) {
-      if (!window.Cesium.Rectangle.intersection(tile.rectangle, rectangle)) return true;
+    var relevant = 0;
+    var ready = 0;
+    tiles.forEach(function (tile) {
+      if (!window.Cesium.Rectangle.intersection(tile.rectangle, rectangle)) return;
+      relevant += 1;
       var imagery = tile.data && tile.data.imagery || [];
       var matches = imagery.filter(function (item) {
         return (item.readyImagery && item.readyImagery.imageryLayer === layer) ||
           (item.loadingImagery && item.loadingImagery.imageryLayer === layer);
       });
-      return matches.length > 0 && matches.every(function (item) {
+      if (matches.some(function (item) {
         return item.readyImagery && item.readyImagery.imageryLayer === layer &&
           !!(item.readyImagery.texture || item.readyImagery.textureWebMercator);
-      });
+      })) ready += 1;
     });
+    // Terrain refinement replaces a few visible tiles every frame. Waiting for
+    // a perfect instantaneous set can deadlock even after the complete level-0
+    // texture is on the GPU; a 90% quorum rejects incomplete uploads without
+    // treating normal Cesium tile churn as a failed weather frame.
+    return relevant > 0 && ready / relevant >= 0.9;
   };
   Orion.FrameBuffer.provider = function (image, rectangle, credit) {
     var C = window.Cesium;

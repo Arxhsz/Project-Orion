@@ -5854,7 +5854,7 @@ void main() {
   }
 
   function platformUsesEntityFeed(definition) {
-    return definition && definition.type !== "weatherRadar" && definition.type !== "tileset";
+    return definition && definition.type !== "weatherRadar" && definition.type !== "tileset" && definition.type !== "camera";
   }
 
   function cameraRegionQuery(layerId) {
@@ -8689,6 +8689,9 @@ void main() {
 
   function closeCameraWindow() {
     disposeCameraPlayback();
+    if (window.CameraNet && typeof CameraNet.closePlayback === "function") {
+      CameraNet.closePlayback();
+    }
     if (elements.cameraWindow) {
       elements.cameraWindow.classList.add("hidden");
       elements.cameraWindow.classList.remove("minimized", "fullscreen");

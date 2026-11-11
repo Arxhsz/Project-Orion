@@ -36,7 +36,7 @@ test('upload readiness requires the complete cached texture, independent of othe
   assert.equal(FrameBuffer.uploaded({_imageryCache:{tile:{state:4,texture:{}}}}),true);
 });
 
-test('a decoded texture cannot replace a frame until every visible terrain tile uses it',()=>{
+test('a decoded texture cannot replace a frame without sufficient visible terrain coverage',()=>{
  window.Cesium.Rectangle={intersection:(a,b)=>a.east>b.west&&a.west<b.east?a:undefined};
  const rect={west:0,east:1};
  const layer={imageryProvider:{rectangle:rect},_imageryCache:{tile:{state:4,texture:{}}}};
@@ -50,6 +50,18 @@ test('a decoded texture cannot replace a frame until every visible terrain tile 
  assert.equal(FrameBuffer.visibleReady(layer,globe),false);
  globe._surface._tilesToRender[1].rectangle={west:2,east:3};
  assert.equal(FrameBuffer.visibleReady(layer,globe),true);
+});
+
+test('visible readiness tolerates bounded terrain refinement without accepting a sparse frame',()=>{
+ window.Cesium.Rectangle={intersection:(a,b)=>a.east>b.west&&a.west<b.east?a:undefined};
+ const rect={west:0,east:1};
+ const layer={imageryProvider:{rectangle:rect},_imageryCache:{tile:{state:4,texture:{}}}};
+ const ready=()=>({rectangle:rect,data:{imagery:[{readyImagery:{imageryLayer:layer,texture:{}}}]}});
+ const loading=()=>({rectangle:rect,data:{imagery:[{loadingImagery:{imageryLayer:layer}}]}});
+ const globe={_surface:{_tilesToRender:Array.from({length:18},ready).concat(Array.from({length:2},loading))}};
+ assert.equal(FrameBuffer.visibleReady(layer,globe),true);
+ globe._surface._tilesToRender=Array.from({length:17},ready).concat(Array.from({length:3},loading));
+ assert.equal(FrameBuffer.visibleReady(layer,globe),false);
 });
 
 test('decoded cache evicts least recently used frames within its byte budget',async()=>{

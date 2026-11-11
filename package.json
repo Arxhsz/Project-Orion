@@ -12,6 +12,7 @@
     "test:workspace": "node tests/browser-workspace.mjs",
     "test:quality": "node tests/browser-data-quality.mjs",
     "test:cameras": "node tests/browser-cameras.mjs",
+    "test:camera-playback": "node tests/browser-camera-playback.mjs",
     "test:camera-shards": "node tests/browser-camera-shards.mjs",
     "test:live": "node tests/browser-live-coverage.mjs",
     "test:zoom": "node tests/browser-zoom.mjs",

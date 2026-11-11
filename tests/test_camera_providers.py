@@ -109,6 +109,42 @@ class CameraProviderTests(unittest.TestCase):
         self.assertTrue(allowed(None, "https://strmr5.sha.maryland.gov/live/playlist.m3u8"))
         self.assertFalse(allowed(None, "https://example.test/live/playlist.m3u8"))
 
+    def test_hls_proxy_uses_provider_specific_headers(self):
+        headers = orion_server.OrionHandler.camera_hls_request_headers(
+            "caltrans-test",
+            "https://video.dot.ca.gov/live/test.m3u8",
+        )
+        self.assertNotIn("Origin", headers)
+        self.assertNotIn("Referer", headers)
+
+        fl_headers = orion_server.OrionHandler.camera_hls_request_headers(
+            "fl511-916",
+            "https://divas.cloud/live/test.m3u8",
+        )
+        self.assertEqual("https://fl511.com", fl_headers["Origin"])
+        self.assertEqual("https://fl511.com/", fl_headers["Referer"])
+
+    def test_hls_proxy_reports_upstream_failure_instead_of_empty_success(self):
+        handler = orion_server.OrionHandler.__new__(orion_server.OrionHandler)
+        handler.path = "/camera/hls?url=https%3A%2F%2Fvideo.dot.ca.gov%2Flive%2Ftest.m3u8&cid=caltrans-test"
+        statuses = []
+        headers = {}
+        payloads = []
+        handler.send_response = statuses.append
+        handler.send_header = headers.__setitem__
+        handler.end_headers = lambda: None
+        handler.write_payload = payloads.append
+
+        with patch.object(orion_server, "urlopen", side_effect=orion_server.URLError("offline")), \
+                patch.object(orion_server, "resolve_fl511_hls") as resolver:
+            handler.proxy_camera_hls()
+
+        resolver.assert_not_called()
+        self.assertEqual([502], statuses)
+        self.assertEqual("no-store", headers["Cache-Control"])
+        self.assertEqual("*", headers["Access-Control-Allow-Origin"])
+        self.assertNotIn(b"#EXTM3U", payloads[0])
+
 
 class PowerGridTests(unittest.TestCase):
     def test_power_grid_rejects_unbounded_or_oversized_queries(self):

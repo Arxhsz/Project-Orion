@@ -1926,6 +1926,31 @@ input[type="range"]::-ms-thumb {
   letter-spacing: 0.14em;
 }
 
+.camera-feed-recovery {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 4px;
+}
+
+.camera-feed-recovery button {
+  min-height: 34px;
+  padding: 7px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  cursor: pointer;
+  font: 800 11px/1 system-ui, sans-serif;
+}
+
+.camera-feed-recovery button:hover,
+.camera-feed-recovery button:focus-visible {
+  border-color: rgba(255, 255, 255, 0.54);
+  background: rgba(255, 255, 255, 0.15);
+}
+
 .camera-frame video,
 .camera-frame img,
 .camera-frame iframe {
@@ -1948,6 +1973,44 @@ input[type="range"]::-ms-thumb {
   overflow: hidden;
   border-radius: 9px;
   background: #05070c;
+}
+
+.camera-playback-status {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  top: 50%;
+  max-width: calc(100% - 36px);
+  padding: 9px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  background: rgba(4, 6, 12, 0.88);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  line-height: 1.35;
+  text-align: center;
+  text-transform: uppercase;
+  transform: translate(-50%, -50%);
+  backdrop-filter: blur(10px);
+}
+
+.camera-playback-status::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.82);
+  border-top-color: transparent;
+  border-radius: 50%;
+  vertical-align: -1px;
+  animation: camera-status-spin 0.8s linear infinite;
+}
+
+@keyframes camera-status-spin {
+  to { transform: rotate(360deg); }
 }
 
 .camera-live-shell::after {
