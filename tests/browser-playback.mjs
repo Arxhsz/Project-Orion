@@ -7,12 +7,13 @@ const page=await browser.newPage({viewport:{width:1440,height:1000}});
 const errors=[];
 page.on('pageerror',e=>errors.push(e.message));
 await page.route('**/__orion_dev/version',r=>r.fulfill({status:404}));
-await page.addInitScript(()=>{localStorage.setItem('orion_onboarding_complete','true');localStorage.setItem('orion_changelog_dismissed','1.1.2-map-reliability');});
+await page.addInitScript(()=>{localStorage.setItem('orion_onboarding_complete','true');localStorage.setItem('orion_changelog_dismissed','1.1.2-map-reliability');localStorage.setItem('orion:shellVersion','3');localStorage.setItem('orion:panelCollapsed',JSON.stringify({commandPanel:false,telemetryPanel:true}));localStorage.setItem('orion:timelineCollapsed','1');});
 fs.mkdirSync('artifacts',{recursive:true});
 try {
  await page.goto(process.env.ORION_TEST_URL||'http://127.0.0.1:4174/?orionStatic=1');
  await page.waitForFunction(()=>window.viewer&&Array.from({length:viewer.imageryLayers.length},(_,i)=>viewer.imageryLayers.get(i)).some(l=>l.orionKey==='zoomWeather'),null,{timeout:60000});
  await page.waitForFunction(()=>!document.getElementById('orionLoadingScreen'));
+ await page.locator('.orion-dock-button[data-route="timeline"]').click();
  await page.evaluate(()=>{
    window.playbackAudit={missing:0,partial:0,frames:[],widths:[],wraps:0,lastTime:0,renderErrors:[]};
    viewer.scene.renderError.addEventListener((scene,error)=>playbackAudit.renderErrors.push(error.message));

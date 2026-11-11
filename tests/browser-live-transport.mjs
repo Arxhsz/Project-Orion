@@ -1,7 +1,7 @@
 import {chromium} from 'playwright';import assert from 'node:assert/strict';
 const browser=await chromium.launch({headless:true,executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});
 const p=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];p.on('pageerror',e=>errors.push(e.message));
-await p.route('**/__orion_dev/version',r=>r.fulfill({status:404}));await p.addInitScript(()=>{localStorage.setItem('orion_onboarding_complete','true');localStorage.setItem('orion_changelog_dismissed','1.1.2-map-reliability');});
+await p.route('**/__orion_dev/version',r=>r.fulfill({status:404}));await p.addInitScript(()=>{localStorage.setItem('orion_onboarding_complete','true');localStorage.setItem('orion_changelog_dismissed','1.1.2-map-reliability');localStorage.setItem('orion:shellVersion','3');localStorage.setItem('orion:panelCollapsed',JSON.stringify({commandPanel:false,telemetryPanel:true}));localStorage.setItem('orion:timelineCollapsed','1');});
 try{
  await p.goto('http://127.0.0.1:4174/');await p.waitForFunction(()=>window.orionSystems&&!document.getElementById('orionLoadingScreen'),null,{timeout:90000});
  await p.locator('#workspace-tab-layers').click();await p.locator('label').filter({has:p.locator('#trackAircraft')}).click();await p.locator('label').filter({has:p.locator('#platformMarine')}).click();

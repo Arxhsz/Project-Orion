@@ -4,7 +4,7 @@
 
 # Project Orion
 
-Project Orion is a real-time planetary command map built on CesiumJS. It combines NASA GIBS satellite imagery, NOAA/NWS radar, orbital tracking, aircraft, CameraNet, environmental monitoring, saved locations, live device location, and historical timeline playback in a dark glass command interface.
+Project Orion is a real-time planetary command map built on CesiumJS. It combines NASA GIBS satellite imagery, NOAA/NWS radar, orbital tracking, aircraft, CameraNet, environmental monitoring, saved locations, live device location, and historical timeline playback in a map-first operational interface.
 
 Current version: v1.1.2 + reliability release (2026-11-10)
 
@@ -22,6 +22,8 @@ Important files:
 ```text
 index.html                  Main application shell
 app.js                      Cesium app, timeline, layers, controls, telemetry
+orion-shell.js              Navigation, map tools, responsive surfaces, share links
+orion-shell.css             Command dock, contextual drawers, timeline, mobile navigation
 orion-config.js             Layer definitions, defaults, provider metadata
 orion-provider-registry.js  Provider capability/state registry
 orion-telemetry-health.js   Provider health, retry, and backoff state
@@ -30,6 +32,19 @@ camera_providers.py         CameraNet provider adapters
 build_pages_data.py         GitHub Pages JSON snapshot builder
 docs/                       Audit, issues, data sources, architecture, plan
 ```
+
+## Interface
+
+The current shell uses Godsview as a workflow and information-architecture reference without copying proprietary code, assets, or private data services. Orion keeps its own public-source providers and a distinct black-and-white command layout:
+
+- A compact icon command dock that leaves the globe visible and opens task-specific drawers only when needed.
+- A global search and status bar with runtime-driven feed activity, loading, warning, and failure states.
+- Mutually exclusive layer, intelligence, and timeline surfaces so tools do not compete for map space.
+- Map-native zoom, home, live-location, layer, and share controls.
+- A floating temporal surface contained inside the map region.
+- Mobile bottom navigation that keeps only one workspace surface open at a time.
+- Continuously synchronized `#orion` view state for camera position, active layers, labels, imagery mode, and timeline position.
+- Keyboard access for search (`/`), layers (`L`), intelligence (`D`), timeline (`T`), and returning to the map (`Escape`).
 
 ## Data Sources
 
@@ -141,6 +156,12 @@ Node tests:
 
 ```bash
 npm test
+```
+
+Responsive shell and interaction test:
+
+```bash
+npm run test:shell
 ```
 
 Python syntax:

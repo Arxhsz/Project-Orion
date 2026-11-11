@@ -1,0 +1,1329 @@
+:root {
+  --orion-sidebar-width: 292px;
+  --orion-inspector-width: 330px;
+  --orion-topbar-height: 56px;
+  --orion-mobile-nav-height: 0px;
+  --orion-surface: rgba(11, 12, 14, 0.97);
+  --orion-surface-raised: rgba(20, 21, 23, 0.96);
+  --orion-surface-hover: #242528;
+  --orion-line: rgba(255, 255, 255, 0.12);
+  --orion-line-strong: rgba(255, 255, 255, 0.22);
+  --orion-text: #ededed;
+  --orion-muted: #a2a4a8;
+  --orion-dim: #70737a;
+  --orion-accent: #d8a16d;
+  --orion-cyan: #6dc9d5;
+  --orion-green: #67d4a0;
+  --orion-red: #f16f78;
+}
+
+body.orion-gv-shell #app-shell,
+body.orion-gv-shell #app-shell * {
+  letter-spacing: 0;
+}
+
+body.orion-gv-shell {
+  --panel-bg: var(--orion-surface);
+  --panel-strong: var(--orion-surface-raised);
+  --panel-line: var(--orion-line);
+  --cyan: var(--orion-cyan);
+  --muted: var(--orion-muted);
+  --dim: var(--orion-dim);
+}
+
+body.orion-gv-shell .starscape,
+body.orion-gv-shell .hud-grid,
+body.orion-gv-shell .center-reticle {
+  display: none;
+}
+
+body.orion-gv-shell .orbital-vignette {
+  background:
+    linear-gradient(90deg, rgba(0, 0, 0, 0.3), transparent 18%, transparent 80%, rgba(0, 0, 0, 0.34)),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.26), transparent 22%, transparent 78%, rgba(0, 0, 0, 0.42));
+}
+
+body.orion-gv-shell .brand-hud,
+body.orion-gv-shell .hud-panel,
+body.orion-gv-shell .timeline-hud {
+  border-color: var(--orion-line);
+  border-radius: 0;
+  background: var(--orion-surface);
+  box-shadow: none;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+body.orion-gv-shell .brand-hud {
+  top: 0;
+  left: var(--orion-sidebar-width);
+  right: var(--orion-inspector-width);
+  width: auto;
+  height: var(--orion-topbar-height);
+  padding: 9px 12px;
+  transform: none;
+  border-width: 0 0 1px;
+  gap: 10px;
+  overflow: visible;
+}
+
+body.orion-gv-shell #commandPanel,
+body.orion-gv-shell #telemetryPanel {
+  top: 0;
+  bottom: 0;
+  width: auto;
+  max-height: 100dvh;
+  padding: 0 12px 14px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+body.orion-gv-shell #commandPanel {
+  left: 0;
+  width: var(--orion-sidebar-width);
+  border-width: 0 1px 0 0;
+}
+
+body.orion-gv-shell #telemetryPanel {
+  right: 0;
+  width: var(--orion-inspector-width);
+  border-width: 0 0 0 1px;
+}
+
+body.orion-gv-shell #commandPanel > .sidebar-brand {
+  min-height: var(--orion-topbar-height);
+  margin: 0 -12px;
+  padding: 9px 46px 9px 16px;
+  border-bottom: 1px solid var(--orion-line);
+}
+
+body.orion-gv-shell .sidebar-brand .brand-mark {
+  width: 30px;
+  height: 30px;
+  border-color: rgba(255, 255, 255, 0.55);
+  box-shadow: none;
+}
+
+body.orion-gv-shell .sidebar-brand .eyebrow {
+  color: var(--orion-muted);
+  font-size: 9px;
+}
+
+body.orion-gv-shell .sidebar-brand h1 {
+  margin-top: 1px;
+  font-size: 17px;
+  text-transform: none;
+}
+
+body.orion-gv-shell #commandPanel > .panel-kicker,
+body.orion-gv-shell #telemetryPanel > .panel-kicker {
+  flex: 0 0 auto;
+  min-height: 44px;
+  margin: 0;
+  padding: 15px 34px 10px 4px;
+  border-bottom: 1px solid var(--orion-line);
+  color: var(--orion-text);
+  font-size: 11px;
+  text-transform: none;
+}
+
+body.orion-gv-shell #telemetryPanel > .panel-kicker {
+  min-height: var(--orion-topbar-height);
+  margin: 0 -12px;
+  padding: 20px 42px 12px 16px;
+}
+
+body.orion-gv-shell #commandPanel > .panel-body,
+body.orion-gv-shell #telemetryPanel > .panel-body {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+body.orion-gv-shell .panel-collapse-btn {
+  top: 13px;
+  width: 30px;
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--orion-muted);
+  font-size: 14px;
+}
+
+body.orion-gv-shell #commandPanelToggle {
+  right: 10px;
+}
+
+body.orion-gv-shell #telemetryPanelToggle {
+  right: 10px;
+}
+
+body.orion-gv-shell .panel-collapse-btn:hover {
+  border-color: var(--orion-line);
+  background: var(--orion-surface-hover);
+  color: var(--orion-text);
+}
+
+body.orion-gv-shell #commandPanel.collapsed,
+body.orion-gv-shell #telemetryPanel.collapsed {
+  width: 48px;
+  height: 100dvh;
+  max-height: 100dvh;
+  padding: 0;
+}
+
+body.orion-gv-shell #commandPanel.collapsed > :not(.panel-collapse-btn),
+body.orion-gv-shell #telemetryPanel.collapsed > :not(.panel-collapse-btn) {
+  display: none !important;
+}
+
+body.orion-gv-shell #commandPanel.collapsed .panel-collapse-btn,
+body.orion-gv-shell #telemetryPanel.collapsed .panel-collapse-btn {
+  top: 13px;
+  right: 8px;
+}
+
+body.orion-gv-shell:has(#commandPanel.collapsed) .brand-hud {
+  left: 48px;
+}
+
+body.orion-gv-shell:has(#telemetryPanel.collapsed) .brand-hud {
+  right: 48px;
+}
+
+.orion-primary-nav {
+  flex: 0 0 auto;
+  margin: 0 -2px;
+  padding: 8px 0 10px;
+  border-bottom: 1px solid var(--orion-line);
+}
+
+.orion-primary-nav section + section {
+  margin-top: 8px;
+}
+
+.orion-nav-label {
+  padding: 3px 8px 5px;
+  color: var(--orion-dim);
+  font-size: 9px;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.orion-nav-item {
+  width: 100%;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 9px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--orion-muted);
+  cursor: pointer;
+  text-align: left;
+  font-size: 12px;
+}
+
+.orion-nav-item:hover {
+  background: var(--orion-surface-hover);
+  color: var(--orion-text);
+}
+
+.orion-nav-item.is-active {
+  border-color: rgba(216, 161, 109, 0.3);
+  background: rgba(216, 161, 109, 0.1);
+  color: var(--orion-text);
+}
+
+.orion-nav-item.is-active .orion-icon {
+  color: var(--orion-accent);
+}
+
+.orion-icon {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 17px;
+  display: inline-grid;
+  place-items: center;
+  color: currentColor;
+}
+
+.orion-icon svg,
+.orion-icon .lucide {
+  width: 17px;
+  height: 17px;
+  stroke-width: 1.8;
+}
+
+.orion-icon svg + .orion-icon-fallback {
+  display: none;
+}
+
+.orion-icon-fallback {
+  font-size: 12px;
+  font-weight: 800;
+}
+
+body.orion-gv-shell .workspace-tabs {
+  flex: 0 0 auto;
+  position: static;
+  margin: 0 -12px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--orion-line);
+  background: var(--orion-surface);
+  gap: 4px;
+}
+
+body.orion-gv-shell .workspace-tabs button {
+  min-height: 30px;
+  padding: 5px 7px;
+  border-radius: 5px;
+  font-size: 11px;
+}
+
+body.orion-gv-shell .workspace-tabs button[aria-selected="true"] {
+  border-color: var(--orion-line-strong);
+  background: var(--orion-surface-hover);
+  color: var(--orion-text);
+}
+
+body.orion-gv-shell .workspace-page {
+  padding: 2px 1px 24px;
+}
+
+body.orion-gv-shell .workspace-page > div {
+  margin-top: 16px;
+}
+
+body.orion-gv-shell .workspace-page .weather-map-block,
+body.orion-gv-shell .orion-control-group,
+body.orion-gv-shell .camera-source-directory {
+  padding: 13px 4px;
+  border-width: 1px 0 0;
+  border-radius: 0;
+  border-color: var(--orion-line);
+  background: transparent;
+}
+
+body.orion-gv-shell .platform-category,
+body.orion-gv-shell .intel-entity-row,
+body.orion-gv-shell .intel-detail-card {
+  border-radius: 6px;
+  border-color: var(--orion-line);
+  background: var(--orion-surface-raised);
+}
+
+body.orion-gv-shell .platform-category-toggle {
+  color: var(--orion-muted);
+  text-transform: none;
+}
+
+body.orion-gv-shell .layer-count-badge,
+body.orion-gv-shell .signal-dot {
+  color: var(--orion-cyan);
+}
+
+body.orion-gv-shell .signal-dot {
+  background: var(--orion-green);
+  box-shadow: 0 0 12px rgba(103, 212, 160, 0.5);
+}
+
+body.orion-gv-shell .toggle-row,
+body.orion-gv-shell .telemetry-row {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+body.orion-gv-shell .search-form input,
+body.orion-gv-shell .layer-search,
+body.orion-gv-shell .intel-search,
+body.orion-gv-shell .scan-control select,
+body.orion-gv-shell .orion-control-row select {
+  border-radius: 5px;
+  border-color: var(--orion-line);
+  background: #0d0e10;
+  color: var(--orion-text);
+}
+
+.orion-view-switcher {
+  height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--orion-line);
+  border-radius: 6px;
+  background: #0d0e10;
+}
+
+.orion-view-switcher button {
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--orion-muted);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.orion-view-switcher button:hover,
+.orion-view-switcher button.is-active {
+  background: var(--orion-surface-hover);
+  color: var(--orion-text);
+}
+
+.orion-view-switcher .orion-icon,
+.orion-view-switcher .orion-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+body.orion-gv-shell .global-search {
+  width: min(420px, 42vw);
+  grid-template-columns: minmax(0, 1fr) 42px;
+  margin: 0 auto;
+  gap: 5px;
+}
+
+body.orion-gv-shell .global-search input {
+  height: 36px;
+  border-radius: 5px;
+}
+
+body.orion-gv-shell .global-search .icon-command {
+  width: 42px;
+  height: 36px;
+  border-radius: 5px;
+  background: var(--orion-surface-hover);
+  color: var(--orion-text);
+}
+
+body.orion-gv-shell .mission-status {
+  gap: 7px;
+  font-size: 11px;
+}
+
+.orion-utc-clock {
+  color: var(--orion-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.orion-mobile-brand,
+.orion-mobile-search,
+.orion-mobile-nav {
+  display: none;
+}
+
+.orion-map-tools {
+  position: fixed;
+  z-index: 11;
+  top: calc(var(--orion-topbar-height) + 12px);
+  left: calc(var(--orion-sidebar-width) + 12px);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.orion-map-tools button {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--orion-line);
+  border-radius: 6px;
+  background: rgba(15, 16, 18, 0.93);
+  color: var(--orion-muted);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.24);
+  cursor: pointer;
+}
+
+.orion-map-tools button:hover {
+  border-color: var(--orion-line-strong);
+  background: var(--orion-surface-hover);
+  color: var(--orion-text);
+}
+
+body.orion-gv-shell:has(#commandPanel.collapsed) .orion-map-tools {
+  left: 60px;
+}
+
+body.orion-gv-shell .timeline-hud {
+  left: calc(var(--orion-sidebar-width) + (100vw - var(--orion-sidebar-width) - var(--orion-inspector-width)) / 2);
+  bottom: 12px;
+  width: min(760px, calc(100vw - var(--orion-sidebar-width) - var(--orion-inspector-width) - 28px));
+  padding: 12px 14px 13px;
+  transform: translateX(-50%);
+  border: 1px solid var(--orion-line);
+  border-radius: 7px;
+  background: rgba(13, 14, 16, 0.96);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.36);
+}
+
+body.orion-gv-shell:has(#commandPanel.collapsed) .timeline-hud {
+  left: calc(48px + (100vw - 48px - var(--orion-inspector-width)) / 2);
+  width: min(760px, calc(100vw - 48px - var(--orion-inspector-width) - 28px));
+}
+
+body.orion-gv-shell:has(#telemetryPanel.collapsed) .timeline-hud {
+  left: calc(var(--orion-sidebar-width) + (100vw - var(--orion-sidebar-width) - 48px) / 2);
+  width: min(760px, calc(100vw - var(--orion-sidebar-width) - 48px - 28px));
+}
+
+body.orion-gv-shell:has(#commandPanel.collapsed):has(#telemetryPanel.collapsed) .timeline-hud {
+  left: 50%;
+  width: min(760px, calc(100vw - 124px));
+}
+
+body.orion-gv-shell .timeline-topline strong {
+  font-size: 13px;
+}
+
+body.orion-gv-shell .timeline-mode,
+body.orion-gv-shell .transport-button,
+body.orion-gv-shell .speed-control select {
+  min-height: 30px;
+  border-radius: 5px;
+}
+
+body.orion-gv-shell .timeline-mode[aria-pressed="true"],
+body.orion-gv-shell .timeline-mode.active,
+body.orion-gv-shell .transport-button.primary {
+  border-color: rgba(216, 161, 109, 0.54);
+  background: rgba(216, 161, 109, 0.14);
+  color: var(--orion-text);
+}
+
+body.orion-gv-shell #timelineRange {
+  accent-color: var(--orion-accent);
+}
+
+body.orion-gv-shell .timeline-hide-btn {
+  top: 8px;
+  right: 8px;
+}
+
+body.orion-gv-shell .weather-mode-legend,
+body.orion-gv-shell:has(#timelineHud.collapsed) .weather-mode-legend {
+  left: calc(var(--orion-sidebar-width) + 62px);
+  bottom: calc(var(--orion-timeline-height, 220px) + 26px);
+  max-width: 360px;
+  transform: none;
+  border-radius: 6px;
+  background: rgba(13, 14, 16, 0.94);
+}
+
+body.orion-gv-shell .camera-window,
+body.orion-gv-shell .intel-map-callout,
+body.orion-gv-shell .toast {
+  border-radius: 7px;
+}
+
+body.orion-gv-shell.hud-hidden .brand-hud,
+body.orion-gv-shell.hud-hidden .orion-map-tools,
+body.orion-gv-shell.hud-hidden .orion-mobile-nav {
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (max-width: 1100px) and (min-width: 761px) {
+  :root {
+    --orion-sidebar-width: 252px;
+    --orion-inspector-width: 252px;
+  }
+
+  .orion-nav-item {
+    min-height: 32px;
+  }
+
+  body.orion-gv-shell .global-search {
+    width: min(300px, 34vw);
+  }
+
+  .orion-view-switcher .orion-button-label {
+    display: none;
+  }
+
+  .orion-view-switcher button {
+    width: 30px;
+    padding: 0;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 760px) {
+  :root {
+    --orion-sidebar-width: 0px;
+    --orion-inspector-width: 0px;
+    --orion-topbar-height: 54px;
+    --orion-mobile-nav-height: 64px;
+  }
+
+  body.orion-gv-shell .brand-hud,
+  body.orion-gv-shell:has(#commandPanel.collapsed) .brand-hud,
+  body.orion-gv-shell:has(#telemetryPanel.collapsed) .brand-hud {
+    top: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    height: var(--orion-topbar-height);
+    padding: 7px 8px;
+    border-width: 0 0 1px;
+    transform: none;
+  }
+
+  .orion-mobile-brand {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 78px;
+    color: var(--orion-text);
+  }
+
+  .orion-mobile-brand .orion-icon,
+  .orion-mobile-brand .orion-icon svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .orion-mobile-brand strong {
+    font-size: 13px;
+  }
+
+  .orion-view-switcher {
+    display: none;
+  }
+
+  .orion-mobile-search {
+    width: 36px;
+    height: 36px;
+    display: grid;
+    place-items: center;
+    margin-left: auto;
+    padding: 0;
+    border: 1px solid var(--orion-line);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--orion-muted);
+  }
+
+  body.orion-gv-shell .mission-status {
+    flex: 0 0 auto;
+  }
+
+  body.orion-gv-shell .mission-status .orion-utc-clock,
+  body.orion-gv-shell .mission-status > span:not(.signal-dot) {
+    display: none;
+  }
+
+  body.orion-gv-shell .global-search {
+    display: none;
+    position: fixed;
+    z-index: 40;
+    top: 61px;
+    left: 8px;
+    right: 8px;
+    width: auto;
+    padding: 7px;
+    border: 1px solid var(--orion-line-strong);
+    border-radius: 7px;
+    background: var(--orion-surface);
+    box-shadow: 0 18px 42px rgba(0, 0, 0, 0.5);
+  }
+
+  body.orion-gv-shell.orion-search-open .global-search {
+    display: grid;
+  }
+
+  body.orion-gv-shell #commandPanel,
+  body.orion-gv-shell #telemetryPanel {
+    top: 66px;
+    bottom: calc(var(--orion-mobile-nav-height) + 8px);
+    height: auto;
+    max-height: calc(100dvh - var(--orion-topbar-height) - var(--orion-mobile-nav-height) - 20px);
+    border: 1px solid var(--orion-line);
+    border-radius: 7px;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+  }
+
+  body.orion-gv-shell #commandPanel {
+    left: 8px;
+    width: calc(100vw - 74px);
+  }
+
+  body.orion-gv-shell #telemetryPanel {
+    left: 8px;
+    right: 8px;
+    width: auto;
+  }
+
+  body.orion-gv-shell #commandPanel > .sidebar-brand,
+  body.orion-gv-shell .orion-primary-nav {
+    display: none;
+  }
+
+  body.orion-gv-shell #commandPanel > .panel-kicker,
+  body.orion-gv-shell #telemetryPanel > .panel-kicker {
+    min-height: 42px;
+    margin: 0 -12px;
+    padding: 14px 42px 10px 14px;
+  }
+
+  body.orion-gv-shell #commandPanel.collapsed,
+  body.orion-gv-shell #telemetryPanel.collapsed {
+    display: none;
+  }
+
+  body.orion-gv-shell .workspace-tabs {
+    margin-top: 0;
+  }
+
+  .orion-map-tools,
+  body.orion-gv-shell:has(#commandPanel.collapsed) .orion-map-tools {
+    top: 118px;
+    left: auto;
+    right: 8px;
+  }
+
+  .orion-map-tools button {
+    width: 36px;
+    height: 36px;
+  }
+
+  .orion-map-tools button:nth-child(n + 5) {
+    display: none;
+  }
+
+  .orion-mobile-nav {
+    position: fixed;
+    z-index: 32;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: var(--orion-mobile-nav-height);
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    padding: 4px max(4px, env(safe-area-inset-right)) env(safe-area-inset-bottom) max(4px, env(safe-area-inset-left));
+    border-top: 1px solid var(--orion-line);
+    background: rgba(11, 12, 14, 0.98);
+  }
+
+  .orion-mobile-nav-item {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 4px 2px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--orion-dim);
+    font-size: 9px;
+  }
+
+  .orion-mobile-nav-item .orion-icon,
+  .orion-mobile-nav-item .orion-icon svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .orion-mobile-nav-item.is-active {
+    background: rgba(216, 161, 109, 0.1);
+    color: var(--orion-accent);
+  }
+
+  body.orion-gv-shell .timeline-hud,
+  body.orion-gv-shell:has(#commandPanel.collapsed) .timeline-hud,
+  body.orion-gv-shell:has(#telemetryPanel.collapsed) .timeline-hud,
+  body.orion-gv-shell:has(#commandPanel.collapsed):has(#telemetryPanel.collapsed) .timeline-hud {
+    left: 8px;
+    right: 8px;
+    bottom: calc(var(--orion-mobile-nav-height) + 8px);
+    width: auto;
+    max-height: calc(100dvh - var(--orion-topbar-height) - var(--orion-mobile-nav-height) - 22px);
+    padding: 10px 12px;
+    transform: none;
+  }
+
+  body.orion-gv-shell .timeline-hud.collapsed {
+    display: none;
+  }
+
+  body.orion-gv-shell .timeline-topline {
+    padding-right: 24px;
+  }
+
+  body.orion-gv-shell .timeline-topline .feed-meta {
+    display: none;
+  }
+
+  body.orion-gv-shell .timeline-mode-row,
+  body.orion-gv-shell .playback-row {
+    flex-wrap: wrap;
+  }
+
+  body.orion-gv-shell .weather-mode-legend,
+  body.orion-gv-shell:has(#timelineHud.collapsed) .weather-mode-legend {
+    left: 50%;
+    bottom: calc(var(--orion-mobile-nav-height) + var(--orion-timeline-height, 52px) + 18px);
+    max-width: calc(100vw - 88px);
+    transform: translateX(-50%);
+  }
+
+  body.orion-gv-shell .camera-window {
+    bottom: calc(var(--orion-mobile-nav-height) + 10px);
+    max-height: calc(100dvh - var(--orion-topbar-height) - var(--orion-mobile-nav-height) - 22px);
+  }
+
+  body.orion-gv-shell .cesium-credit {
+    bottom: calc(var(--orion-mobile-nav-height) + 3px);
+  }
+}
+
+@media (max-width: 380px) {
+  .orion-mobile-brand strong {
+    display: none;
+  }
+
+  body.orion-gv-shell #commandPanel {
+    width: calc(100vw - 66px);
+  }
+
+  .orion-mobile-nav-item {
+    font-size: 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.orion-gv-shell .orion-map-tools,
+  body.orion-gv-shell .orion-mobile-nav,
+  body.orion-gv-shell .hud-panel,
+  body.orion-gv-shell .timeline-hud {
+    transition: none;
+  }
+}
+
+/* V3 shell: compact command dock and task-specific floating surfaces. */
+:root {
+  --orion-sidebar-width: 60px;
+  --orion-inspector-width: 0px;
+  --orion-drawer-width: 340px;
+  --orion-topbar-height: 56px;
+  --orion-accent: #f2f2f2;
+  --orion-surface: rgba(8, 9, 10, 0.97);
+  --orion-surface-raised: rgba(17, 18, 20, 0.98);
+  --orion-surface-hover: #202124;
+  --orion-line: rgba(255, 255, 255, 0.13);
+  --orion-line-strong: rgba(255, 255, 255, 0.28);
+}
+
+body.orion-gv-shell .brand-hud,
+body.orion-gv-shell:has(#commandPanel.collapsed) .brand-hud,
+body.orion-gv-shell:has(#telemetryPanel.collapsed) .brand-hud {
+  left: var(--orion-sidebar-width);
+  right: 0;
+  height: var(--orion-topbar-height);
+  padding: 8px 12px;
+  border-width: 0 0 1px;
+}
+
+body.orion-gv-shell .topbar-brand {
+  width: 190px;
+  flex: 0 0 190px;
+  gap: 9px;
+}
+
+body.orion-gv-shell .topbar-brand .brand-mark {
+  width: 30px;
+  height: 30px;
+  box-shadow: none;
+}
+
+body.orion-gv-shell .topbar-brand .eyebrow {
+  font-size: 8px;
+  color: var(--orion-muted);
+}
+
+body.orion-gv-shell .topbar-brand h1 {
+  margin-top: 1px;
+  font-size: 16px;
+  text-transform: none;
+}
+
+body.orion-gv-shell .global-search {
+  width: auto;
+  min-width: 180px;
+  max-width: 520px;
+  flex: 1 1 360px;
+  margin: 0;
+}
+
+body.orion-gv-shell .mission-status {
+  flex: 0 0 auto;
+}
+
+body.orion-gv-shell #commandPanel,
+body.orion-gv-shell #telemetryPanel {
+  z-index: 24;
+  top: calc(var(--orion-topbar-height) + 12px);
+  bottom: 16px;
+  height: auto;
+  max-height: none;
+  width: min(var(--orion-drawer-width), calc(100vw - 88px));
+  padding: 0 12px 14px;
+  border: 1px solid var(--orion-line);
+  border-radius: 7px;
+  box-shadow: 0 22px 54px rgba(0, 0, 0, 0.48);
+}
+
+body.orion-gv-shell #commandPanel {
+  left: calc(var(--orion-sidebar-width) + 12px);
+}
+
+body.orion-gv-shell #telemetryPanel {
+  left: auto;
+  right: 12px;
+  width: min(360px, calc(100vw - 88px));
+}
+
+body.orion-gv-shell #commandPanel.collapsed,
+body.orion-gv-shell #telemetryPanel.collapsed,
+body.orion-gv-shell #timelineHud.collapsed {
+  display: none;
+}
+
+body.orion-gv-shell #commandPanel > .panel-kicker,
+body.orion-gv-shell #telemetryPanel > .panel-kicker {
+  min-height: 46px;
+  margin: 0 -12px;
+  padding: 16px 44px 11px 14px;
+  text-transform: none;
+}
+
+body.orion-gv-shell #commandPanel > .sidebar-brand,
+body.orion-gv-shell .orion-primary-nav {
+  display: none;
+}
+
+body.orion-gv-shell .workspace-tabs {
+  margin: 0 -12px;
+}
+
+body.orion-gv-shell .workspace-tabs button[aria-selected="true"],
+body.orion-gv-shell .timeline-mode[aria-pressed="true"],
+body.orion-gv-shell .timeline-mode.active,
+body.orion-gv-shell .transport-button.primary {
+  border-color: rgba(255, 255, 255, 0.38);
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+body.orion-gv-shell #timelineRange {
+  accent-color: #ffffff;
+}
+
+.orion-command-dock {
+  position: fixed;
+  z-index: 22;
+  inset: 0 auto 0 0;
+  width: var(--orion-sidebar-width);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 8px 7px;
+  border-right: 1px solid var(--orion-line);
+  background: rgba(7, 8, 9, 0.98);
+}
+
+.orion-dock-button {
+  position: relative;
+  width: 44px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 42px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #777b82;
+  cursor: pointer;
+}
+
+.orion-dock-button.starts-group {
+  margin-top: 8px;
+}
+
+.orion-dock-button.starts-group::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  top: -6px;
+  height: 1px;
+  background: var(--orion-line);
+}
+
+.orion-dock-button:hover {
+  border-color: var(--orion-line);
+  background: var(--orion-surface-hover);
+  color: #d8d8d8;
+}
+
+.orion-dock-button.is-active {
+  border-color: var(--orion-line-strong);
+  background: #f1f1f1;
+  color: #08090a;
+}
+
+.orion-dock-button:first-child {
+  margin-bottom: 8px;
+  color: #e8e8e8;
+}
+
+.orion-dock-button:first-child.is-active {
+  color: #08090a;
+}
+
+.orion-dock-button .orion-icon,
+.orion-dock-button .orion-icon svg {
+  width: 19px;
+  height: 19px;
+}
+
+.orion-map-tools,
+body.orion-gv-shell:has(#commandPanel.collapsed) .orion-map-tools {
+  top: calc(var(--orion-topbar-height) + 12px);
+  left: calc(var(--orion-sidebar-width) + 12px);
+}
+
+body.orion-gv-shell .timeline-hud,
+body.orion-gv-shell:has(#commandPanel.collapsed) .timeline-hud,
+body.orion-gv-shell:has(#telemetryPanel.collapsed) .timeline-hud,
+body.orion-gv-shell:has(#commandPanel.collapsed):has(#telemetryPanel.collapsed) .timeline-hud {
+  z-index: 23;
+  left: calc(50% + var(--orion-sidebar-width) / 2);
+  right: auto;
+  bottom: 12px;
+  width: min(860px, calc(100vw - var(--orion-sidebar-width) - 48px));
+  max-height: calc(100dvh - var(--orion-topbar-height) - 28px);
+  padding: 12px 14px 13px;
+  transform: translateX(-50%);
+}
+
+body.orion-gv-shell .timeline-topline > div:first-child {
+  min-width: 0;
+}
+
+body.orion-gv-shell .timeline-topline .feed-meta {
+  max-width: 54%;
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.orion-gv-shell .weather-mode-legend,
+body.orion-gv-shell:has(#timelineHud.collapsed) .weather-mode-legend {
+  left: calc(var(--orion-sidebar-width) + 62px);
+  bottom: 18px;
+  transform: none;
+}
+
+body.orion-gv-shell:has(#timelineHud:not(.collapsed)) .weather-mode-legend {
+  bottom: calc(var(--orion-timeline-height, 220px) + 24px);
+}
+
+.orion-data-status {
+  min-width: 88px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 1px solid var(--orion-line);
+  border-radius: 6px;
+  background: #0d0e10;
+  color: var(--orion-muted);
+  cursor: pointer;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.orion-data-status[data-state="online"] .orion-icon {
+  color: var(--orion-green);
+}
+
+.orion-data-status[data-state="loading"] .orion-icon {
+  color: #ffffff;
+  animation: orionStatusPulse 1s ease-in-out infinite;
+}
+
+.orion-data-status[data-state="error"] .orion-icon {
+  color: var(--orion-red);
+}
+
+.orion-load-strip {
+  position: fixed;
+  z-index: 30;
+  top: calc(var(--orion-topbar-height) - 2px);
+  left: var(--orion-sidebar-width);
+  right: 0;
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.orion-load-strip span {
+  display: block;
+  width: 26%;
+  height: 100%;
+  background: #ffffff;
+  opacity: 0;
+  transform: translateX(-120%);
+}
+
+.orion-load-strip.is-busy span {
+  opacity: 0.78;
+  animation: orionLoadSweep 1.1s ease-in-out infinite;
+}
+
+.orion-feed-popover {
+  position: fixed;
+  z-index: 35;
+  top: calc(var(--orion-topbar-height) + 8px);
+  right: 12px;
+  width: min(330px, calc(100vw - var(--orion-sidebar-width) - 24px));
+  max-height: min(520px, calc(100dvh - var(--orion-topbar-height) - 24px));
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--orion-line-strong);
+  border-radius: 7px;
+  background: rgba(9, 10, 11, 0.98);
+  box-shadow: 0 22px 54px rgba(0, 0, 0, 0.54);
+}
+
+.orion-feed-popover[hidden] {
+  display: none;
+}
+
+.orion-feed-popover header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 2px 10px;
+  border-bottom: 1px solid var(--orion-line);
+}
+
+.orion-feed-popover header strong {
+  font-size: 12px;
+}
+
+.orion-feed-popover header span,
+.orion-feed-row > span:last-child,
+.orion-feed-empty {
+  color: var(--orion-muted);
+  font-size: 10px;
+}
+
+.orion-feed-list {
+  display: grid;
+}
+
+.orion-feed-row {
+  min-height: 46px;
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.orion-feed-row strong {
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.orion-feed-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #64676d;
+}
+
+.orion-feed-row[data-state="online"] .orion-feed-dot {
+  background: var(--orion-green);
+  box-shadow: 0 0 9px rgba(103, 212, 160, 0.5);
+}
+
+.orion-feed-row[data-state="loading"] .orion-feed-dot {
+  background: #ffffff;
+  animation: orionStatusPulse 1s ease-in-out infinite;
+}
+
+.orion-feed-row[data-state="warning"] .orion-feed-dot {
+  background: #bfc1c5;
+}
+
+.orion-feed-row[data-state="error"] .orion-feed-dot {
+  background: var(--orion-red);
+}
+
+.orion-feed-empty {
+  padding: 18px 2px 8px;
+}
+
+body.orion-gv-shell .platform-category-body .toggle-row:has(.layer-status-dot.loading) {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.035), transparent);
+  background-size: 220% 100%;
+  animation: orionLayerLoading 1.4s linear infinite;
+}
+
+body.orion-gv-shell.hud-hidden .orion-command-dock,
+body.orion-gv-shell.hud-hidden .orion-data-status,
+body.orion-gv-shell.hud-hidden .orion-load-strip,
+body.orion-gv-shell.hud-hidden .orion-feed-popover {
+  opacity: 0;
+  pointer-events: none;
+}
+
+@keyframes orionLoadSweep {
+  from { transform: translateX(-120%); }
+  to { transform: translateX(470%); }
+}
+
+@keyframes orionStatusPulse {
+  50% { opacity: 0.35; }
+}
+
+@keyframes orionLayerLoading {
+  from { background-position: 100% 0; }
+  to { background-position: -120% 0; }
+}
+
+@media (max-width: 1180px) and (min-width: 761px) {
+  body.orion-gv-shell .topbar-brand {
+    width: 44px;
+    flex-basis: 44px;
+  }
+
+  body.orion-gv-shell .topbar-brand > div:last-child {
+    display: none;
+  }
+
+  body.orion-gv-shell .mission-status > span:not(.signal-dot),
+  body.orion-gv-shell .orion-utc-clock {
+    display: none;
+  }
+
+  body.orion-gv-shell .global-search {
+    max-width: none;
+  }
+}
+
+@media (max-width: 760px) {
+  :root {
+    --orion-sidebar-width: 0px;
+    --orion-topbar-height: 54px;
+  }
+
+  .orion-command-dock {
+    display: none;
+  }
+
+  body.orion-gv-shell .topbar-brand {
+    display: none;
+  }
+
+  body.orion-gv-shell .brand-hud,
+  body.orion-gv-shell:has(#commandPanel.collapsed) .brand-hud,
+  body.orion-gv-shell:has(#telemetryPanel.collapsed) .brand-hud {
+    left: 0;
+  }
+
+  body.orion-gv-shell #commandPanel,
+  body.orion-gv-shell #telemetryPanel {
+    top: 62px;
+    left: 8px;
+    right: 8px;
+    bottom: calc(var(--orion-mobile-nav-height) + 8px);
+    width: auto;
+    max-height: none;
+  }
+
+  body.orion-gv-shell .timeline-hud,
+  body.orion-gv-shell:has(#commandPanel.collapsed) .timeline-hud,
+  body.orion-gv-shell:has(#telemetryPanel.collapsed) .timeline-hud,
+  body.orion-gv-shell:has(#commandPanel.collapsed):has(#telemetryPanel.collapsed) .timeline-hud {
+    left: 8px;
+    right: 8px;
+    bottom: calc(var(--orion-mobile-nav-height) + 8px);
+    width: auto;
+    transform: none;
+  }
+
+  body.orion-gv-shell .timeline-hud.collapsed,
+  body.orion-gv-shell #commandPanel.collapsed,
+  body.orion-gv-shell #telemetryPanel.collapsed {
+    display: none;
+  }
+
+  body.orion-gv-shell .mission-status .orion-data-status {
+    width: 34px;
+    min-width: 34px;
+    padding: 0;
+  }
+
+  body.orion-gv-shell .orion-data-status .orion-button-label {
+    display: none;
+  }
+
+  .orion-feed-popover {
+    top: 60px;
+    left: 8px;
+    right: 8px;
+    width: auto;
+  }
+
+  .orion-load-strip {
+    left: 0;
+  }
+
+  .orion-map-tools,
+  body.orion-gv-shell:has(#commandPanel.collapsed) .orion-map-tools {
+    top: 66px;
+    left: auto;
+    right: 8px;
+  }
+
+  .orion-mobile-nav-item.is-active {
+    background: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+  }
+
+  body.orion-gv-shell .weather-mode-legend,
+  body.orion-gv-shell:has(#timelineHud.collapsed) .weather-mode-legend {
+    left: 50%;
+    bottom: calc(var(--orion-mobile-nav-height) + 12px);
+    transform: translateX(-50%);
+  }
+
+  body.orion-gv-shell:has(#timelineHud:not(.collapsed)) .weather-mode-legend {
+    display: none;
+  }
+}

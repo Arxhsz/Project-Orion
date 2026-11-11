@@ -4,7 +4,7 @@ const browser=await chromium.launch({headless:true,executablePath:process.env.OR
 const page=await browser.newPage({viewport:{width:1440,height:1000}});const errors=[];
 page.on('pageerror',e=>errors.push(e.message));
 await page.route('**/__orion_dev/version',r=>r.fulfill({status:404}));
-await page.addInitScript(()=>{localStorage.setItem('orion_onboarding_complete','true');localStorage.setItem('orion_changelog_dismissed','1.1.2-map-reliability');});
+await page.addInitScript(()=>{localStorage.setItem('orion_onboarding_complete','true');localStorage.setItem('orion_changelog_dismissed','1.1.2-map-reliability');localStorage.setItem('orion:shellVersion','3');localStorage.setItem('orion:panelCollapsed',JSON.stringify({commandPanel:false,telemetryPanel:true}));localStorage.setItem('orion:timelineCollapsed','1');});
 try {
  await page.goto('http://127.0.0.1:4174/');await page.waitForFunction(()=>window.viewer&&platformFeeds.weatherRadar?.status==='online',null,{timeout:60000});
  await page.waitForFunction(()=>!document.getElementById('orionLoadingScreen'));

@@ -14,9 +14,13 @@ try {
   await page.addInitScript(() => {
     localStorage.setItem('orion_onboarding_complete', 'true');
     localStorage.setItem('orion_changelog_dismissed', '1.1.2-map-reliability');
+    localStorage.setItem('orion:shellVersion', '3');
+    localStorage.setItem('orion:panelCollapsed', JSON.stringify({ commandPanel: false, telemetryPanel: true }));
+    localStorage.setItem('orion:timelineCollapsed', '1');
   });
   await page.goto(process.env.ORION_TEST_URL || 'http://127.0.0.1:4174/?orionStatic=1', { waitUntil: 'load' });
   await page.waitForFunction(() => window.platformFeeds?.weatherRadar?.status === 'online', null, { timeout: 45000 });
+  await page.locator('.orion-dock-button[data-route="timeline"]').click();
   const frameKey = () => page.evaluate(() => Array.from({ length: viewer.imageryLayers.length }, (_, i) => viewer.imageryLayers.get(i)).find(layer => layer.orionKey === 'zoomWeather')?.orionFrameKey);
   const initial = await frameKey();
   assert.ok(initial, 'Weather imagery must be present');
@@ -41,13 +45,23 @@ try {
 
   for (const mode of ['radar', 'infrared', 'satellite-global', 'precipitation', 'temperature', 'wet-bulb', 'feels-like', 'humidity', 'dewpoint', 'pressure', 'gusts', 'clouds', 'rain', 'snow', 'wind', 'satellite']) {
     await page.locator('#weatherMapModeSelect').selectOption(mode, { force: true });
-    await page.waitForFunction(mode => platformFeeds.weatherRadar?.status === 'online' && platformFeeds.weatherRadar?.payload?.weather_mode === mode, mode, { timeout: 45000 });
+    try {
+      await page.waitForFunction(mode => platformFeeds.weatherRadar?.status === 'online' && platformFeeds.weatherRadar?.payload?.weather_mode === mode, mode, { timeout: 45000 });
+    } catch (error) {
+      console.error('Weather mode transition failed', mode, await page.evaluate(() => ({
+        selected: document.getElementById('weatherMapModeSelect').value,
+        status: platformFeeds.weatherRadar?.status,
+        payloadMode: platformFeeds.weatherRadar?.payload?.weather_mode,
+        error: platformFeeds.weatherRadar?.error || null
+      })));
+      throw error;
+    }
     const frames = await page.evaluate(() => platformFeeds.weatherRadar.payload.frames.length);
     assert.ok(frames > 1, `${mode}: historical frames required`);
     console.log(mode, frames, 'frames');
   }
 
-  await page.locator('#workspace-tab-layers').click();
+  await page.locator('.orion-dock-button[data-route="layers"]').click();
   for (const [id, layer] of [['platformEarthquakes', 'earthquakes'], ['platformVolcanoes', 'volcanoes'], ['platformWildfires', 'wildfires']]) {
     await page.locator('label').filter({ has: page.locator('#' + id) }).click();
     await page.waitForFunction(id => document.getElementById(id)?.checked, id);
@@ -60,18 +74,34 @@ try {
   assert.equal(await page.locator('[data-layer-id="earthquakes"]').isVisible(), false);
   assert.equal(await page.locator('[data-layer-id="volcanoes"]').isVisible(), true);
   await page.getByRole('searchbox', { name: 'Filter intel layers' }).fill('');
-  await page.locator('#workspace-tab-explore').click();
+  await page.locator('.orion-dock-button[data-route="explore"]').click();
   await page.locator('#homeButton').click({ force: true });
   await page.waitForFunction(() => !viewer.camera._currentFlight);
-  await page.waitForFunction(() => viewer.scene.globe.tilesLoaded, null, { timeout: 30000 });
+  await page.evaluate(() => new Promise(resolve => {
+    let renderedFrames = 0;
+    const remove = viewer.scene.postRender.addEventListener(() => {
+      renderedFrames += 1;
+      if (renderedFrames >= 2) {
+        remove();
+        resolve();
+      } else {
+        viewer.scene.requestRender();
+      }
+    });
+    viewer.scene.requestRender();
+  }));
   await page.screenshot({ path: 'artifacts/orion-desktop.png' });
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload({ waitUntil: 'load' });
   await page.waitForFunction(() => window.platformFeeds?.weatherRadar?.status === 'online', null, { timeout: 45000 });
   await page.waitForFunction(() => !document.getElementById('orionLoadingScreen'), null, { timeout: 30000 });
-  const panels = await page.evaluate(() => ({ command: document.getElementById('commandPanel').getBoundingClientRect().toJSON(), telemetry: document.getElementById('telemetryPanel').getBoundingClientRect().toJSON(), width: document.documentElement.scrollWidth }));
-  assert.ok(panels.command.right <= panels.telemetry.left, 'Mobile panels overlap');
+  const panels = await page.evaluate(() => {
+    const visible = ['commandPanel', 'telemetryPanel', 'timelineHud'].map(id => document.getElementById(id)).filter(node => getComputedStyle(node).display !== 'none').map(node => ({ id: node.id, rect: node.getBoundingClientRect().toJSON() }));
+    const overlaps = visible.some((surface, index) => visible.slice(index + 1).some(other => surface.rect.left < other.rect.right && surface.rect.right > other.rect.left && surface.rect.top < other.rect.bottom && surface.rect.bottom > other.rect.top));
+    return { overlaps, visible: visible.map(surface => surface.id), width: document.documentElement.scrollWidth };
+  });
+  assert.equal(panels.overlaps, false, JSON.stringify(panels));
   assert.ok(panels.width <= 390, 'Mobile horizontal overflow');
   await page.screenshot({ path: 'artifacts/orion-mobile.png' });
   assert.deepEqual(errors, []);

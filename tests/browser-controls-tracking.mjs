@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 const browser=await chromium.launch({headless:true,executablePath:process.env.ORION_BROWSER_EXECUTABLE||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});
 const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];
 page.on('pageerror',e=>errors.push(e.message));await page.route('**/__orion_dev/version',r=>r.fulfill({status:404}));
-await page.addInitScript(()=>{localStorage.setItem('orion_onboarding_complete','true');localStorage.setItem('orion_changelog_dismissed','1.1.2-map-reliability');});
+await page.addInitScript(()=>{localStorage.setItem('orion_onboarding_complete','true');localStorage.setItem('orion_changelog_dismissed','1.1.2-map-reliability');localStorage.setItem('orion:shellVersion','3');localStorage.setItem('orion:panelCollapsed',JSON.stringify({commandPanel:false,telemetryPanel:true}));localStorage.setItem('orion:timelineCollapsed','1');});
 try {
  await page.goto('http://127.0.0.1:4174/');await page.waitForFunction(()=>window.viewer&&!document.getElementById('orionLoadingScreen'),null,{timeout:90000});
  await page.locator('#workspace-tab-controls').click();
@@ -21,8 +21,8 @@ try {
   await page.setViewportSize({width,height:800});
   for(const tab of ['explore','layers','controls']){
    await page.locator('#workspace-tab-'+tab).click();
-   const layout=await page.evaluate(()=>{const panel=document.getElementById('commandPanel'),nav=document.querySelector('.workspace-tabs'),body=panel.querySelector('.panel-body'),timeline=document.getElementById('timelineHud');body.scrollTop=body.scrollHeight;return {panelBottom:panel.getBoundingClientRect().bottom,timelineTop:timeline.getBoundingClientRect().top,bodyTop:body.getBoundingClientRect().top,navBottom:nav.getBoundingClientRect().bottom,overflow:document.documentElement.scrollWidth>innerWidth};});
-   assert.ok(layout.panelBottom<layout.timelineTop,JSON.stringify({width,tab,layout}));assert.ok(layout.bodyTop>=layout.navBottom,JSON.stringify({width,tab,layout}));assert.equal(layout.overflow,false);
+   const layout=await page.evaluate(()=>{const panel=document.getElementById('commandPanel'),nav=document.querySelector('.workspace-tabs'),body=panel.querySelector('.panel-body'),timeline=document.getElementById('timelineHud');body.scrollTop=body.scrollHeight;const a=panel.getBoundingClientRect(),b=timeline.getBoundingClientRect(),timelineVisible=getComputedStyle(timeline).display!=='none';const overlap=timelineVisible&&a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top;return {overlap,timelineVisible,bodyTop:body.getBoundingClientRect().top,navBottom:nav.getBoundingClientRect().bottom,overflow:document.documentElement.scrollWidth>innerWidth};});
+   assert.equal(layout.overlap,false,JSON.stringify({width,tab,layout}));assert.ok(layout.bodyTop>=layout.navBottom,JSON.stringify({width,tab,layout}));assert.equal(layout.overflow,false);
   }
   await page.screenshot({path:`artifacts/workspace-spacing-${width}.png`});
  }

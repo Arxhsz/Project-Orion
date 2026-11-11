@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased - 2026-11-10
+
+- Rebuilt the application shell around a map-first operational layout inspired by Godsview's workflow and information architecture.
+- Added a compact desktop command dock, search/status header, map tool stack, task-specific layer and intelligence drawers, and contained timeline surface.
+- Added a runtime-driven feed activity popover and loading strip sourced from active provider state instead of decorative status values.
+- Made major workspace surfaces mutually exclusive, with automatic intelligence opening for selected map objects and `Escape` returning to the map.
+- Added mobile bottom navigation with mutually exclusive map, layer, intelligence, timeline, and control surfaces.
+- Added continuously synchronized `#orion` globe URLs for camera position, active Intel layers, place labels, imagery mode, and timeline position.
+- Added keyboard commands for search, layers, intelligence, and timeline access.
+- Added Lucide control icons with text fallbacks and a neutral interface palette with distinct live, active, warning, and error accents.
+- Added browser coverage for desktop boundaries, drawer stacking, mobile surface transitions, layer shortcuts, zoom controls, feed status, and shared-view links.
+
 ## v1.1.2 - 2026-07-01
 
 - Reactivated selectable submarine cable and power-grid Intel layers with visible controls, provider metadata, adapter modules, and selectable-intelligence rows.
