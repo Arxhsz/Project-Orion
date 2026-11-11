@@ -1071,6 +1071,30 @@ body.orion-gv-shell:has(#timelineHud:not(.collapsed)) .weather-mode-legend {
   animation: orionStatusPulse 1s ease-in-out infinite;
 }
 
+.orion-data-status[data-state="warning"] .orion-icon {
+  color: #f0c36a;
+}
+
+.orion-count-badge {
+  min-width: 16px;
+  height: 16px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #f5f5f5;
+  color: #08090a;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.orion-dock-button .orion-count-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+}
+
 .orion-data-status[data-state="error"] .orion-icon {
   color: var(--orion-red);
 }
@@ -1177,7 +1201,7 @@ body.orion-gv-shell:has(#timelineHud:not(.collapsed)) .weather-mode-legend {
 }
 
 .orion-feed-row[data-state="warning"] .orion-feed-dot {
-  background: #bfc1c5;
+  background: #f0c36a;
 }
 
 .orion-feed-row[data-state="error"] .orion-feed-dot {
@@ -1325,5 +1349,423 @@ body.orion-gv-shell.hud-hidden .orion-feed-popover {
 
   body.orion-gv-shell:has(#timelineHud:not(.collapsed)) .weather-mode-legend {
     display: none;
+  }
+}
+
+/* ------------------------------------------------------------------
+   Layout cleanup (2026-11-10): consistent spacing tokens and scaling
+   fixes for the nav rail, compact header, map tools, timeline dock,
+   and mobile tab bar. Layout only - no behaviour changes.
+   ------------------------------------------------------------------ */
+:root {
+  --orion-gap: 12px;
+  --orion-tool-size: 38px;
+  --orion-safe-top: env(safe-area-inset-top, 0px);
+  --orion-safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Nav rail: centre the first control on the header line, keep the rail
+   scrollable on short windows instead of clipping the last buttons. */
+.orion-command-dock {
+  padding: 7px 7px 10px;
+  gap: 4px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.orion-command-dock::-webkit-scrollbar {
+  display: none;
+}
+
+.orion-dock-button {
+  width: 44px;
+  height: 42px;
+  flex: 0 0 42px;
+}
+
+.orion-dock-button:first-child {
+  margin-bottom: 6px;
+}
+
+.orion-dock-button.starts-group {
+  margin-top: 9px;
+}
+
+.orion-dock-button.starts-group::before {
+  top: -7px;
+}
+
+.orion-dock-button:focus-visible,
+.orion-map-tools button:focus-visible,
+.orion-mobile-nav-item:focus-visible {
+  outline: 2px solid #dfdfdf;
+  outline-offset: 1px;
+}
+
+/* Compact header: one gap rhythm, vertically centred items, nothing
+   overflowing at in-between widths. */
+body.orion-gv-shell .brand-hud,
+body.orion-gv-shell:has(#commandPanel.collapsed) .brand-hud,
+body.orion-gv-shell:has(#telemetryPanel.collapsed) .brand-hud {
+  min-height: 0;
+  padding: 0 var(--orion-gap);
+  gap: 10px;
+  align-items: center;
+}
+
+body.orion-gv-shell .brand-hud > * {
+  min-width: 0;
+}
+
+body.orion-gv-shell .topbar-brand {
+  align-items: center;
+}
+
+body.orion-gv-shell .topbar-brand .eyebrow {
+  font-size: 9px;
+  line-height: 1.2;
+}
+
+body.orion-gv-shell .topbar-brand h1 {
+  line-height: 1.15;
+}
+
+body.orion-gv-shell .orion-view-switcher {
+  flex: 0 0 auto;
+}
+
+body.orion-gv-shell .global-search input,
+body.orion-gv-shell .global-search .icon-command,
+body.orion-gv-shell .orion-view-switcher,
+body.orion-gv-shell .orion-data-status {
+  height: 36px;
+}
+
+body.orion-gv-shell .mission-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+body.orion-gv-shell .mission-status .hud-hide-btn {
+  width: 28px;
+  height: 28px;
+  margin-left: 0;
+}
+
+@media (max-width: 1180px) and (min-width: 761px) {
+  body.orion-gv-shell .topbar-brand {
+    width: 32px;
+    flex-basis: 32px;
+  }
+}
+
+/* Map tools: share the header gap, align to the dock column on desktop. */
+.orion-map-tools,
+body.orion-gv-shell:has(#commandPanel.collapsed) .orion-map-tools {
+  top: calc(var(--orion-topbar-height) + var(--orion-gap));
+  left: calc(var(--orion-sidebar-width) + var(--orion-gap));
+  gap: 6px;
+}
+
+.orion-map-tools button {
+  width: var(--orion-tool-size);
+  height: var(--orion-tool-size);
+}
+
+.orion-map-tools button:nth-child(3) {
+  margin-top: 6px;
+}
+
+.orion-map-tools .orion-icon,
+.orion-map-tools .orion-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Timeline dock: keep the meta line clear of the close button and stop
+   the empty buffer-status line from reserving space. */
+body.orion-gv-shell .timeline-hud,
+body.orion-gv-shell:has(#commandPanel.collapsed) .timeline-hud,
+body.orion-gv-shell:has(#telemetryPanel.collapsed) .timeline-hud,
+body.orion-gv-shell:has(#commandPanel.collapsed):has(#telemetryPanel.collapsed) .timeline-hud {
+  bottom: var(--orion-gap);
+  width: min(860px, calc(100vw - var(--orion-sidebar-width) - var(--orion-gap) * 2 - 24px));
+  padding: 12px 14px 14px;
+}
+
+body.orion-gv-shell .timeline-topline {
+  align-items: flex-start;
+  gap: 16px;
+  padding-right: 34px;
+}
+
+body.orion-gv-shell .timeline-topline .feed-meta {
+  padding-top: 2px;
+  line-height: 1.35;
+}
+
+body.orion-gv-shell .timeline-hide-btn {
+  top: 9px;
+  right: 9px;
+  width: 28px;
+  height: 28px;
+}
+
+body.orion-gv-shell .timeline-mode-row {
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+body.orion-gv-shell #frameBufferStatus {
+  min-height: 0;
+  margin: 8px 0 0;
+  line-height: 1.35;
+}
+
+body.orion-gv-shell #frameBufferStatus:empty {
+  margin: 0;
+}
+
+body.orion-gv-shell .range-wrap {
+  margin-top: 10px;
+}
+
+body.orion-gv-shell .playback-row {
+  margin-top: 12px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+body.orion-gv-shell .transport-controls {
+  gap: 6px;
+}
+
+body.orion-gv-shell .transport-button {
+  width: auto;
+  min-width: 76px;
+  height: 36px;
+  padding: 0 12px 0 8px;
+  white-space: nowrap;
+}
+
+body.orion-gv-shell .transport-button.primary {
+  width: auto;
+  min-width: 104px;
+}
+
+body.orion-gv-shell .speed-control {
+  gap: 10px;
+  margin-left: auto;
+}
+
+body.orion-gv-shell .weather-mode-legend,
+body.orion-gv-shell:has(#timelineHud.collapsed) .weather-mode-legend {
+  left: calc(var(--orion-sidebar-width) + var(--orion-gap) + var(--orion-tool-size) + var(--orion-gap));
+  bottom: var(--orion-gap);
+}
+
+body.orion-gv-shell:has(#timelineHud:not(.collapsed)) .weather-mode-legend {
+  bottom: calc(var(--orion-timeline-height, 220px) + var(--orion-gap) * 2);
+}
+
+/* Cesium credit: anchor the credit strip to the right edge instead of
+   letting it overflow off-screen. */
+body.orion-gv-shell .cesium-credit {
+  right: var(--orion-gap);
+  bottom: 6px;
+}
+
+body.orion-gv-shell .cesium-credit .cesium-widget-credits {
+  left: auto;
+  right: 0;
+  bottom: 0;
+  padding-right: 0;
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  :root {
+    --orion-gap: 8px;
+    --orion-topbar-height: calc(54px + var(--orion-safe-top));
+    --orion-mobile-nav-height: calc(60px + var(--orion-safe-bottom));
+    --orion-tool-size: 36px;
+  }
+
+  body.orion-gv-shell .brand-hud,
+  body.orion-gv-shell:has(#commandPanel.collapsed) .brand-hud,
+  body.orion-gv-shell:has(#telemetryPanel.collapsed) .brand-hud {
+    top: 0;
+    height: var(--orion-topbar-height);
+    min-height: 0;
+    padding: var(--orion-safe-top) max(8px, env(safe-area-inset-right)) 0 max(8px, env(safe-area-inset-left));
+    gap: 8px;
+  }
+
+  .orion-mobile-search {
+    margin-left: auto;
+  }
+
+  /* Restore the live-data status button (it was hidden by an older
+     mobile rule) as a compact icon next to search. */
+  body.orion-gv-shell .mission-status {
+    display: flex;
+    gap: 6px;
+    margin-left: 0;
+  }
+
+  body.orion-gv-shell .mission-status .signal-dot,
+  body.orion-gv-shell .mission-status .orion-utc-clock,
+  body.orion-gv-shell .mission-status > span:not(.signal-dot) {
+    display: none;
+  }
+
+  body.orion-gv-shell .mission-status .orion-data-status {
+    width: 36px;
+    min-width: 36px;
+    height: 36px;
+    padding: 0;
+  }
+
+  body.orion-gv-shell .mission-status .hud-hide-btn {
+    width: 24px;
+  }
+
+  body.orion-gv-shell .global-search {
+    top: calc(var(--orion-topbar-height) + 6px);
+  }
+
+  .orion-feed-popover {
+    top: calc(var(--orion-topbar-height) + 6px);
+  }
+
+  .orion-load-strip {
+    top: calc(var(--orion-topbar-height) - 2px);
+  }
+
+  body.orion-gv-shell #commandPanel,
+  body.orion-gv-shell #telemetryPanel {
+    top: calc(var(--orion-topbar-height) + var(--orion-gap));
+    bottom: calc(var(--orion-mobile-nav-height) + var(--orion-gap));
+    max-height: none;
+  }
+
+  .orion-map-tools,
+  body.orion-gv-shell:has(#commandPanel.collapsed) .orion-map-tools {
+    top: calc(var(--orion-topbar-height) + var(--orion-gap) + 4px);
+    left: auto;
+    right: max(8px, env(safe-area-inset-right));
+  }
+
+  .orion-map-tools button:nth-child(3) {
+    margin-top: 4px;
+  }
+
+  body.orion-gv-shell .timeline-hud,
+  body.orion-gv-shell:has(#commandPanel.collapsed) .timeline-hud,
+  body.orion-gv-shell:has(#telemetryPanel.collapsed) .timeline-hud,
+  body.orion-gv-shell:has(#commandPanel.collapsed):has(#telemetryPanel.collapsed) .timeline-hud {
+    left: var(--orion-gap);
+    right: var(--orion-gap);
+    bottom: calc(var(--orion-mobile-nav-height) + var(--orion-gap));
+    width: auto;
+    max-height: calc(100dvh - var(--orion-topbar-height) - var(--orion-mobile-nav-height) - var(--orion-gap) * 2);
+    overflow-y: auto;
+    padding: 12px;
+    transform: none;
+  }
+
+  body.orion-gv-shell .timeline-mode-row {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  body.orion-gv-shell .timeline-mode {
+    min-width: 0;
+    justify-content: center;
+    padding: 0 6px;
+    gap: 5px;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+  }
+
+  body.orion-gv-shell .playback-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  body.orion-gv-shell .transport-controls {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  body.orion-gv-shell .transport-button {
+    justify-content: center;
+    padding: 0 8px;
+  }
+
+  body.orion-gv-shell .speed-control {
+    margin-left: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .orion-mobile-nav {
+    height: var(--orion-mobile-nav-height);
+    align-items: stretch;
+    gap: 2px;
+    padding: 5px max(6px, env(safe-area-inset-right)) calc(5px + var(--orion-safe-bottom)) max(6px, env(safe-area-inset-left));
+  }
+
+  .orion-mobile-nav-item {
+    gap: 4px;
+    padding: 4px 2px;
+    border-radius: 7px;
+    font-size: 10px;
+    line-height: 1.1;
+  }
+
+  .orion-mobile-nav-item .orion-button-label {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  body.orion-gv-shell .weather-mode-legend,
+  body.orion-gv-shell:has(#timelineHud.collapsed) .weather-mode-legend {
+    left: 50%;
+    bottom: calc(var(--orion-mobile-nav-height) + 48px);
+    max-width: calc(100vw - 96px);
+    transform: translateX(-50%);
+  }
+
+  body.orion-gv-shell .cesium-credit {
+    right: var(--orion-gap);
+    bottom: calc(var(--orion-mobile-nav-height) + 4px);
+    max-width: 30vw;
+  }
+
+  body.orion-gv-shell .camera-window {
+    bottom: calc(var(--orion-mobile-nav-height) + var(--orion-gap));
+  }
+}
+
+@media (max-width: 380px) {
+  .orion-mobile-nav-item {
+    font-size: 9px;
+  }
+}
+
+@media (max-height: 620px) and (min-width: 761px) {
+  .orion-dock-button {
+    height: 36px;
+    flex-basis: 36px;
   }
 }

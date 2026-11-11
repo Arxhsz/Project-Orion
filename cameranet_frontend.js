@@ -28,7 +28,9 @@
     activeFetchPromise: null,
     activeFetchController: null,
     requestVersion: 0,
-    renderSignature: ""
+    renderSignature: "",
+    staticIndexPromise: null,
+    staticTilePromises: {}
   };
 
   var CAMERA_CONFIG = {
@@ -239,12 +241,13 @@
       outer.north >= inner.north - toleranceLat;
   }
 
-  function rememberCameraCache(key, bbox, cameras, providerCount) {
+  function rememberCameraCache(key, bbox, cameras, providerCount, summary) {
     var entry = {
       key: key,
       bbox: bbox,
       cameras: cameras,
       providerCount: providerCount || cameras.length,
+      summary: !!summary,
       timestamp: Date.now()
     };
 
@@ -258,13 +261,16 @@
     }
   }
 
-  function cachedCamerasForBbox(bbox) {
+  function cachedCamerasForBbox(bbox, height) {
     var now = Date.now();
     var maxAge = 10 * 60 * 1000;
 
     for (var index = 0; index < cameraNetState.bboxCache.length; index++) {
       var entry = cameraNetState.bboxCache[index];
       if (now - entry.timestamp > maxAge) {
+        continue;
+      }
+      if (entry.summary && height <= CAMERA_CONFIG.farHeight) {
         continue;
       }
       if (bboxContains(entry.bbox, bbox)) {
@@ -287,6 +293,80 @@
     return 3000;
   }
 
+  function staticTileIntersects(tile, bbox) {
+    return tile.east >= bbox.west && tile.west <= bbox.east &&
+      tile.north >= bbox.south && tile.south <= bbox.north;
+  }
+
+  function fetchStaticCameraIndex() {
+    if (!cameraNetState.staticIndexPromise) {
+      cameraNetState.staticIndexPromise = fetch("pages-data/live/cameras-index.json", {
+        headers: { Accept: "application/json" }
+      }).then(function (response) {
+        if (!response.ok) throw new Error("CameraNet index HTTP " + response.status);
+        return response.json();
+      }).catch(function (error) {
+        cameraNetState.staticIndexPromise = null;
+        throw error;
+      });
+    }
+    return cameraNetState.staticIndexPromise;
+  }
+
+  function fetchStaticCameraTile(tile) {
+    if (!cameraNetState.staticTilePromises[tile.id]) {
+      cameraNetState.staticTilePromises[tile.id] = fetch(tile.url, {
+        headers: { Accept: "application/json" }
+      }).then(function (response) {
+        if (!response.ok) throw new Error("CameraNet tile HTTP " + response.status);
+        return response.json();
+      }).catch(function (error) {
+        delete cameraNetState.staticTilePromises[tile.id];
+        throw error;
+      });
+    }
+    return cameraNetState.staticTilePromises[tile.id];
+  }
+
+  function fetchStaticCamerasForBbox(bbox, height) {
+    return fetchStaticCameraIndex().then(function (index) {
+      var tiles = (index.tiles || []).filter(function (tile) {
+        return staticTileIntersects(tile, bbox);
+      });
+      if (height > CAMERA_CONFIG.farHeight || tiles.length > 24) {
+        return {
+          source: index.source,
+          mode: "pages-spatial-summary",
+          total: index.total || index.count || 0,
+          count: tiles.reduce(function (sum, tile) { return sum + Number(tile.count || 0); }, 0),
+          cameras: tiles.map(function (tile) {
+            return {
+              id: "camera-tile-" + tile.id,
+              name: (tile.count || 0) + " live cameras",
+              lat: tile.lat,
+              lon: tile.lon,
+              clusterCount: tile.count || 1,
+              _summary: true
+            };
+          })
+        };
+      }
+      return Promise.all(tiles.map(fetchStaticCameraTile)).then(function (payloads) {
+        var cameras = [];
+        payloads.forEach(function (payload) {
+          cameras = cameras.concat(Array.isArray(payload.cameras) ? payload.cameras : []);
+        });
+        return {
+          source: index.source,
+          mode: "pages-spatial-detail",
+          total: index.total || index.count || cameras.length,
+          count: cameras.length,
+          cameras: cameras
+        };
+      });
+    });
+  }
+
   function fetchCamerasForBbox(viewer, bbox, key) {
     if (!bbox) {
       return Promise.resolve([]);
@@ -296,9 +376,7 @@
     var bboxStr = [bbox.west, bbox.south, bbox.east, bbox.north].map(function (value) {
       return value.toFixed(5);
     }).join(",");
-    var url = isStaticHostMode()
-      ? "pages-data/live/cameras.json"
-      : "/live/cameras?provider=" + encodeURIComponent(CAMERA_CONFIG.provider) +
+    var url = "/live/cameras?provider=" + encodeURIComponent(CAMERA_CONFIG.provider) +
         "&bbox=" + encodeURIComponent(bboxStr) +
         "&limit=" + metadataLimit(height);
 
@@ -318,23 +396,27 @@
 
     cameraNetState.activeFetchKey = key || "";
     cameraNetState.activeFetchController = controller;
-    cameraNetState.activeFetchPromise = fetch(url, {
-      headers: { Accept: "application/json" },
-      signal: controller ? controller.signal : undefined
-    })
-      .then(function (response) {
-        if (!response.ok) {
-          throw new Error("CameraNet HTTP " + response.status);
-        }
-        return response.json();
-      })
+    var request = isStaticHostMode()
+      ? fetchStaticCamerasForBbox(bbox, height)
+      : fetch(url, {
+          headers: { Accept: "application/json" },
+          signal: controller ? controller.signal : undefined
+        }).then(function (response) {
+          if (!response.ok) throw new Error("CameraNet HTTP " + response.status);
+          return response.json();
+        });
+
+    cameraNetState.activeFetchPromise = request
       .then(function (data) {
         if (requestVersion !== cameraNetState.requestVersion) {
           return null;
         }
-        var cameras = Array.isArray(data.cameras) ? data.cameras.filter(cameraHasLiveVideo) : [];
+        var cameras = Array.isArray(data.cameras) ? data.cameras.filter(function (camera) {
+          return camera._summary || cameraHasLiveVideo(camera);
+        }) : [];
         if (isStaticHostMode()) {
           cameras = cameras.filter(function (camera) {
+            if (camera._summary) return true;
             var lat = Number(camera.lat);
             var lon = Number(camera.lon);
             return Number.isFinite(lat) && Number.isFinite(lon) &&
@@ -344,7 +426,7 @@
         cameraNetState.providerStatus = cameras.length ? "active" : (data.error ? "error" : "empty");
         cameraNetState.providerCount = data.total || data.count || cameras.length;
         cameraNetState.lastError = data.error || "";
-        rememberCameraCache(key || bboxStr, bbox, cameras, cameraNetState.providerCount);
+        rememberCameraCache(key || bboxStr, bbox, cameras, cameraNetState.providerCount, data.mode === "pages-spatial-summary");
         syncPlatformFeedState(cameras.length ? "online" : (data.error ? "offline" : "empty"), cameras, data.error);
         refreshIntelList();
         return cameras;
@@ -406,7 +488,7 @@
     var current = window.platformFeeds.cameras || {};
     window.platformFeeds.cameras = Object.assign({}, current, {
       status: status,
-      items: Array.isArray(cameras) ? cameras : (current.items || []),
+      items: Array.isArray(cameras) ? cameras.filter(function (camera) { return !camera._summary; }) : (current.items || []),
       error: error || "",
       loadedAt: Date.now()
     });
@@ -448,6 +530,7 @@
         return;
       }
 
+      var weight = Math.max(1, Number(camera.clusterCount) || 1);
       var position = Cesium.Cartesian3.fromDegrees(lon, lat, CAMERA_CONFIG.billboardElevM);
       if (!occluder.isPointVisible(position)) {
         return;
@@ -469,9 +552,9 @@
         lon: lon,
         count: 0
       };
-      item.latSum += lat;
-      item.lonSum += lon;
-      item.count += 1;
+      item.latSum += lat * weight;
+      item.lonSum += lon * weight;
+      item.count += weight;
       item.lat = item.latSum / item.count;
       item.lon = item.lonSum / item.count;
       grid[key] = item;
@@ -507,6 +590,7 @@
         return;
       }
 
+      var weight = Math.max(1, Number(camera.clusterCount) || 1);
       var key = Math.floor(lat / step) + "," + Math.floor(lon / step);
       if (!grid[key]) {
         grid[key] = {
@@ -520,9 +604,9 @@
         };
       }
 
-      grid[key].latSum += lat;
-      grid[key].lonSum += lon;
-      grid[key].count += 1;
+      grid[key].latSum += lat * weight;
+      grid[key].lonSum += lon * weight;
+      grid[key].count += weight;
       grid[key].lat = grid[key].latSum / grid[key].count;
       grid[key].lon = grid[key].lonSum / grid[key].count;
     });
@@ -854,7 +938,7 @@
     var bbox = getVisibleBbox(viewer);
     var key = bboxKey(bbox, height);
     var requestKey = fetchBboxKey(bbox, height);
-    var cached = cachedCamerasForBbox(bbox);
+    var cached = cachedCamerasForBbox(bbox, height);
 
     if (cached) {
       cameraNetState.cameras = cached.cameras;
@@ -1201,11 +1285,11 @@
 
     if (type === "cameraCluster") {
       var cluster = props.cluster.getValue();
-      primeClusterViewport(viewer, cluster);
       viewer.camera.flyTo({
         destination: Cesium.Cartesian3.fromDegrees(cluster.lon, cluster.lat, Math.max(90000, viewer.camera.positionCartographic.height * 0.34)),
         duration: 0.85,
-        easingFunction: Cesium.EasingFunction.CUBIC_IN_OUT
+        easingFunction: Cesium.EasingFunction.CUBIC_IN_OUT,
+        complete: function () { primeClusterViewport(viewer, cluster); }
       });
       return true;
     }

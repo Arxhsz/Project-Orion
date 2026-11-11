@@ -15,15 +15,19 @@ await page.route('**/__orion_dev/version', route => route.fulfill({ status: 404 
 await page.addInitScript(() => {
   localStorage.setItem('orion_onboarding_complete', 'true');
   localStorage.setItem('orion_changelog_dismissed', '1.1.2-map-reliability');
-  localStorage.removeItem('orion:shellVersion');
-  localStorage.removeItem('orion:panelCollapsed');
-  localStorage.removeItem('orion:timelineCollapsed');
+  localStorage.setItem('orion:shellVersion', '4');
+  localStorage.setItem('orion:panelCollapsed', JSON.stringify({ commandPanel: false, telemetryPanel: false }));
+  localStorage.setItem('orion:timelineCollapsed', '0');
 });
 
 try {
   await page.goto(process.env.ORION_TEST_URL || 'http://127.0.0.1:4174/?orionStatic=1', { waitUntil: 'load' });
   await page.waitForFunction(() => window.viewer && !document.getElementById('orionLoadingScreen'), null, { timeout: 60000 });
   await page.locator('.orion-command-dock').waitFor();
+  assert.ok(['idle', 'loading', 'success'].includes(await page.evaluate(() => OrionOrb.getState())));
+  await page.evaluate(() => setOrbState('thinking'));
+  assert.equal(await page.locator('html').getAttribute('data-orb-state'), 'thinking');
+  await page.evaluate(() => setOrbState('auto'));
 
   const desktop = await page.evaluate(() => {
     const rect = id => document.getElementById(id).getBoundingClientRect().toJSON();
@@ -51,12 +55,17 @@ try {
   assert.ok(desktop.tools.left >= desktop.dock.right, JSON.stringify(desktop));
   assert.equal(desktop.scrollWidth, 1440);
   assert.ok(desktop.canvas.width >= 1400 && desktop.canvas.height >= 990);
+  assert.deepEqual(await page.locator('.orion-count-badge').allTextContents(), ['0', '0']);
 
   await page.getByRole('button', { name: 'CameraNet', exact: true }).click();
   assert.equal(await page.locator('#commandPanel').evaluate(element => getComputedStyle(element).display !== 'none'), true);
   assert.equal(await page.locator('#workspace-tab-layers').getAttribute('aria-selected'), 'true');
   assert.equal(await page.locator('.layer-search').inputValue(), 'camera');
   assert.equal(await page.locator('[data-layer-id="cameras"]').isVisible(), true);
+  await page.locator('#platformCameras').check({ force: true });
+  await page.waitForFunction(() => Array.from(document.querySelectorAll('.orion-count-badge')).every(badge => badge.textContent === '1'));
+  await page.locator('#platformCameras').uncheck({ force: true });
+  await page.waitForFunction(() => Array.from(document.querySelectorAll('.orion-count-badge')).every(badge => badge.textContent === '0'));
 
   await page.getByRole('button', { name: 'Infrastructure', exact: true }).click();
   assert.equal(await page.locator('.layer-search').inputValue(), 'power + cable');
@@ -77,6 +86,12 @@ try {
   assert.ok(await page.locator('.orion-feed-row').count() >= 1);
   await page.screenshot({ path: 'artifacts/orion-shell-feeds.png' });
   await page.getByRole('button', { name: 'Live data status', exact: true }).click();
+  await page.evaluate(() => {
+    platformFeeds.weatherRadar.payload.mode = 'observed';
+    platformFeeds.weatherRadar.payload.selected_time = new Date().toISOString();
+    appState.date = new Date(Date.now() - 2 * 60 * 60 * 1000);
+  });
+  await page.waitForFunction(() => document.querySelector('.orion-data-status .orion-button-label').textContent.includes('delayed'));
   await page.getByRole('button', { name: 'Map', exact: true }).click();
 
   const beforeZoom = await page.evaluate(() => viewer.camera.positionCartographic.height);

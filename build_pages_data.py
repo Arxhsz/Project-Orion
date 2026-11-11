@@ -2,7 +2,9 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 import json
+import math
 import os
+import shutil
 import time
 
 os.environ.setdefault("ORION_SYNTHETIC_INTEL", "0")
@@ -265,7 +267,73 @@ def build_cameras():
             "generated": int(time.time()),
             "cameras": [],
         }
-    write_json(OUT / "cameras.json", payload)
+    write_camera_catalog(payload)
+
+
+CAMERA_TILE_DEGREES = 2
+
+
+def camera_tile_id(camera, tile_degrees=CAMERA_TILE_DEGREES):
+    lat_index = math.floor((float(camera["lat"]) + 90) / tile_degrees)
+    lon_index = math.floor((float(camera["lon"]) + 180) / tile_degrees)
+    return f"lat{lat_index:02d}-lon{lon_index:02d}"
+
+
+def build_camera_tile_payloads(cameras, tile_degrees=CAMERA_TILE_DEGREES):
+    grouped = {}
+    for camera in cameras:
+        try:
+            tile_id = camera_tile_id(camera, tile_degrees)
+        except (KeyError, TypeError, ValueError):
+            continue
+        grouped.setdefault(tile_id, []).append(camera)
+
+    tiles = []
+    payloads = {}
+    for tile_id, records in sorted(grouped.items()):
+        lats = [float(camera["lat"]) for camera in records]
+        lons = [float(camera["lon"]) for camera in records]
+        west = math.floor((min(lons) + 180) / tile_degrees) * tile_degrees - 180
+        south = math.floor((min(lats) + 90) / tile_degrees) * tile_degrees - 90
+        tile = {
+            "id": tile_id,
+            "url": f"pages-data/live/camera-tiles/{tile_id}.json",
+            "west": west,
+            "south": south,
+            "east": west + tile_degrees,
+            "north": south + tile_degrees,
+            "lat": round(sum(lats) / len(lats), 5),
+            "lon": round(sum(lons) / len(lons), 5),
+            "count": len(records),
+        }
+        tiles.append(tile)
+        payloads[tile_id] = {"tile": tile_id, "count": len(records), "cameras": records}
+    return tiles, payloads
+
+
+def write_camera_catalog(payload, out_dir=OUT):
+    cameras = payload.get("cameras") or []
+    tiles, tile_payloads = build_camera_tile_payloads(cameras)
+    tile_dir = out_dir / "camera-tiles"
+    if tile_dir.exists():
+        shutil.rmtree(tile_dir)
+    tile_dir.mkdir(parents=True, exist_ok=True)
+    for tile_id, tile_payload in tile_payloads.items():
+        write_json(tile_dir / f"{tile_id}.json", tile_payload)
+
+    index = {key: value for key, value in payload.items() if key != "cameras"}
+    index["tiles"] = tiles
+    index["tile_degrees"] = CAMERA_TILE_DEGREES
+    write_json(out_dir / "cameras-index.json", index)
+    write_json(out_dir / "cameras.json", {
+        "source": payload.get("source"),
+        "mode": "pages-spatial-catalog",
+        "count": payload.get("count", len(cameras)),
+        "total": payload.get("total", len(cameras)),
+        "generated": payload.get("generated"),
+        "index": "pages-data/live/cameras-index.json",
+        "cameras": [],
+    })
 
 
 def build_intel():

@@ -247,10 +247,10 @@ test("platform renderers are rebound and guarded after boot recovery", () => {
 test("html asset version is bumped for updated runtime modules", () => {
   const source = fs.readFileSync(path.join(root, "index.html"), "utf8");
 
-  assert.match(source, /app\.js\?v=20261110-reliability1/);
+  assert.match(source, /app\.js\?v=20261111-context6/);
   assert.match(source, /orion-config\.js\?v=20261110-reliability1/);
   assert.match(source, /orion-onboarding\.js\?v=20261110-reliability1/);
-  assert.match(source, /cameranet_frontend\.js\?v=20261110-reliability1/);
+  assert.match(source, /cameranet_frontend\.js\?v=20261111-spatial1/);
   assert.match(source, /orion-renderer-primitive\.js\?v=20261110-reliability1/);
   assert.match(source, /orion-telemetry-health\.js\?v=20261110-reliability1/);
   assert.equal(source.includes("20260701-hardening3"), false);

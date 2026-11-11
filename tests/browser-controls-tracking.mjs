@@ -3,15 +3,15 @@ import assert from 'node:assert/strict';
 const browser=await chromium.launch({headless:true,executablePath:process.env.ORION_BROWSER_EXECUTABLE||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});
 const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];
 page.on('pageerror',e=>errors.push(e.message));await page.route('**/__orion_dev/version',r=>r.fulfill({status:404}));
-await page.addInitScript(()=>{localStorage.setItem('orion_onboarding_complete','true');localStorage.setItem('orion_changelog_dismissed','1.1.2-map-reliability');localStorage.setItem('orion:shellVersion','3');localStorage.setItem('orion:panelCollapsed',JSON.stringify({commandPanel:false,telemetryPanel:true}));localStorage.setItem('orion:timelineCollapsed','1');});
+await page.addInitScript(()=>{localStorage.setItem('orion_onboarding_complete','true');localStorage.setItem('orion_changelog_dismissed','1.1.2-map-reliability');localStorage.setItem('orion:shellVersion','4');});
 try {
  await page.goto('http://127.0.0.1:4174/');await page.waitForFunction(()=>window.viewer&&!document.getElementById('orionLoadingScreen'),null,{timeout:90000});
- await page.locator('#workspace-tab-controls').click();
+ await page.locator('.orion-dock-button[data-route="controls"]').click();
  for(const [label,expression] of [['Allow globe rotation','viewer.scene.screenSpaceCameraController.enableRotate'],['Allow zoom','viewer.scene.screenSpaceCameraController.enableZoom'],['Atmosphere','viewer.scene.skyAtmosphere.show'],['Sun lighting','viewer.scene.globe.enableLighting'],['Place labels','appState.layers.labels']]){
   const box=page.getByLabel(label,{exact:true});await box.uncheck();assert.equal(await page.evaluate(e=>(0,eval)(e),expression),false,label);await box.check();assert.equal(await page.evaluate(e=>(0,eval)(e),expression),true,label);
  }
  console.log('Globe controls passed');
- await page.locator('#workspace-tab-layers').click();await page.locator('#orbitalDatasetSelect').selectOption('satScience');await page.locator('#trackSatellites').check({force:true});
+ await page.locator('.orion-dock-button[data-route="layers"]').click();await page.locator('#orbitalDatasetSelect').selectOption('satScience');await page.locator('#trackSatellites').check({force:true});
  await page.waitForFunction(()=>platformFeeds.satScience?.status==='online'&&Orion.Renderer.Orbital.collection.length>0,null,{timeout:90000});
  await page.evaluate(()=>{if(!appState.tracking.live)document.getElementById('liveModeToggle').click();window.firstSatellite={id:Orion.Renderer.Orbital.collection.get(0).id.orionItemId,position:Cesium.Cartesian3.clone(Orion.Renderer.Orbital.collection.get(0).position)};});
  await page.waitForFunction(()=>{const c=Orion.Renderer.Orbital.collection;for(let i=0;i<c.length;i++){const p=c.get(i);if(p.id.orionItemId===firstSatellite.id)return Cesium.Cartesian3.distance(p.position,firstSatellite.position)>100;}return false;},null,{timeout:20000});

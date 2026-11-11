@@ -180,7 +180,7 @@ window.OrionLoadingManager = {
     startFallbackTimer: function() {
         setTimeout(() => {
             if (!loadingComplete) {
-                console.warn("Loading timeout reached, forcing completion");
+                console.info("Loading timeout reached; continuing with the initialized renderer");
                 this.complete();
             }
         }, 15000);

@@ -14,9 +14,7 @@ try {
   await page.addInitScript(() => {
     localStorage.setItem('orion_onboarding_complete', 'true');
     localStorage.setItem('orion_changelog_dismissed', '1.1.2-map-reliability');
-    localStorage.setItem('orion:shellVersion', '3');
-    localStorage.setItem('orion:panelCollapsed', JSON.stringify({ commandPanel: false, telemetryPanel: true }));
-    localStorage.setItem('orion:timelineCollapsed', '1');
+    localStorage.setItem('orion:shellVersion', '4');
   });
   await page.goto(process.env.ORION_TEST_URL || 'http://127.0.0.1:4174/?orionStatic=1', { waitUntil: 'load' });
   await page.waitForFunction(() => window.platformFeeds?.weatherRadar?.status === 'online', null, { timeout: 45000 });

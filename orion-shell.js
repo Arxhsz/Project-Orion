@@ -12,16 +12,14 @@
     if (!appShell || !commandPanel || !telemetryPanel || !timeline || !brandHud || !workspaceTabs) return;
 
     document.body.classList.add('orion-gv-shell');
-    var shellVersion = '3';
+    var shellVersion = '4';
     try {
-      if (window.localStorage.getItem('orion:shellVersion') !== shellVersion) {
-        commandPanel.classList.add('collapsed');
-        telemetryPanel.classList.add('collapsed');
-        timeline.classList.add('collapsed');
-        window.localStorage.setItem('orion:panelCollapsed', JSON.stringify({ commandPanel: true, telemetryPanel: true }));
-        window.localStorage.setItem('orion:timelineCollapsed', '1');
-        window.localStorage.setItem('orion:shellVersion', shellVersion);
-      }
+      commandPanel.classList.add('collapsed');
+      telemetryPanel.classList.add('collapsed');
+      timeline.classList.add('collapsed');
+      window.localStorage.setItem('orion:panelCollapsed', JSON.stringify({ commandPanel: true, telemetryPanel: true }));
+      window.localStorage.setItem('orion:timelineCollapsed', '1');
+      window.localStorage.setItem('orion:shellVersion', shellVersion);
     } catch (error) {
       // Storage may be blocked; the in-memory shell state still works.
     }
@@ -224,7 +222,7 @@
       setDockActive('search');
     }, true);
     addDockControl('explore', 'Explore', 'compass', 'E', function () { activateWorkspace('explore', { route: 'explore', title: 'Explore' }); });
-    addDockControl('layers', 'Layer library', 'layers-3', 'L', function () { activateWorkspace('layers', { route: 'layers', title: 'Layer library' }); });
+    var dockLayers = addDockControl('layers', 'Layer library', 'layers-3', 'L', function () { activateWorkspace('layers', { route: 'layers', title: 'Layer library' }); });
     addDockControl('cameras', 'CameraNet', 'video', 'C', function () { activateWorkspace('layers', { query: 'camera', route: 'cameras', title: 'CameraNet' }); });
     addDockControl('weather', 'Weather', 'cloud-sun', 'W', function () { activateWorkspace('explore', { route: 'weather', title: 'Weather', target: '#workspace-explore .weather-map-block' }); });
     addDockControl('infrastructure', 'Infrastructure', 'utility-pole', 'I', function () { activateWorkspace('layers', { terms: ['power', 'cable'], value: 'power + cable', route: 'infrastructure', title: 'Infrastructure' }); });
@@ -233,6 +231,36 @@
     addDockControl('controls', 'Controls', 'sliders-horizontal', 'S', function () { activateWorkspace('controls', { route: 'controls', title: 'System controls' }); });
     appShell.appendChild(commandDock);
     setDockActive('map');
+
+    function createCountBadge(control) {
+      var badge = document.createElement('span');
+      badge.className = 'orion-count-badge';
+      badge.textContent = '0';
+      badge.setAttribute('aria-hidden', 'true');
+      control.appendChild(badge);
+      return badge;
+    }
+
+    var headerLayerBadge = createCountBadge(layersView);
+    var dockLayerBadge = createCountBadge(dockLayers);
+    function activeLayerCount() {
+      var ids = new Set();
+      document.querySelectorAll('.platform-block input[type="checkbox"]:checked, #trackAircraft:checked, #trackSatellites:checked').forEach(function (input) {
+        ids.add(input.id);
+      });
+      return ids.size;
+    }
+    function updateLayerCounts() {
+      var count = activeLayerCount();
+      headerLayerBadge.textContent = String(count);
+      dockLayerBadge.textContent = String(count);
+      layersView.setAttribute('aria-label', 'Open layers, ' + count + ' active');
+      dockLayers.setAttribute('aria-label', 'Layer library, ' + count + ' active');
+    }
+    document.addEventListener('change', function (event) {
+      if (event.target && event.target.matches('input[type="checkbox"]')) updateLayerCounts();
+    });
+    updateLayerCounts();
 
     var loadStrip = document.createElement('div');
     loadStrip.className = 'orion-load-strip';
@@ -253,9 +281,20 @@
       var value = String(status || 'standby').toLowerCase();
       if (value === 'online' || value === 'propagated') return 'online';
       if (value.indexOf('loading') !== -1 || value === 'unknown') return 'loading';
-      if (value === 'fallback' || value === 'degraded' || value === 'latest snapshot') return 'warning';
+      if (value === 'fallback' || value === 'degraded' || value === 'delayed' || value === 'stale' || value === 'latest snapshot') return 'warning';
       if (value === 'empty' || value === 'standby') return 'standby';
       return 'error';
+    }
+
+    function observedAgeMinutes(feed) {
+      var payload = feed && feed.payload;
+      if (!payload || payload.mode !== 'observed') return null;
+      var selectedDate = window.appState && window.appState.date;
+      var timestamp = selectedDate instanceof Date && Number.isFinite(+selectedDate)
+        ? selectedDate.toISOString()
+        : payload.selected_time || (payload.latest && payload.latest.time) || payload.time;
+      var value = Date.parse(timestamp || '');
+      return Number.isFinite(value) ? Math.max(0, Math.round((Date.now() - value) / 60000)) : null;
     }
 
     function layerDisplayName(row, layerId) {
@@ -270,10 +309,14 @@
       var records = [];
       var weatherFeed = window.platformFeeds && window.platformFeeds.weatherRadar;
       if (weatherFeed) {
+        var weatherAge = observedAgeMinutes(weatherFeed);
+        var weatherStatus = weatherFeed.status || 'loading';
+        if (feedStatusClass(weatherStatus) === 'online' && weatherAge !== null && weatherAge > 90) weatherStatus = 'delayed';
         records.push({
           id: 'weatherRadar',
           name: document.getElementById('weatherMapModeSelect').selectedOptions[0].textContent,
-          status: weatherFeed.status || 'loading',
+          status: weatherStatus,
+          ageMinutes: weatherAge,
           count: Array.isArray(weatherFeed.items) ? weatherFeed.items.length : Number(weatherFeed.payload && weatherFeed.payload.frames && weatherFeed.payload.frames.length) || 0
         });
       }
@@ -312,7 +355,7 @@
         var name = document.createElement('strong');
         name.textContent = record.name;
         var meta = document.createElement('span');
-        meta.textContent = record.status + (record.count ? ' / ' + record.count.toLocaleString() : '');
+        meta.textContent = record.status + (record.ageMinutes !== null && record.ageMinutes !== undefined ? ' / ' + record.ageMinutes + 'm' : record.count ? ' / ' + record.count.toLocaleString() : '');
         row.append(dot, name, meta);
         list.appendChild(row);
       });
@@ -329,10 +372,11 @@
       var records = collectFeedRecords();
       var online = records.filter(function (record) { return feedStatusClass(record.status) === 'online'; }).length;
       var loading = records.filter(function (record) { return feedStatusClass(record.status) === 'loading'; }).length;
+      var warning = records.filter(function (record) { return feedStatusClass(record.status) === 'warning'; }).length;
       var failed = records.filter(function (record) { return feedStatusClass(record.status) === 'error'; }).length;
       var label = dataStatusButton.querySelector('.orion-button-label');
-      label.textContent = loading ? loading + ' loading' : failed ? failed + ' issue' + (failed === 1 ? '' : 's') : online + ' live';
-      dataStatusButton.dataset.state = loading ? 'loading' : failed ? 'error' : 'online';
+      label.textContent = loading ? loading + ' loading' : failed ? failed + ' issue' + (failed === 1 ? '' : 's') : warning ? warning + ' delayed' : online + ' live';
+      dataStatusButton.dataset.state = loading ? 'loading' : failed ? 'error' : warning ? 'warning' : 'online';
       loadStrip.classList.toggle('is-busy', loading > 0);
       renderFeedPopover(records);
     }

@@ -4,14 +4,14 @@ const browser=await chromium.launch({headless:true,executablePath:process.env.OR
 const page=await browser.newPage({viewport:{width:615,height:656}});
 const errors=[];page.on('pageerror',e=>errors.push(e.message));
 await page.route('**/__orion_dev/version',r=>r.fulfill({status:404}));
-await page.addInitScript(()=>{localStorage.setItem('orion_onboarding_complete','true');localStorage.setItem('orion_changelog_dismissed','1.1.2-map-reliability');localStorage.setItem('orion:shellVersion','3');localStorage.setItem('orion:panelCollapsed',JSON.stringify({commandPanel:false,telemetryPanel:true}));localStorage.setItem('orion:timelineCollapsed','1');});
+await page.addInitScript(()=>{localStorage.setItem('orion_onboarding_complete','true');localStorage.setItem('orion_changelog_dismissed','1.1.2-map-reliability');localStorage.setItem('orion:shellVersion','4');});
 try {
  await page.goto('http://127.0.0.1:4174/');
  await page.waitForFunction(()=>window.viewer&&document.getElementById('restartTutorial'));
  await page.waitForFunction(()=>!document.getElementById('orionLoadingScreen'),null,{timeout:60000});
  const compact=await page.evaluate(()=>{const panel=document.getElementById('telemetryPanel');if(!panel.classList.contains('collapsed'))document.getElementById('telemetryPanelToggle').click();const nav=document.querySelector('.orion-mobile-nav').getBoundingClientRect();return {panelHidden:getComputedStyle(panel).display==='none',navBottom:nav.bottom,viewport:innerHeight};});
  assert.equal(compact.panelHidden,true,JSON.stringify(compact));assert.equal(Math.round(compact.navBottom),compact.viewport,JSON.stringify(compact));
- await page.locator('#workspace-tab-controls').click();
+ await page.locator('.orion-mobile-nav').getByRole('button',{name:'More',exact:true}).click();
  await page.locator('#orionQuality').selectOption('saving');
  assert.equal(await page.evaluate(()=>viewer.resolutionScale),.75);
  await page.locator('#orionQuality').selectOption('auto');

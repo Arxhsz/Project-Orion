@@ -6591,7 +6591,21 @@ void main() {
 
   function zoomWeatherLayerAlpha(mode) {
     var config = zoomWeatherModeConfig[mode] || {};
-    return Math.max(0.05, Math.min(1, (config.alpha || 0.72) * (mode === "satellite" || mode === "infrared" || mode === "satellite-global" ? 1 : state.radarOpacity)));
+    var observed = mode === "satellite" || mode === "infrared" || mode === "satellite-global";
+    var height = viewer && viewer.camera ? viewer.camera.positionCartographic.height : 2000000;
+    var contextScale = 1;
+    if (height < 25000) contextScale = observed ? 0.28 : 0.58;
+    else if (height < 120000) contextScale = observed ? 0.42 : 0.68;
+    else if (height < 500000) contextScale = observed ? 0.62 : 0.8;
+    else if (height < 1500000) contextScale = observed ? 0.78 : 0.92;
+    else if (observed) contextScale = 0.84;
+    return Math.max(0.05, Math.min(1, (config.alpha || 0.72) * (observed ? 1 : state.radarOpacity) * contextScale));
+  }
+
+  function syncZoomWeatherLayerAlpha() {
+    if (!zoomWeatherLayer || !zoomWeatherMode) return;
+    zoomWeatherLayer.alpha = zoomWeatherLayerAlpha(zoomWeatherMode);
+    viewer.scene.requestRender();
   }
 
   var weatherFieldPalettes = {
@@ -7075,6 +7089,40 @@ void main() {
       styles: "", srs: "EPSG:4326", bbox: bounds.join(","), width: width, height: height, format: "image/png", transparent: "true",
       time: payload.selected_time || payload.time });
     var image = await Orion.FrameBuffer.decode(payload.wms.url + "?" + params, weatherFrameAbort.signal);
+
+    function prepareObservedRaster(sourceImage) {
+      if (mode !== "satellite" && mode !== "infrared") return sourceImage;
+      var prepared = document.createElement("canvas"); prepared.width = width; prepared.height = height;
+      var preparedContext = prepared.getContext("2d"); preparedContext.drawImage(sourceImage, 0, 0, width, height);
+      var pixels = preparedContext.getImageData(0, 0, width, height);
+      var coverage = new Uint8Array(width * height);
+      for (var i = 0; i < coverage.length; i++) coverage[i] = pixels.data[i * 4 + 3];
+      var time = new Date(payload.selected_time || payload.time);
+      var day = Math.floor((+time - Date.UTC(time.getUTCFullYear(), 0, 0)) / MS_PER_DAY);
+      var declination = 23.44 * Math.PI / 180 * Math.sin(2 * Math.PI * (284 + day) / 365);
+      var utcHours = time.getUTCHours() + time.getUTCMinutes() / 60;
+      for (var y = 0; y < height; y++) {
+        var lat = (bounds[3] - y / height * (bounds[3] - bounds[1])) * Math.PI / 180;
+        for (var x = 0; x < width; x++) {
+          var lon = bounds[0] + x / width * (bounds[2] - bounds[0]);
+          var hourAngle = (utcHours * 15 + lon - 180) * Math.PI / 180;
+          var elevation = Math.sin(lat) * Math.sin(declination) + Math.cos(lat) * Math.cos(declination) * Math.cos(hourAngle);
+          var edge = 1;
+          for (var d = 1; d <= 8; d *= 2) {
+            if ((x >= d && coverage[y * width + x - d] === 0) || (x + d < width && coverage[y * width + x + d] === 0) ||
+                (y >= d && coverage[(y - d) * width + x] === 0) || (y + d < height && coverage[(y + d) * width + x] === 0)) edge = Math.min(edge, d / 8);
+          }
+          var offset = (y * width + x) * 4;
+          var luminance = pixels.data[offset] * 0.2126 + pixels.data[offset + 1] * 0.7152 + pixels.data[offset + 2] * 0.0722;
+          var reflectance = mode === "satellite" ? Math.max(0, Math.min(1, (luminance - 12) / 70)) : 1;
+          pixels.data[offset + 3] *= edge * reflectance * (mode === "satellite" ? Math.max(0, Math.min(1, elevation / 0.15)) : 1);
+        }
+      }
+      preparedContext.putImageData(pixels, 0, 0);
+      return prepared;
+    }
+
+    var observedImage = prepareObservedRaster(image);
     if (payload.context) {
       var contextParams = new URLSearchParams(params);
       contextParams.set("layers", payload.context.layers);
@@ -7085,39 +7133,12 @@ void main() {
       });
       var canvas = document.createElement("canvas"); canvas.width = width; canvas.height = height;
       var ctx = canvas.getContext("2d");
+      ctx.globalAlpha = mode === "satellite" ? 0.14 : 0.55;
       ctx.drawImage(contextImage, 0, 0, width, height);
-      if (mode === "satellite" || mode === "infrared") {
-        // Visible imagery cannot observe nighttime clouds. Use the explicitly labeled
-        // infrared context there instead of covering the globe with a dark sector.
-        var visible = document.createElement("canvas"); visible.width = width; visible.height = height;
-        var vc = visible.getContext("2d"); vc.drawImage(image, 0, 0, width, height);
-        var pixels = vc.getImageData(0, 0, width, height);
-        var coverage = new Uint8Array(width * height);
-        for (var i = 0; i < coverage.length; i++) coverage[i] = pixels.data[i * 4 + 3];
-        var time = new Date(payload.selected_time || payload.time);
-        var day = Math.floor((+time - Date.UTC(time.getUTCFullYear(), 0, 0)) / MS_PER_DAY);
-        var declination = 23.44 * Math.PI / 180 * Math.sin(2 * Math.PI * (284 + day) / 365);
-        var utcHours = time.getUTCHours() + time.getUTCMinutes() / 60;
-        for (var y = 0; y < height; y++) {
-          var lat = (bounds[3] - y / height * (bounds[3] - bounds[1])) * Math.PI / 180;
-          for (var x = 0; x < width; x++) {
-            var lon = bounds[0] + x / width * (bounds[2] - bounds[0]);
-            var hourAngle = (utcHours * 15 + lon - 180) * Math.PI / 180;
-            var elevation = Math.sin(lat) * Math.sin(declination) + Math.cos(lat) * Math.cos(declination) * Math.cos(hourAngle);
-            var edge = 1;
-            // Feather only source-coverage edges, retaining measured values in the interior.
-            for (var d = 1; d <= 8; d *= 2) {
-              if ((x >= d && coverage[y * width + x - d] === 0) || (x + d < width && coverage[y * width + x + d] === 0) ||
-                  (y >= d && coverage[(y - d) * width + x] === 0) || (y + d < height && coverage[(y + d) * width + x] === 0)) edge = Math.min(edge, d / 8);
-            }
-            pixels.data[(y * width + x) * 4 + 3] *= edge * (mode === "satellite" ? Math.max(0, Math.min(1, elevation / 0.15)) : 1);
-          }
-        }
-        vc.putImageData(pixels, 0, 0);
-        ctx.drawImage(visible, 0, 0);
-      } else { ctx.drawImage(image, 0, 0, width, height); }
+      ctx.globalAlpha = 1;
+      ctx.drawImage(observedImage, 0, 0, width, height);
       image = canvas;
-    }
+    } else image = observedImage;
     return { image: image, rectangle: Cesium.Rectangle.fromDegrees.apply(Cesium.Rectangle, bounds) };
   }
 
@@ -7216,6 +7237,7 @@ void main() {
       ++weatherRenderToken;
       weatherFramePending = false;
       platformFeeds.weatherRadar.status = "online";
+      syncZoomWeatherLayerAlpha();
       updateWeatherModeLegend(mode, payload);
       scheduleWeatherRefinement(payload, mode, quality);
       return Promise.resolve(true);
@@ -11053,6 +11075,7 @@ void main() {
       lastCameraCartesian = null;
       var endHeight = viewer.camera.positionCartographic.height;
       updateStreetDetailBlend(endHeight);
+      syncZoomWeatherLayerAlpha();
       syncImagerySplitMode();
       viewer.scene.requestRender();
     });
@@ -11077,6 +11100,7 @@ void main() {
 
       lastPrewarmAt = now;
       prefetchStreetDetailTiles(viewer.camera.positionCartographic.height);
+      syncZoomWeatherLayerAlpha();
       viewer.scene.requestRender();
     });
   }

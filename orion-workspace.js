@@ -44,7 +44,7 @@
       panels.layers.querySelectorAll('.platform-category').forEach(function (group) { group.hidden = !Array.from(group.querySelectorAll('[data-layer-id]')).some(function (row) { return !row.hidden; }); });
     });
     var directory = document.createElement('details'); directory.className='camera-source-directory';
-    var directoryTitle=document.createElement('summary');directoryTitle.textContent='Camera source discovery · 50 states';directory.appendChild(directoryTitle);
+    var directoryTitle=document.createElement('summary');directoryTitle.textContent='Camera provider directory · 50 states';directory.appendChild(directoryTitle);
     var directoryStatus=document.createElement('p');directoryStatus.textContent='Official agency links. Directory entries do not imply integrated camera coverage.';directory.appendChild(directoryStatus);
     directory.addEventListener('toggle', function() {
       if(!directory.open || directory.dataset.loaded) return;

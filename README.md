@@ -80,8 +80,10 @@ python3 dev_server.py 4174
 Use Python directly without development reload:
 
 ```bash
-python3 -m pip install -r requirements.txt
-python3 orion_server.py 4174
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python orion_server.py 4174
 ```
 
 Then open:
